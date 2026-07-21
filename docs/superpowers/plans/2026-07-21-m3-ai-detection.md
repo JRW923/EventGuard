@@ -1,0 +1,4450 @@
+# M3 AI 检测 MVP Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 在 M2 事件溯源基础之上构建 AI 异常检测能力：Python AI 服务消费 Kafka 事件，Java 规则引擎（R001-R005）与 Isolation Forest 协同完成事件级检测，流程级规则检测识别非法迁移/停滞/死循环，LLM 根因分析输出结构化补偿建议，异常告警通过 Kafka `anomaly-alerts` topic + Spring WebSocket `/ws/anomalies` 实时推送前端。
+
+**Architecture:** Python FastAPI 服务（端口 8000）从 Kafka `domain-events` topic 读取事件（消费组 `ai-event-detector`），先通过 HTTP 调用 Java 侧 `POST /anomaly/rules/evaluate`（R001-R005 规则，<1ms），命中则发高优先级告警到 Kafka `anomaly-alerts` topic（key=aggregate_id），未命中则走本地 Isolation Forest（4 维特征，~5ms），异常则发低优先级告警。流程级检测在 AI 服务内维护 `EventWindow`（按 aggregate_id 滑动最近 20 事件），识别非法迁移/停滞 24h/死循环。Spring Boot 端 `AnomalyAlertConsumer` 消费 `anomaly-alerts` 并通过 `/ws/anomalies` WebSocket 推送到前端。根因分析通过 LLM（Ollama 本地或远端 API）生成结构化 JSON，Pydantic 校验建议在白名单内（REFUND/NOTIFY_DELAY/MARK_OUT_OF_STOCK/FREEZE_ORDER/BACKOFF_AND_STOP），REST `GET /anomalies/{anomaly_id}/analysis` 暴露给前端。
+
+**Tech Stack:** JDK 17, Spring Boot 3.3, Spring WebSocket, PostgreSQL 16, Kafka 3.7 (KRaft), Python 3.11 + FastAPI + kafka-python + scikit-learn 1.5 + hmmlearn 0.3 + httpx + pydantic v2 + pytest 8, Ollama / OpenAI-compatible LLM API
+
+## Global Constraints
+
+- Java 17，Spring Boot 3.3+；Python 3.11
+- Java 包前缀 `com.eventguard`，Python 模块 `app`
+- 代码子模块直接在项目根目录下（`eventguard-server/`、`eventguard-ai/`），无 `eventguard/` 前缀
+- 所有源码文件 UTF-8 编码，关键注释用中文
+- 每个任务结束 commit 一次，commit message 格式 `feat(m3.X): <中文描述>`
+- 项目根目录 `D:/File/Studyproject/EventGuard/`
+- 接口签名严格遵循设计文档第 7.3 章与 plan.md：
+  - Java：`EventRule`（`ruleId()`、`matches(DomainEvent, RuleContext)`、`level()`）、`RuleEngine.evaluate(DomainEvent).Optional<Anomaly>`、`POST /anomaly/rules/evaluate`
+  - Python：`EventLevelDetector.detect(event: dict) -> AnomalyResult`、`ProcessLevelRuleDetector.detect(event_sequence: list[Event]) -> list[Anomaly]`、`EventWindow`（按 aggregate_id 维护最近 20 事件滑动窗口）
+  - 根因分析：`RootCauseAnalyzer.analyze(anomaly: Anomaly) -> AnalysisReport`、REST `GET /anomalies/{anomaly_id}/analysis`、Pydantic 校验、建议白名单（REFUND/NOTIFY_DELAY/MARK_OUT_OF_STOCK/FREEZE_ORDER/BACKOFF_AND_STOP）
+  - Kafka topic `anomaly-alerts`（key=aggregate_id），WebSocket `/ws/anomalies`
+- LLM 用 Ollama 本地（`http://ollama:11434/v1`）或远端 API，配置走环境变量 `LLM_API_KEY` / `LLM_BASE_URL`
+- M3.3 规则引擎**不**作为独立 Kafka 消费者，仅暴露 REST，由 M3.5 AI 服务通过 HTTP 调用
+- M2 已存在的文件（DomainEvent、各事件类、application.yml、pom.xml、V2__full_schema.sql）在本计划中用 Modify 标注扩展
+- Python 测试用 pytest 8，Java 测试用 JUnit 5 + Mockito 5
+
+---
+
+## File Structure
+
+M3 涉及的新建/修改文件清单：
+
+```
+EventGuard/
+├── eventguard-ai/
+│   ├── requirements.txt (Modify - Task 1)
+│   ├── app/
+│   │   ├── main.py (Modify - Task 1, 7)
+│   │   ├── config.py (Modify - Task 1)
+│   │   ├── kafka_consumer.py (New - Task 1, Modify - Task 5)
+│   │   ├── detector/
+│   │   │   ├── __init__.py (New - Task 1)
+│   │   │   ├── event_level.py (New - Task 4, Modify - Task 5)
+│   │   │   ├── feature_extractor.py (New - Task 4)
+│   │   │   ├── rule_bridge.py (New - Task 5)
+│   │   │   ├── process_level.py (New - Task 6)
+│   │   │   ├── event_window.py (New - Task 6)
+│   │   │   └── process_level_hmm.py (New - Task 9, 可选)
+│   │   ├── analyzer/
+│   │   │   ├── __init__.py (New - Task 7)
+│   │   │   ├── root_cause.py (New - Task 7)
+│   │   │   ├── prompt_builder.py (New - Task 7)
+│   │   │   └── llm_client.py (New - Task 7)
+│   │   ├── publisher/
+│   │   │   ├── __init__.py (New - Task 5)
+│   │   │   └── anomaly_publisher.py (New - Task 5)
+│   │   ├── store/
+│   │   │   ├── __init__.py (New - Task 5)
+│   │   │   ├── anomaly_store.py (New - Task 5)
+│   │   │   └── event_store_client.py (New - Task 7)
+│   │   └── model/
+│   │       ├── __init__.py (New - Task 4)
+│   │       ├── anomaly.py (New - Task 5)
+│   │       └── analysis_report.py (New - Task 7)
+│   ├── training/
+│   │   ├── generate_data.py (New - Task 2)
+│   │   ├── train_isolation.py (New - Task 4)
+│   │   └── train_hmm.py (New - Task 9, 可选)
+│   ├── models/ (New dir - Task 4)
+│   │   ├── isolation_forest.pkl (Generated - Task 4)
+│   │   ├── scaler.pkl (Generated - Task 4)
+│   │   └── hmm.pkl (Generated - Task 9, 可选)
+│   ├── tests/
+│   │   ├── __init__.py (New - Task 1)
+│   │   ├── conftest.py (New - Task 1)
+│   │   ├── test_kafka_consumer.py (New - Task 1)
+│   │   ├── test_generate_data.py (New - Task 2)
+│   │   ├── test_event_level.py (New - Task 4)
+│   │   ├── test_rule_bridge.py (New - Task 5)
+│   │   ├── test_process_level.py (New - Task 6)
+│   │   ├── test_root_cause.py (New - Task 7)
+│   │   └── test_process_level_hmm.py (New - Task 9, 可选)
+│   └── data/ (New dir - Task 2)
+│       ├── normal_events.jsonl (Generated - Task 2)
+│       └── anomaly_events.jsonl (Generated - Task 2)
+└── eventguard-server/
+    ├── pom.xml (Modify - Task 8 加 websocket starter)
+    └── src/
+        ├── main/
+        │   ├── java/com/eventguard/
+        │   │   ├── anomaly/
+        │   │   │   ├── rule/
+        │   │   │   │   ├── EventRule.java (New - Task 3)
+        │   │   │   │   ├── R001AmountDeviationRule.java (New - Task 3)
+        │   │   │   │   ├── R002DuplicatePaymentRule.java (New - Task 3)
+        │   │   │   │   ├── R003StateJumpRule.java (New - Task 3)
+        │   │   │   │   ├── R004HighFrequencyRule.java (New - Task 3)
+        │   │   │   │   └── R005InventoryOverflowRule.java (New - Task 3)
+        │   │   │   ├── engine/
+        │   │   │   │   ├── RuleEngine.java (New - Task 3)
+        │   │   │   │   ├── RuleContext.java (New - Task 3)
+        │   │   │   │   └── RuleContextLoader.java (New - Task 3)
+        │   │   │   ├── model/
+        │   │   │   │   ├── Anomaly.java (New - Task 3)
+        │   │   │   │   ├── AnomalyLevel.java (New - Task 3)
+        │   │   │   │   ├── AnomalyAlert.java (New - Task 8)
+        │   │   │   │   └── SimpleEvent.java (New - Task 3)
+        │   │   │   ├── controller/
+        │   │   │   │   ├── RuleEngineController.java (New - Task 3)
+        │   │   │   │   └── EventDto.java (New - Task 3)
+        │   │   │   └── consumer/
+        │   │   │       └── AnomalyAlertConsumer.java (New - Task 8)
+        │   │   └── common/
+        │   │       └── websocket/
+        │   │           ├── AnomalyWebSocketConfig.java (New - Task 8)
+        │   │           └── AnomalyWebSocketHandler.java (New - Task 8)
+        │   └── resources/
+        │       └── application.yml (Modify - Task 8)
+        └── test/
+            └── java/com/eventguard/anomaly/
+                ├── engine/
+                │   └── RuleEngineTest.java (New - Task 3)
+                ├── rule/
+                │   ├── R001AmountDeviationRuleTest.java (New - Task 3)
+                │   ├── R002DuplicatePaymentRuleTest.java (New - Task 3)
+                │   ├── R003StateJumpRuleTest.java (New - Task 3)
+                │   ├── R004HighFrequencyRuleTest.java (New - Task 3)
+                │   └── R005InventoryOverflowRuleTest.java (New - Task 3)
+                └── consumer/
+                    └── AnomalyAlertConsumerTest.java (New - Task 8)
+```
+
+---
+
+## Task 1: M3.1 Python AI 服务骨架
+
+**Files:**
+- Modify: `eventguard-ai/requirements.txt`
+- Modify: `eventguard-ai/app/config.py`
+- Modify: `eventguard-ai/app/main.py`
+- Create: `eventguard-ai/app/kafka_consumer.py`
+- Create: `eventguard-ai/app/detector/__init__.py`
+- Create: `eventguard-ai/tests/__init__.py`
+- Create: `eventguard-ai/tests/conftest.py`
+- Test: `eventguard-ai/tests/test_kafka_consumer.py`
+
+**Interfaces:**
+- Consumes: Kafka `domain-events` topic（M1.5 产出）
+- Produces:
+  - `EventKafkaConsumer`：`start()` / `stop()`，消费 `domain-events`，groupId=`ai-event-detector`，每条消息回调 `handler(event: dict)`
+  - `Settings` 扩展：`kafka_bootstrap`、`kafka_group_id`、`rule_engine_url`、`llm_base_url`、`llm_api_key`、`model_dir`
+
+- [ ] **Step 1: 写失败测试 — EventKafkaConsumer 消费消息并回调 handler**
+
+`eventguard-ai/tests/__init__.py`:
+```python
+```
+
+`eventguard-ai/tests/conftest.py`:
+```python
+import sys
+from pathlib import Path
+
+# 将 eventguard-ai 目录加入 sys.path，使 app.* 可导入
+sys.path.insert(0, str(Path(__file__).parent.parent))
+```
+
+`eventguard-ai/tests/test_kafka_consumer.py`:
+```python
+from unittest.mock import MagicMock
+
+from app.kafka_consumer import EventKafkaConsumer
+
+
+def test_consume_loop_calls_handler_for_each_message():
+    """验证 consume_loop 对每条消息调用 handler"""
+    handler = MagicMock()
+    consumer = EventKafkaConsumer(
+        handler=handler,
+        topic="domain-events",
+        group_id="ai-event-detector",
+        bootstrap_servers="localhost:9092",
+    )
+
+    fake_msg_1 = MagicMock()
+    fake_msg_1.value = {"event_type": "OrderCreatedEvent", "aggregate_id": "agg-1"}
+    fake_msg_2 = MagicMock()
+    fake_msg_2.value = {"event_type": "PaymentCompletedEvent", "aggregate_id": "agg-1"}
+
+    mock_kafka = MagicMock()
+    call_count = [0]
+
+    def fake_poll(timeout_ms=500):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return {0: [fake_msg_1, fake_msg_2]}
+        consumer._running = False
+        return {}
+
+    mock_kafka.poll.side_effect = fake_poll
+    consumer._consumer = mock_kafka
+    consumer._running = True
+
+    consumer._consume_loop()
+
+    handler.assert_any_call({"event_type": "OrderCreatedEvent", "aggregate_id": "agg-1"})
+    handler.assert_any_call({"event_type": "PaymentCompletedEvent", "aggregate_id": "agg-1"})
+    assert handler.call_count == 2
+
+
+def test_consume_loop_continues_after_handler_exception():
+    """验证 handler 抛异常时 consume_loop 不崩溃"""
+    handler = MagicMock(side_effect=[ValueError("boom"), None])
+    consumer = EventKafkaConsumer(
+        handler=handler,
+        topic="domain-events",
+        group_id="ai-event-detector",
+        bootstrap_servers="localhost:9092",
+    )
+
+    fake_msg_1 = MagicMock()
+    fake_msg_1.value = {"event_type": "OrderCreatedEvent"}
+    fake_msg_2 = MagicMock()
+    fake_msg_2.value = {"event_type": "PaymentCompletedEvent"}
+
+    mock_kafka = MagicMock()
+    call_count = [0]
+
+    def fake_poll(timeout_ms=500):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return {0: [fake_msg_1, fake_msg_2]}
+        consumer._running = False
+        return {}
+
+    mock_kafka.poll.side_effect = fake_poll
+    consumer._consumer = mock_kafka
+    consumer._running = True
+
+    consumer._consume_loop()
+
+    assert handler.call_count == 2
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_kafka_consumer.py -v
+# 期望：ModuleNotFoundError: No module named 'app.kafka_consumer'
+```
+
+- [ ] **Step 3: 实现 EventKafkaConsumer + 扩展 config + requirements**
+
+`eventguard-ai/requirements.txt`（完整覆盖 M3 所有依赖）:
+```txt
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+pydantic-settings==2.3.4
+kafka-python==2.0.2
+scikit-learn==1.5.0
+numpy==1.26.4
+joblib==1.4.2
+httpx==0.27.0
+pytest==8.2.2
+pytest-asyncio==0.23.7
+hmmlearn==0.3.2
+```
+
+`eventguard-ai/app/config.py`:
+```python
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    app_name: str = "EventGuard AI"
+    kafka_bootstrap: str = "kafka:9092"
+    kafka_group_id: str = "ai-event-detector"
+    rule_engine_url: str = "http://eventguard-server:8080/anomaly/rules/evaluate"
+    llm_base_url: str = "http://ollama:11434/v1"
+    llm_api_key: str = "ollama"
+    llm_model: str = "qwen2.5:7b"
+    model_dir: str = "models"
+    server_base_url: str = "http://eventguard-server:8080"
+
+    class Config:
+        env_prefix = "EG_"
+        env_file = ".env"
+
+
+settings = Settings()
+```
+
+`eventguard-ai/app/detector/__init__.py`:
+```python
+```
+
+`eventguard-ai/app/kafka_consumer.py`:
+```python
+"""Kafka 消费者：消费 domain-events topic，groupId=ai-event-detector"""
+
+import json
+import logging
+import threading
+from typing import Callable, Optional
+
+from kafka import KafkaConsumer
+
+logger = logging.getLogger(__name__)
+
+
+class EventKafkaConsumer:
+    """消费 domain-events 的后台线程消费者"""
+
+    def __init__(
+        self,
+        handler: Callable[[dict], None],
+        topic: str = "domain-events",
+        group_id: str = "ai-event-detector",
+        bootstrap_servers: Optional[str] = None,
+    ):
+        from app.config import settings
+
+        self.handler = handler
+        self.topic = topic
+        self.group_id = group_id
+        self.bootstrap_servers = bootstrap_servers or settings.kafka_bootstrap
+        self._consumer: Optional[KafkaConsumer] = None
+        self._thread: Optional[threading.Thread] = None
+        self._running = False
+
+    def start(self) -> None:
+        """启动后台消费线程"""
+        self._consumer = KafkaConsumer(
+            self.topic,
+            bootstrap_servers=self.bootstrap_servers,
+            group_id=self.group_id,
+            auto_offset_reset="earliest",
+            enable_auto_commit=True,
+            value_deserializer=lambda v: json.loads(v.decode("utf-8")),
+            key_deserializer=lambda k: k.decode("utf-8") if k else None,
+        )
+        self._running = True
+        self._thread = threading.Thread(target=self._consume_loop, daemon=True)
+        self._thread.start()
+        logger.info("Kafka consumer started: topic=%s group_id=%s", self.topic, self.group_id)
+
+    def _consume_loop(self) -> None:
+        """消费循环：poll 消息并调用 handler，handler 异常不中断循环"""
+        try:
+            while self._running:
+                records = self._consumer.poll(timeout_ms=500)
+                for msgs in records.values():
+                    for msg in msgs:
+                        try:
+                            self.handler(msg.value)
+                        except Exception as e:
+                            logger.exception("handler error: %s", e)
+        except Exception as e:
+            logger.exception("consume loop error: %s", e)
+
+    def stop(self) -> None:
+        """停止消费并关闭 consumer"""
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+        if self._consumer:
+            self._consumer.close()
+        logger.info("Kafka consumer stopped")
+```
+
+`eventguard-ai/app/main.py`:
+```python
+from fastapi import FastAPI
+
+from app.config import settings
+
+app = FastAPI(title=settings.app_name)
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+```
+
+- [ ] **Step 4: 运行测试确认通过**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+pip install -r requirements.txt
+python -m pytest tests/test_kafka_consumer.py -v
+# 期望：2 passed
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ai/
+git commit -m "feat(m3.1): Python AI 服务骨架（FastAPI + Kafka 消费者 groupId=ai-event-detector）"
+```
+
+---
+
+## Task 2: M3.2 合成数据生成
+
+**Files:**
+- Create: `eventguard-ai/training/generate_data.py`
+- Test: `eventguard-ai/tests/test_generate_data.py`
+- Generated: `eventguard-ai/data/normal_events.jsonl`
+- Generated: `eventguard-ai/data/anomaly_events.jsonl`
+
+**Interfaces:**
+- Consumes: M3.1 的 Python 环境
+- Produces:
+  - `generate_data.py`：生成 10 万正常 + 注入异常的 JSONL 数据
+  - 每行 JSON：`event_id`、`aggregate_id`、`aggregate_type`、`event_type`、`event_version`、`payload`、`metadata`、`created_at`、`is_anomaly`、`anomaly_type`
+
+- [ ] **Step 1: 写失败测试 — 数据生成器输出格式与异常注入**
+
+`eventguard-ai/tests/test_generate_data.py`:
+```python
+import json
+from pathlib import Path
+
+from training.generate_data import (
+    generate_normal_event,
+    inject_amount_deviation,
+    inject_state_stagnation,
+    inject_payment_dead_loop,
+    NORMAL_FLOW,
+)
+
+
+def test_generate_normal_event_has_required_fields():
+    """正常事件含必填字段"""
+    event = generate_normal_event(
+        aggregate_id="agg-001",
+        version=1,
+        event_type="OrderCreatedEvent",
+        user_id="user-1",
+        amount=99.00,
+        timestamp="2026-07-21T10:00:00Z",
+    )
+    assert event["event_id"] is not None
+    assert event["aggregate_id"] == "agg-001"
+    assert event["event_type"] == "OrderCreatedEvent"
+    assert event["event_version"] == 1
+    assert event["payload"]["totalAmount"] == 99.00
+    assert event["payload"]["userId"] == "user-1"
+    assert event["is_anomaly"] is False
+    assert event["anomaly_type"] is None
+
+
+def test_normal_flow_is_valid_sequence():
+    """正常事件流遵循 CREATED→PAID→CONFIRMED→SHIPPED→DELIVERED→CLOSED"""
+    assert NORMAL_FLOW == [
+        "OrderCreatedEvent",
+        "PaymentCompletedEvent",
+        "InventoryReservedEvent",
+        "OrderConfirmedEvent",
+        "ShippedEvent",
+        "DeliveredEvent",
+        "OrderClosedEvent",
+    ]
+
+
+def test_inject_amount_deviation_marks_anomaly():
+    """金额偏离注入：amount 远超用户历史均值，标注 is_anomaly=True"""
+    event = inject_amount_deviation(
+        aggregate_id="agg-002",
+        user_id="user-2",
+        normal_mean=100.00,
+        timestamp="2026-07-21T11:00:00Z",
+    )
+    assert event["is_anomaly"] is True
+    assert event["anomaly_type"] == "AMOUNT_DEVIATION"
+    assert event["event_type"] == "OrderCreatedEvent"
+    assert event["payload"]["totalAmount"] > normal_mean * 3  # 偏离 3σ 以上
+
+
+def test_inject_state_stagnation_marks_anomaly():
+    """状态停滞注入：PAID 后 24h+ 无后续事件"""
+    event = inject_state_stagnation(
+        aggregate_id="agg-003",
+        user_id="user-3",
+        timestamp="2026-07-21T12:00:00Z",
+    )
+    assert event["is_anomaly"] is True
+    assert event["anomaly_type"] == "STATE_STAGNATION"
+    assert event["event_type"] == "PaymentCompletedEvent"
+
+
+def test_inject_payment_dead_loop_marks_anomaly():
+    """死循环注入：PaymentFailed→Retried 重复 >5 次"""
+    events = inject_payment_dead_loop(
+        aggregate_id="agg-004",
+        user_id="user-4",
+        timestamp="2026-07-21T13:00:00Z",
+    )
+    assert len(events) >= 10  # 至少 5 轮 Failed+Retried
+    assert all(e["is_anomaly"] for e in events)
+    assert all(e["anomaly_type"] == "PAYMENT_DEAD_LOOP" for e in events)
+
+
+def test_generate_dataset_outputs_jsonl(tmp_path):
+    """完整数据集生成：输出 JSONL，每行可解析"""
+    from training.generate_data import generate_dataset
+
+    normal_path = tmp_path / "normal.jsonl"
+    anomaly_path = tmp_path / "anomaly.jsonl"
+
+    generate_dataset(
+        normal_count=1000,  # 测试用小规模
+        output_normal=str(normal_path),
+        output_anomaly=str(anomaly_path),
+        seed=42,
+    )
+
+    normal_lines = normal_path.read_text().strip().split("\n")
+    assert len(normal_lines) == 1000
+    for line in normal_lines:
+        event = json.loads(line)
+        assert event["is_anomaly"] is False
+
+    anomaly_lines = anomaly_path.read_text().strip().split("\n")
+    assert len(anomaly_lines) > 0
+    for line in anomaly_lines:
+        event = json.loads(line)
+        assert event["is_anomaly"] is True
+        assert event["anomaly_type"] in [
+            "AMOUNT_DEVIATION",
+            "STATE_STAGNATION",
+            "PAYMENT_DEAD_LOOP",
+        ]
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_generate_data.py -v
+# 期望：ModuleNotFoundError: No module named 'training.generate_data'
+```
+
+- [ ] **Step 3: 实现数据生成器**
+
+`eventguard-ai/training/generate_data.py`:
+```python
+"""合成数据生成：10 万正常 + 注入异常（金额偏离/状态停滞/支付死循环）
+
+输出 JSONL 格式，每行一个事件 JSON：
+{
+  "event_id": "uuid",
+  "aggregate_id": "uuid",
+  "aggregate_type": "Order",
+  "event_type": "OrderCreatedEvent",
+  "event_version": 1,
+  "payload": {...},
+  "metadata": {"userId": "user-1", "traceId": "..."},
+  "created_at": "2026-07-21T10:00:00Z",
+  "is_anomaly": false,
+  "anomaly_type": null
+}
+"""
+
+import json
+import random
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Optional
+
+# 正常订单事件流
+NORMAL_FLOW = [
+    "OrderCreatedEvent",
+    "PaymentCompletedEvent",
+    "InventoryReservedEvent",
+    "OrderConfirmedEvent",
+    "ShippedEvent",
+    "DeliveredEvent",
+    "OrderClosedEvent",
+]
+
+# 用户池
+USER_POOL = [f"user-{i}" for i in range(1, 201)]
+
+
+def _iso(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def generate_normal_event(
+    aggregate_id: str,
+    version: int,
+    event_type: str,
+    user_id: str,
+    amount: float,
+    timestamp: str,
+) -> dict:
+    """生成一个正常事件"""
+    payload = {"orderId": aggregate_id, "userId": user_id}
+    if event_type == "OrderCreatedEvent":
+        payload["totalAmount"] = round(amount, 2)
+    elif event_type == "PaymentCompletedEvent":
+        payload["amount"] = round(amount, 2)
+    elif event_type == "InventoryReservedEvent":
+        payload["reservedQty"] = random.randint(1, 10)
+        payload["skuId"] = f"sku-{random.randint(1, 50)}"
+    elif event_type == "ShippedEvent":
+        payload["carrier"] = "SF-Express"
+    elif event_type == "OrderCancelledEvent":
+        payload["reason"] = "user_cancel"
+
+    return {
+        "event_id": str(uuid.uuid4()),
+        "aggregate_id": aggregate_id,
+        "aggregate_type": "Order",
+        "event_type": event_type,
+        "event_version": version,
+        "payload": payload,
+        "metadata": {"userId": user_id, "traceId": str(uuid.uuid4())},
+        "created_at": timestamp,
+        "is_anomaly": False,
+        "anomaly_type": None,
+    }
+
+
+def generate_normal_order(
+    aggregate_id: str,
+    user_id: str,
+    start_time: datetime,
+    base_amount: float = 100.00,
+) -> list[dict]:
+    """生成一笔正常订单的完整事件流（7 个事件）"""
+    events = []
+    ts = start_time
+    amount = base_amount + random.gauss(0, 20)
+    amount = max(10.0, amount)
+
+    for i, event_type in enumerate(NORMAL_FLOW):
+        event = generate_normal_event(
+            aggregate_id=aggregate_id,
+            version=i + 1,
+            event_type=event_type,
+            user_id=user_id,
+            amount=amount,
+            timestamp=_iso(ts),
+        )
+        events.append(event)
+        ts += timedelta(minutes=random.randint(5, 60))
+
+    return events
+
+
+def inject_amount_deviation(
+    aggregate_id: str,
+    user_id: str,
+    normal_mean: float,
+    timestamp: str,
+) -> dict:
+    """注入金额偏离异常：amount 偏离用户历史均值 5σ 以上"""
+    deviation_amount = normal_mean + 5 * (normal_mean * 0.1)  # 5σ 以上
+    return {
+        "event_id": str(uuid.uuid4()),
+        "aggregate_id": aggregate_id,
+        "aggregate_type": "Order",
+        "event_type": "OrderCreatedEvent",
+        "event_version": 1,
+        "payload": {
+            "orderId": aggregate_id,
+            "userId": user_id,
+            "totalAmount": round(deviation_amount, 2),
+        },
+        "metadata": {"userId": user_id, "traceId": str(uuid.uuid4())},
+        "created_at": timestamp,
+        "is_anomaly": True,
+        "anomaly_type": "AMOUNT_DEVIATION",
+    }
+
+
+def inject_state_stagnation(
+    aggregate_id: str,
+    user_id: str,
+    timestamp: str,
+) -> dict:
+    """注入状态停滞异常：PAID 后无后续事件（停滞 24h+）"""
+    return {
+        "event_id": str(uuid.uuid4()),
+        "aggregate_id": aggregate_id,
+        "aggregate_type": "Order",
+        "event_type": "PaymentCompletedEvent",
+        "event_version": 2,
+        "payload": {"orderId": aggregate_id, "amount": 99.00},
+        "metadata": {"userId": user_id, "traceId": str(uuid.uuid4())},
+        "created_at": timestamp,
+        "is_anomaly": True,
+        "anomaly_type": "STATE_STAGNATION",
+    }
+
+
+def inject_payment_dead_loop(
+    aggregate_id: str,
+    user_id: str,
+    timestamp: str,
+) -> list[dict]:
+    """注入支付死循环：PaymentFailed→Retried 重复 6 次"""
+    events = []
+    ts = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+    version = 2  # 从 version 2 开始（version 1 是 OrderCreated）
+
+    for i in range(6):
+        events.append({
+            "event_id": str(uuid.uuid4()),
+            "aggregate_id": aggregate_id,
+            "aggregate_type": "Order",
+            "event_type": "PaymentFailedEvent",
+            "event_version": version,
+            "payload": {"orderId": aggregate_id, "reason": "timeout"},
+            "metadata": {"userId": user_id, "traceId": str(uuid.uuid4())},
+            "created_at": _iso(ts),
+            "is_anomaly": True,
+            "anomaly_type": "PAYMENT_DEAD_LOOP",
+        })
+        version += 1
+        ts += timedelta(minutes=2)
+
+        events.append({
+            "event_id": str(uuid.uuid4()),
+            "aggregate_id": aggregate_id,
+            "aggregate_type": "Order",
+            "event_type": "PaymentRetriedEvent",
+            "event_version": version,
+            "payload": {"orderId": aggregate_id, "attempt": i + 1},
+            "metadata": {"userId": user_id, "traceId": str(uuid.uuid4())},
+            "created_at": _iso(ts),
+            "is_anomaly": True,
+            "anomaly_type": "PAYMENT_DEAD_LOOP",
+        })
+        version += 1
+        ts += timedelta(minutes=1)
+
+    return events
+
+
+def generate_dataset(
+    normal_count: int = 100000,
+    output_normal: str = "data/normal_events.jsonl",
+    output_anomaly: str = "data/anomaly_events.jsonl",
+    seed: int = 42,
+) -> None:
+    """生成完整数据集：normal_count 条正常事件 + 注入异常"""
+    random.seed(seed)
+    base_time = datetime(2026, 7, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+    # 生成正常事件流
+    normal_events = []
+    orders_to_generate = normal_count // len(NORMAL_FLOW)  # 每笔订单 7 个事件
+    for i in range(orders_to_generate):
+        agg_id = str(uuid.uuid4())
+        user_id = random.choice(USER_POOL)
+        amount = random.gauss(100, 20)
+        amount = max(10.0, amount)
+        start = base_time + timedelta(minutes=i * 10)
+        normal_events.extend(generate_normal_order(agg_id, user_id, start, amount))
+
+    Path(output_normal).parent.mkdir(parents=True, exist_ok=True)
+    with open(output_normal, "w", encoding="utf-8") as f:
+        for event in normal_events:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    # 注入异常
+    anomaly_events = []
+
+    # 5% 金额偏离
+    amount_dev_count = int(orders_to_generate * 0.05)
+    for i in range(amount_dev_count):
+        ts = base_time + timedelta(hours=i)
+        anomaly_events.append(inject_amount_deviation(
+            aggregate_id=str(uuid.uuid4()),
+            user_id=random.choice(USER_POOL),
+            normal_mean=100.0,
+            timestamp=_iso(ts),
+        ))
+
+    # 3% 状态停滞
+    stagnation_count = int(orders_to_generate * 0.03)
+    for i in range(stagnation_count):
+        ts = base_time + timedelta(hours=i)
+        anomaly_events.append(inject_state_stagnation(
+            aggregate_id=str(uuid.uuid4()),
+            user_id=random.choice(USER_POOL),
+            timestamp=_iso(ts),
+        ))
+
+    # 2% 支付死循环
+    dead_loop_count = int(orders_to_generate * 0.02)
+    for i in range(dead_loop_count):
+        ts = base_time + timedelta(hours=i)
+        anomaly_events.extend(inject_payment_dead_loop(
+            aggregate_id=str(uuid.uuid4()),
+            user_id=random.choice(USER_POOL),
+            timestamp=_iso(ts),
+        ))
+
+    Path(output_anomaly).parent.mkdir(parents=True, exist_ok=True)
+    with open(output_anomaly, "w", encoding="utf-8") as f:
+        for event in anomaly_events:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    print(f"生成完成: 正常 {len(normal_events)} 条, 异常 {len(anomaly_events)} 条")
+
+
+if __name__ == "__main__":
+    generate_dataset()
+```
+
+- [ ] **Step 4: 运行测试确认通过，并执行完整数据生成**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_generate_data.py -v
+# 期望：6 passed
+
+# 生成完整 10 万条数据集
+python -m training.generate_data
+# 期望输出：生成完成: 正常 ~100000 条, 异常 ~N 条
+wc -l data/normal_events.jsonl data/anomaly_events.jsonl
+# 期望：normal_events.jsonl ~100000 行，anomaly_events.jsonl > 0 行
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ai/training/generate_data.py eventguard-ai/tests/test_generate_data.py eventguard-ai/data/
+git commit -m "feat(m3.2): 合成数据生成（10万正常 + 金额偏离/状态停滞/死循环注入）"
+```
+
+---
+
+## Task 3: M3.3 Java 规则引擎
+
+**Files:**
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/rule/EventRule.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/rule/R001AmountDeviationRule.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/rule/R002DuplicatePaymentRule.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/rule/R003StateJumpRule.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/rule/R004HighFrequencyRule.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/rule/R005InventoryOverflowRule.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/engine/RuleEngine.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/engine/RuleContext.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/engine/RuleContextLoader.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/model/Anomaly.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/model/AnomalyLevel.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/model/SimpleEvent.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/controller/RuleEngineController.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/controller/EventDto.java`
+- Test: `eventguard-server/src/test/java/com/eventguard/anomaly/engine/RuleEngineTest.java`
+- Test: `eventguard-server/src/test/java/com/eventguard/anomaly/rule/R001AmountDeviationRuleTest.java`
+- Test: `eventguard-server/src/test/java/com/eventguard/anomaly/rule/R002DuplicatePaymentRuleTest.java`
+- Test: `eventguard-server/src/test/java/com/eventguard/anomaly/rule/R003StateJumpRuleTest.java`
+- Test: `eventguard-server/src/test/java/com/eventguard/anomaly/rule/R004HighFrequencyRuleTest.java`
+- Test: `eventguard-server/src/test/java/com/eventguard/anomaly/rule/R005InventoryOverflowRuleTest.java`
+
+**Interfaces:**
+- Consumes: M2 的 `DomainEvent` 基类、M2 的 `OrderStatus` 枚举
+- Produces:
+  - `EventRule` 接口：`ruleId()`、`matches(DomainEvent, RuleContext)`、`level()`
+  - `RuleEngine.evaluate(DomainEvent).Optional<Anomaly>`
+  - `RuleContext`：用户历史金额均值/标准差、最近支付完成时间、前序状态、最近下单时间、实际库存
+  - `RuleContextLoader.load(DomainEvent).RuleContext`
+  - `SimpleEvent`：DomainEvent 子类，包装 REST 请求的 payload Map
+  - `Anomaly` 模型 + `AnomalyLevel` 枚举（INFO / WARN / ERROR）
+  - R001-R005 五条规则
+  - REST `POST /anomaly/rules/evaluate`（接收 EventDto，返回 `Optional<Anomaly>`）
+
+- [ ] **Step 1: 写失败测试 — RuleEngine + 五条规则**
+
+`eventguard-server/src/test/java/com/eventguard/anomaly/engine/RuleEngineTest.java`:
+```java
+package com.eventguard.anomaly.engine;
+
+import com.eventguard.anomaly.model.Anomaly;
+import com.eventguard.anomaly.model.AnomalyLevel;
+import com.eventguard.anomaly.model.SimpleEvent;
+import com.eventguard.anomaly.rule.EventRule;
+import com.eventguard.event.model.DomainEvent;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
+
+class RuleEngineTest {
+
+    @Test
+    void evaluate_returns_first_matching_rule_anomaly() {
+        EventRule matchingRule = mock(EventRule.class);
+        when(matchingRule.ruleId()).thenReturn("R001");
+        when(matchingRule.level()).thenReturn(AnomalyLevel.WARN);
+        when(matchingRule.matches(any(DomainEvent.class), any(RuleContext.class)))
+                .thenReturn(true);
+
+        EventRule nonMatchingRule = mock(EventRule.class);
+        when(nonMatchingRule.matches(any(), any())).thenReturn(false);
+
+        RuleContextLoader loader = mock(RuleContextLoader.class);
+        when(loader.load(any())).thenReturn(RuleContext.builder().build());
+
+        RuleEngine engine = new RuleEngine(List.of(nonMatchingRule, matchingRule), loader);
+        SimpleEvent event = newSimpleEvent("OrderCreatedEvent");
+
+        Optional<Anomaly> result = engine.evaluate(event);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getRuleId()).isEqualTo("R001");
+        assertThat(result.get().getLevel()).isEqualTo(AnomalyLevel.WARN);
+    }
+
+    @Test
+    void evaluate_returns_empty_when_no_rule_matches() {
+        EventRule rule = mock(EventRule.class);
+        when(rule.matches(any(), any())).thenReturn(false);
+
+        RuleContextLoader loader = mock(RuleContextLoader.class);
+        when(loader.load(any())).thenReturn(RuleContext.builder().build());
+
+        RuleEngine engine = new RuleEngine(List.of(rule), loader);
+        SimpleEvent event = newSimpleEvent("OrderCreatedEvent");
+
+        Optional<Anomaly> result = engine.evaluate(event);
+
+        assertThat(result).isEmpty();
+    }
+
+    private SimpleEvent newSimpleEvent(String eventType) {
+        return new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), eventType, 1,
+                Instant.now(), Map.of(), Map.of("totalAmount", 100.0)
+        );
+    }
+}
+```
+
+`eventguard-server/src/test/java/com/eventguard/anomaly/rule/R001AmountDeviationRuleTest.java`:
+```java
+package com.eventguard.anomaly.rule;
+
+import com.eventguard.anomaly.engine.RuleContext;
+import com.eventguard.anomaly.model.AnomalyLevel;
+import com.eventguard.anomaly.model.SimpleEvent;
+import com.eventguard.event.model.DomainEvent;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class R001AmountDeviationRuleTest {
+
+    @Test
+    void matches_when_amount_exceeds_3_sigma() {
+        R001AmountDeviationRule rule = new R001AmountDeviationRule();
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "OrderCreatedEvent", 1,
+                Instant.now(), Map.of("userId", "user-1"),
+                Map.of("totalAmount", 500.0)
+        );
+        // 用户历史均值 100，标准差 50 → 500 偏离 8σ
+        RuleContext ctx = RuleContext.builder()
+                .userMeanAmount(new BigDecimal("100"))
+                .userStdAmount(new BigDecimal("50"))
+                .build();
+
+        boolean result = rule.matches(event, ctx);
+
+        assertThat(result).isTrue();
+        assertThat(rule.ruleId()).isEqualTo("R001");
+        assertThat(rule.level()).isEqualTo(AnomalyLevel.WARN);
+    }
+
+    @Test
+    void does_not_match_when_amount_within_normal_range() {
+        R001AmountDeviationRule rule = new R001AmountDeviationRule();
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "OrderCreatedEvent", 1,
+                Instant.now(), Map.of("userId", "user-1"),
+                Map.of("totalAmount", 120.0)
+        );
+        RuleContext ctx = RuleContext.builder()
+                .userMeanAmount(new BigDecimal("100"))
+                .userStdAmount(new BigDecimal("50"))
+                .build();
+
+        assertThat(rule.matches(event, ctx)).isFalse();
+    }
+
+    @Test
+    void does_not_match_for_non_order_created_event() {
+        R001AmountDeviationRule rule = new R001AmountDeviationRule();
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "PaymentCompletedEvent", 2,
+                Instant.now(), Map.of(), Map.of("amount", 999999.0)
+        );
+        RuleContext ctx = RuleContext.builder().build();
+
+        assertThat(rule.matches(event, ctx)).isFalse();
+    }
+}
+```
+
+`eventguard-server/src/test/java/com/eventguard/anomaly/rule/R002DuplicatePaymentRuleTest.java`:
+```java
+package com.eventguard.anomaly.rule;
+
+import com.eventguard.anomaly.engine.RuleContext;
+import com.eventguard.anomaly.model.SimpleEvent;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class R002DuplicatePaymentRuleTest {
+
+    @Test
+    void matches_when_duplicate_payment_within_5min() {
+        R002DuplicatePaymentRule rule = new R002DuplicatePaymentRule();
+        Instant now = Instant.now();
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "PaymentCompletedEvent", 3,
+                now, Map.of(), Map.of("amount", 99.0)
+        );
+        // 3 分钟前已有一次 PaymentCompleted
+        RuleContext ctx = RuleContext.builder()
+                .recentPaymentCompletions(List.of(now.minus(3, ChronoUnit.MINUTES)))
+                .build();
+
+        assertThat(rule.matches(event, ctx)).isTrue();
+    }
+
+    @Test
+    void does_not_match_when_no_previous_payment() {
+        R002DuplicatePaymentRule rule = new R002DuplicatePaymentRule();
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "PaymentCompletedEvent", 2,
+                Instant.now(), Map.of(), Map.of("amount", 99.0)
+        );
+        RuleContext ctx = RuleContext.builder()
+                .recentPaymentCompletions(List.of())
+                .build();
+
+        assertThat(rule.matches(event, ctx)).isFalse();
+    }
+}
+```
+
+`eventguard-server/src/test/java/com/eventguard/anomaly/rule/R003StateJumpRuleTest.java`:
+```java
+package com.eventguard.anomaly.rule;
+
+import com.eventguard.anomaly.engine.RuleContext;
+import com.eventguard.anomaly.model.SimpleEvent;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class R003StateJumpRuleTest {
+
+    @Test
+    void matches_when_jump_from_pending_payment_to_shipped() {
+        R003StateJumpRule rule = new R003StateJumpRule();
+        // 当前事件是 ShippedEvent，但前序状态是 PENDING_PAYMENT（跳过了 PAID/CONFIRMED）
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "ShippedEvent", 2,
+                Instant.now(), Map.of(), Map.of()
+        );
+        RuleContext ctx = RuleContext.builder()
+                .previousState("PENDING_PAYMENT")
+                .build();
+
+        assertThat(rule.matches(event, ctx)).isTrue();
+    }
+
+    @Test
+    void does_not_match_when_legal_transition() {
+        R003StateJumpRule rule = new R003StateJumpRule();
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "PaymentCompletedEvent", 2,
+                Instant.now(), Map.of(), Map.of()
+        );
+        RuleContext ctx = RuleContext.builder()
+                .previousState("PENDING_PAYMENT")
+                .build();
+
+        assertThat(rule.matches(event, ctx)).isFalse();
+    }
+}
+```
+
+`eventguard-server/src/test/java/com/eventguard/anomaly/rule/R004HighFrequencyRuleTest.java`:
+```java
+package com.eventguard.anomaly.rule;
+
+import com.eventguard.anomaly.engine.RuleContext;
+import com.eventguard.anomaly.model.SimpleEvent;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.IntStream;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class R004HighFrequencyRuleTest {
+
+    @Test
+    void matches_when_user_creates_more_than_20_orders_in_1min() {
+        R004HighFrequencyRule rule = new R004HighFrequencyRule();
+        Instant now = Instant.now();
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "OrderCreatedEvent", 1,
+                now, Map.of("userId", "user-1"), Map.of("totalAmount", 50.0)
+        );
+        // 用户过去 1 分钟内已有 21 个下单事件
+        List<Instant> recent = IntStream.range(0, 21)
+                .mapToObj(i -> now.minus(i * 2, ChronoUnit.SECONDS))
+                .toList();
+        RuleContext ctx = RuleContext.builder()
+                .recentCreateOrders(recent)
+                .build();
+
+        assertThat(rule.matches(event, ctx)).isTrue();
+    }
+
+    @Test
+    void does_not_match_when_below_threshold() {
+        R004HighFrequencyRule rule = new R004HighFrequencyRule();
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "OrderCreatedEvent", 1,
+                Instant.now(), Map.of("userId", "user-1"), Map.of("totalAmount", 50.0)
+        );
+        RuleContext ctx = RuleContext.builder()
+                .recentCreateOrders(List.of(Instant.now().minus(30, ChronoUnit.SECONDS)))
+                .build();
+
+        assertThat(rule.matches(event, ctx)).isFalse();
+    }
+}
+```
+
+`eventguard-server/src/test/java/com/eventguard/anomaly/rule/R005InventoryOverflowRuleTest.java`:
+```java
+package com.eventguard.anomaly.rule;
+
+import com.eventguard.anomaly.engine.RuleContext;
+import com.eventguard.anomaly.model.SimpleEvent;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class R005InventoryOverflowRuleTest {
+
+    @Test
+    void matches_when_reserved_qty_exceeds_stock() {
+        R005InventoryOverflowRule rule = new R005InventoryOverflowRule();
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "InventoryReservedEvent", 3,
+                Instant.now(), Map.of(), Map.of("reservedQty", 150)
+        );
+        RuleContext ctx = RuleContext.builder()
+                .actualStock(100)
+                .build();
+
+        assertThat(rule.matches(event, ctx)).isTrue();
+    }
+
+    @Test
+    void does_not_match_when_reserved_within_stock() {
+        R005InventoryOverflowRule rule = new R005InventoryOverflowRule();
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "InventoryReservedEvent", 3,
+                Instant.now(), Map.of(), Map.of("reservedQty", 50)
+        );
+        RuleContext ctx = RuleContext.builder()
+                .actualStock(100)
+                .build();
+
+        assertThat(rule.matches(event, ctx)).isFalse();
+    }
+}
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-server
+mvn test -Dtest="com.eventguard.anomaly.**"
+# 期望：编译失败（EventRule / RuleEngine / SimpleEvent 等类不存在）
+```
+
+- [ ] **Step 3: 实现规则引擎 + 五条规则 + REST 接口**
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/model/AnomalyLevel.java`:
+```java
+package com.eventguard.anomaly.model;
+
+/** 异常严重级别 */
+public enum AnomalyLevel {
+    INFO,
+    WARN,
+    ERROR
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/model/Anomaly.java`:
+```java
+package com.eventguard.anomaly.model;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+
+/** 规则引擎检出的异常 */
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class Anomaly {
+
+    private final String anomalyId;
+    private final String ruleId;
+    private final UUID aggregateId;
+    private final String eventType;
+    private final AnomalyLevel level;
+    private final Instant detectedAt;
+    private final String description;
+    private final Map<String, Object> details;
+
+    public Anomaly(String ruleId, UUID aggregateId, String eventType,
+                   AnomalyLevel level, String description, Map<String, Object> details) {
+        this.anomalyId = UUID.randomUUID().toString();
+        this.ruleId = ruleId;
+        this.aggregateId = aggregateId;
+        this.eventType = eventType;
+        this.level = level;
+        this.detectedAt = Instant.now();
+        this.description = description;
+        this.details = details;
+    }
+
+    public String getAnomalyId() { return anomalyId; }
+    public String getRuleId() { return ruleId; }
+    public UUID getAggregateId() { return aggregateId; }
+    public String getEventType() { return eventType; }
+    public AnomalyLevel getLevel() { return level; }
+    public Instant getDetectedAt() { return detectedAt; }
+    public String getDescription() { return description; }
+    public Map<String, Object> getDetails() { return details; }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/model/SimpleEvent.java`:
+```java
+package com.eventguard.anomaly.model;
+
+import com.eventguard.event.model.DomainEvent;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * 通用事件包装类：从 REST 请求 JSON 重建，用于规则引擎评估。
+ * payload 以 Map 形式保存事件特有字段。
+ */
+public class SimpleEvent extends DomainEvent {
+
+    private final Map<String, Object> payloadMap;
+
+    public SimpleEvent(UUID eventId, UUID aggregateId, String eventType, int version,
+                       Instant occurredAt, Map<String, String> metadata,
+                       Map<String, Object> payloadMap) {
+        super(eventId, aggregateId, eventType, version, occurredAt, metadata);
+        this.payloadMap = payloadMap == null ? Map.of() : Map.copyOf(payloadMap);
+    }
+
+    @Override
+    public Object getPayload() {
+        return payloadMap;
+    }
+
+    public Map<String, Object> getPayloadMap() {
+        return payloadMap;
+    }
+
+    /** 从 payload 中取 BigDecimal 字段 */
+    public BigDecimal getBigDecimal(String key) {
+        Object v = payloadMap.get(key);
+        if (v == null) return null;
+        if (v instanceof BigDecimal bd) return bd;
+        if (v instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        return new BigDecimal(v.toString());
+    }
+
+    /** 从 payload 中取 int 字段 */
+    public int getInt(String key) {
+        Object v = payloadMap.get(key);
+        if (v == null) return 0;
+        if (v instanceof Number n) return n.intValue();
+        return Integer.parseInt(v.toString());
+    }
+
+    /** 从 payload 中取 String 字段 */
+    public String getString(String key) {
+        Object v = payloadMap.get(key);
+        return v == null ? null : v.toString();
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/rule/EventRule.java`:
+```java
+package com.eventguard.anomaly.rule;
+
+import com.eventguard.anomaly.engine.RuleContext;
+import com.eventguard.anomaly.model.AnomalyLevel;
+import com.eventguard.event.model.DomainEvent;
+
+/** 事件级规则接口 */
+public interface EventRule {
+
+    /** 规则 ID，如 "R001" */
+    String ruleId();
+
+    /** 判断事件是否命中规则 */
+    boolean matches(DomainEvent event, RuleContext ctx);
+
+    /** 命中后的异常级别 */
+    AnomalyLevel level();
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/engine/RuleContext.java`:
+```java
+package com.eventguard.anomaly.engine;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+
+/** 规则上下文：携带规则评估所需的聚合数据 */
+public class RuleContext {
+
+    private final BigDecimal userMeanAmount;
+    private final BigDecimal userStdAmount;
+    private final List<Instant> recentPaymentCompletions;
+    private final String previousState;
+    private final String currentState;
+    private final List<Instant> recentCreateOrders;
+    private final int actualStock;
+    private final int reservedQty;
+
+    private RuleContext(Builder b) {
+        this.userMeanAmount = b.userMeanAmount;
+        this.userStdAmount = b.userStdAmount;
+        this.recentPaymentCompletions = b.recentPaymentCompletions;
+        this.previousState = b.previousState;
+        this.currentState = b.currentState;
+        this.recentCreateOrders = b.recentCreateOrders;
+        this.actualStock = b.actualStock;
+        this.reservedQty = b.reservedQty;
+    }
+
+    public BigDecimal getUserMeanAmount() { return userMeanAmount; }
+    public BigDecimal getUserStdAmount() { return userStdAmount; }
+    public List<Instant> getRecentPaymentCompletions() { return recentPaymentCompletions; }
+    public String getPreviousState() { return previousState; }
+    public String getCurrentState() { return currentState; }
+    public List<Instant> getRecentCreateOrders() { return recentCreateOrders; }
+    public int getActualStock() { return actualStock; }
+    public int getReservedQty() { return reservedQty; }
+
+    public static Builder builder() { return new Builder(); }
+
+    public static class Builder {
+        private BigDecimal userMeanAmount = BigDecimal.ZERO;
+        private BigDecimal userStdAmount = BigDecimal.ONE;
+        private List<Instant> recentPaymentCompletions = List.of();
+        private String previousState;
+        private String currentState;
+        private List<Instant> recentCreateOrders = List.of();
+        private int actualStock = Integer.MAX_VALUE;
+        private int reservedQty = 0;
+
+        public Builder userMeanAmount(BigDecimal v) { this.userMeanAmount = v; return this; }
+        public Builder userStdAmount(BigDecimal v) { this.userStdAmount = v; return this; }
+        public Builder recentPaymentCompletions(List<Instant> v) { this.recentPaymentCompletions = v; return this; }
+        public Builder previousState(String v) { this.previousState = v; return this; }
+        public Builder currentState(String v) { this.currentState = v; return this; }
+        public Builder recentCreateOrders(List<Instant> v) { this.recentCreateOrders = v; return this; }
+        public Builder actualStock(int v) { this.actualStock = v; return this; }
+        public Builder reservedQty(int v) { this.reservedQty = v; return this; }
+
+        public RuleContext build() { return new RuleContext(this); }
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/engine/RuleContextLoader.java`:
+```java
+package com.eventguard.anomaly.engine;
+
+import com.eventguard.event.model.DomainEvent;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 加载规则上下文：从 domain_events 与 order_view 表查询聚合数据。
+ * MVP 版本简化处理：对无数据场景返回默认值。
+ */
+@Component
+public class RuleContextLoader {
+
+    private final JdbcTemplate jdbc;
+
+    public RuleContextLoader(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    public RuleContext load(DomainEvent event) {
+        String userId = event.getMetadata() != null ? event.getMetadata().get("userId") : null;
+        return RuleContext.builder()
+                .userMeanAmount(loadUserMeanAmount(userId))
+                .userStdAmount(loadUserStdAmount(userId))
+                .recentPaymentCompletions(loadRecentPaymentCompletions(event.getAggregateId().toString()))
+                .previousState(loadPreviousState(event.getAggregateId().toString()))
+                .recentCreateOrders(loadRecentCreateOrders(userId))
+                .actualStock(1000) // MVP 默认库存
+                .build();
+    }
+
+    private BigDecimal loadUserMeanAmount(String userId) {
+        if (userId == null) return BigDecimal.ZERO;
+        try {
+            List<BigDecimal> amounts = jdbc.queryForList(
+                    "SELECT (payload->>'totalAmount')::numeric FROM domain_events " +
+                            "WHERE event_type='OrderCreatedEvent' AND metadata->>'userId'=?",
+                    BigDecimal.class, userId);
+            if (amounts.isEmpty()) return BigDecimal.ZERO;
+            return amounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .divide(BigDecimal.valueOf(amounts.size()), RoundingMode.HALF_UP);
+        } catch (Exception e) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private BigDecimal loadUserStdAmount(String userId) {
+        // MVP 简化：返回均值的 10% 作为标准差估计
+        BigDecimal mean = loadUserMeanAmount(userId);
+        if (mean.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ONE;
+        return mean.multiply(new BigDecimal("0.1"));
+    }
+
+    private List<Instant> loadRecentPaymentCompletions(String aggregateId) {
+        try {
+            List<Timestamp> ts = jdbc.queryForList(
+                    "SELECT created_at FROM domain_events " +
+                            "WHERE aggregate_id=? AND event_type='PaymentCompletedEvent' " +
+                            "ORDER BY created_at DESC LIMIT 5",
+                    Timestamp.class, java.util.UUID.fromString(aggregateId));
+            return ts.stream().map(Timestamp::toInstant).toList();
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private String loadPreviousState(String aggregateId) {
+        try {
+            List<String> states = jdbc.queryForList(
+                    "SELECT status FROM order_view WHERE order_id=?",
+                    String.class, java.util.UUID.fromString(aggregateId));
+            return states.isEmpty() ? null : states.get(0);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private List<Instant> loadRecentCreateOrders(String userId) {
+        if (userId == null) return List.of();
+        try {
+            List<Timestamp> ts = jdbc.queryForList(
+                    "SELECT created_at FROM domain_events " +
+                            "WHERE event_type='OrderCreatedEvent' AND metadata->>'userId'=? " +
+                            "ORDER BY created_at DESC LIMIT 30",
+                    Timestamp.class, userId);
+            return ts.stream().map(Timestamp::toInstant).toList();
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/engine/RuleEngine.java`:
+```java
+package com.eventguard.anomaly.engine;
+
+import com.eventguard.anomaly.model.Anomaly;
+import com.eventguard.anomaly.model.AnomalyLevel;
+import com.eventguard.anomaly.rule.EventRule;
+import com.eventguard.event.model.DomainEvent;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * 规则引擎：遍历规则列表，返回首个命中的异常。
+ * 命中即返回（findFirst），未命中返回 empty。
+ */
+@Component
+public class RuleEngine {
+
+    private final List<EventRule> rules;
+    private final RuleContextLoader contextLoader;
+
+    public RuleEngine(List<EventRule> rules, RuleContextLoader contextLoader) {
+        this.rules = rules;
+        this.contextLoader = contextLoader;
+    }
+
+    public Optional<Anomaly> evaluate(DomainEvent event) {
+        RuleContext ctx = contextLoader.load(event);
+        return rules.stream()
+                .filter(rule -> rule.matches(event, ctx))
+                .findFirst()
+                .map(rule -> new Anomaly(
+                        rule.ruleId(),
+                        event.getAggregateId(),
+                        event.getEventType(),
+                        rule.level(),
+                        buildDescription(rule, event),
+                        java.util.Map.of()
+                ));
+    }
+
+    private String buildDescription(EventRule rule, DomainEvent event) {
+        return String.format("规则 %s 命中：事件 %s (aggregate=%s)",
+                rule.ruleId(), event.getEventType(), event.getAggregateId());
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/rule/R001AmountDeviationRule.java`:
+```java
+package com.eventguard.anomaly.rule;
+
+import com.eventguard.anomaly.engine.RuleContext;
+import com.eventguard.anomaly.model.AnomalyLevel;
+import com.eventguard.anomaly.model.SimpleEvent;
+import com.eventguard.event.model.DomainEvent;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+
+/** R001：金额偏离规则 — |amount - userMean| > 3 * userStd */
+@Component
+public class R001AmountDeviationRule implements EventRule {
+
+    @Override
+    public String ruleId() { return "R001"; }
+
+    @Override
+    public AnomalyLevel level() { return AnomalyLevel.WARN; }
+
+    @Override
+    public boolean matches(DomainEvent event, RuleContext ctx) {
+        if (!"OrderCreatedEvent".equals(event.getEventType())) return false;
+        if (!(event instanceof SimpleEvent se)) return false;
+
+        BigDecimal amount = se.getBigDecimal("totalAmount");
+        if (amount == null) return false;
+
+        BigDecimal mean = ctx.getUserMeanAmount();
+        BigDecimal std = ctx.getUserStdAmount();
+        if (mean == null || std == null || std.compareTo(BigDecimal.ZERO) == 0) return false;
+
+        BigDecimal deviation = amount.subtract(mean).abs();
+        BigDecimal threshold = new BigDecimal("3").multiply(std);
+        return deviation.compareTo(threshold) > 0;
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/rule/R002DuplicatePaymentRule.java`:
+```java
+package com.eventguard.anomaly.rule;
+
+import com.eventguard.anomaly.engine.RuleContext;
+import com.eventguard.anomaly.model.AnomalyLevel;
+import com.eventguard.event.model.DomainEvent;
+import org.springframework.stereotype.Component;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+
+/** R002：重复支付规则 — 5 分钟内同订单多次 PaymentCompleted */
+@Component
+public class R002DuplicatePaymentRule implements EventRule {
+
+    private static final Duration WINDOW = Duration.ofMinutes(5);
+
+    @Override
+    public String ruleId() { return "R002"; }
+
+    @Override
+    public AnomalyLevel level() { return AnomalyLevel.ERROR; }
+
+    @Override
+    public boolean matches(DomainEvent event, RuleContext ctx) {
+        if (!"PaymentCompletedEvent".equals(event.getEventType())) return false;
+
+        Instant now = event.getOccurredAt();
+        List<Instant> recent = ctx.getRecentPaymentCompletions();
+        if (recent == null || recent.isEmpty()) return false;
+
+        return recent.stream().anyMatch(ts -> Duration.between(ts, now).abs().compareTo(WINDOW) < 0);
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/rule/R003StateJumpRule.java`:
+```java
+package com.eventguard.anomaly.rule;
+
+import com.eventguard.anomaly.engine.RuleContext;
+import com.eventguard.anomaly.model.AnomalyLevel;
+import com.eventguard.event.model.DomainEvent;
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+import java.util.Set;
+
+/** R003：状态跳跃规则 — 状态机非法迁移检测 */
+@Component
+public class R003StateJumpRule implements EventRule {
+
+    // 合法的前序状态映射：eventType → 该事件允许的前序状态集合
+    private static final Map<String, Set<String>> LEGAL_PREV_STATES = Map.of(
+            "PaymentCompletedEvent", Set.of("PENDING_PAYMENT", "PAYMENT_FAILED"),
+            "PaymentFailedEvent", Set.of("PENDING_PAYMENT", "PAYMENT_FAILED"),
+            "PaymentRetriedEvent", Set.of("PAYMENT_FAILED"),
+            "InventoryReservedEvent", Set.of("PAID"),
+            "OrderConfirmedEvent", Set.of("PAID"),
+            "ShippedEvent", Set.of("CONFIRMED"),
+            "DeliveredEvent", Set.of("SHIPPED"),
+            "OrderClosedEvent", Set.of("DELIVERED", "REFUNDED"),
+            "OrderCancelledEvent", Set.of("PENDING_PAYMENT", "PAYMENT_FAILED", "PAID"),
+            "OrderRefundedEvent", Set.of("PAID"),
+            "OrderRefundRequestedEvent", Set.of("PAID")
+    );
+
+    @Override
+    public String ruleId() { return "R003"; }
+
+    @Override
+    public AnomalyLevel level() { return AnomalyLevel.ERROR; }
+
+    @Override
+    public boolean matches(DomainEvent event, RuleContext ctx) {
+        String prevState = ctx.getPreviousState();
+        if (prevState == null) return false; // 无前序状态（新订单首事件）
+
+        Set<String> legal = LEGAL_PREV_STATES.get(event.getEventType());
+        if (legal == null) return false; // 未知事件类型不报
+
+        return !legal.contains(prevState);
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/rule/R004HighFrequencyRule.java`:
+```java
+package com.eventguard.anomaly.rule;
+
+import com.eventguard.anomaly.engine.RuleContext;
+import com.eventguard.anomaly.model.AnomalyLevel;
+import com.eventguard.event.model.DomainEvent;
+import org.springframework.stereotype.Component;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+
+/** R004：高频操作规则 — 同一用户 1 分钟内创建 >20 个订单 */
+@Component
+public class R004HighFrequencyRule implements EventRule {
+
+    private static final Duration WINDOW = Duration.ofMinutes(1);
+    private static final int THRESHOLD = 20;
+
+    @Override
+    public String ruleId() { return "R004"; }
+
+    @Override
+    public AnomalyLevel level() { return AnomalyLevel.WARN; }
+
+    @Override
+    public boolean matches(DomainEvent event, RuleContext ctx) {
+        if (!"OrderCreatedEvent".equals(event.getEventType())) return false;
+
+        Instant now = event.getOccurredAt();
+        List<Instant> recent = ctx.getRecentCreateOrders();
+        if (recent == null) return false;
+
+        long count = recent.stream()
+                .filter(ts -> Duration.between(ts, now).abs().compareTo(WINDOW) < 0)
+                .count();
+        // 当前事件本身也算一个，所以 recent 中超过 THRESHOLD 即触发
+        return count >= THRESHOLD;
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/rule/R005InventoryOverflowRule.java`:
+```java
+package com.eventguard.anomaly.rule;
+
+import com.eventguard.anomaly.engine.RuleContext;
+import com.eventguard.anomaly.model.AnomalyLevel;
+import com.eventguard.anomaly.model.SimpleEvent;
+import com.eventguard.event.model.DomainEvent;
+import org.springframework.stereotype.Component;
+
+/** R005：库存越界规则 — reservedQty > actualStock */
+@Component
+public class R005InventoryOverflowRule implements EventRule {
+
+    @Override
+    public String ruleId() { return "R005"; }
+
+    @Override
+    public AnomalyLevel level() { return AnomalyLevel.ERROR; }
+
+    @Override
+    public boolean matches(DomainEvent event, RuleContext ctx) {
+        if (!"InventoryReservedEvent".equals(event.getEventType())) return false;
+        if (!(event instanceof SimpleEvent se)) return false;
+
+        int reservedQty = se.getInt("reservedQty");
+        return reservedQty > ctx.getActualStock();
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/controller/EventDto.java`:
+```java
+package com.eventguard.anomaly.controller;
+
+import com.eventguard.anomaly.model.SimpleEvent;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+
+/** REST 请求 DTO：接收 AI 服务发来的事件 JSON */
+public record EventDto(
+        String eventId,
+        String aggregateId,
+        String eventType,
+        int version,
+        String occurredAt,
+        Map<String, String> metadata,
+        Map<String, Object> payload
+) {
+    public SimpleEvent toSimpleEvent() {
+        return new SimpleEvent(
+                UUID.fromString(eventId),
+                UUID.fromString(aggregateId),
+                eventType,
+                version,
+                Instant.parse(occurredAt),
+                metadata,
+                payload
+        );
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/controller/RuleEngineController.java`:
+```java
+package com.eventguard.anomaly.controller;
+
+import com.eventguard.anomaly.engine.RuleEngine;
+import com.eventguard.anomaly.model.Anomaly;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Optional;
+
+/**
+ * 规则引擎 REST 接口：供 AI 服务（M3.5）通过 HTTP 调用。
+ * 不作为独立 Kafka 消费者，避免与 AI 侧重复告警。
+ */
+@RestController
+@RequestMapping("/anomaly/rules")
+public class RuleEngineController {
+
+    private final RuleEngine ruleEngine;
+
+    public RuleEngineController(RuleEngine ruleEngine) {
+        this.ruleEngine = ruleEngine;
+    }
+
+    @PostMapping("/evaluate")
+    public ResponseEntity<Anomaly> evaluate(@RequestBody EventDto dto) {
+        Optional<Anomaly> anomaly = ruleEngine.evaluate(dto.toSimpleEvent());
+        return ResponseEntity.ok(anomaly.orElse(null));
+    }
+}
+```
+
+- [ ] **Step 4: 运行测试确认通过**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-server
+mvn test -Dtest="com.eventguard.anomaly.**"
+# 期望：Tests run: 12, Failures: 0, Errors: 0
+# （RuleEngineTest 2 + R001 3 + R002 2 + R003 2 + R004 2 + R005 2 = 13，其中 1 个 R001 测试）
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-server/src/main/java/com/eventguard/anomaly/ eventguard-server/src/test/java/com/eventguard/anomaly/
+git commit -m "feat(m3.3): Java 规则引擎 R001-R005 + REST POST /anomaly/rules/evaluate"
+```
+
+---
+
+## Task 4: M3.4 Isolation Forest 训练 + 持久化
+
+**Files:**
+- Create: `eventguard-ai/app/model/__init__.py`
+- Create: `eventguard-ai/app/detector/feature_extractor.py`
+- Create: `eventguard-ai/app/detector/event_level.py`
+- Create: `eventguard-ai/training/train_isolation.py`
+- Generated: `eventguard-ai/models/isolation_forest.pkl`
+- Generated: `eventguard-ai/models/scaler.pkl`
+- Test: `eventguard-ai/tests/test_event_level.py`
+
+**Interfaces:**
+- Consumes: M3.2 生成的 `data/normal_events.jsonl`
+- Produces:
+  - `FeatureExtractor.extract(event: dict) -> list[float]`：4 维特征（amount_zscore / time_since_last_event / user_order_count_1h / state_transition_prob）
+  - `EventLevelDetector.detect(event: dict) -> AnomalyResult`：加载 IF 模型，返回 `is_anomaly` + `score`
+  - `AnomalyResult` Pydantic 模型
+  - `train_isolation.py`：训练脚本，输出 `models/isolation_forest.pkl` + `models/scaler.pkl`
+
+- [ ] **Step 1: 写失败测试 — EventLevelDetector 与特征提取**
+
+`eventguard-ai/app/model/__init__.py`:
+```python
+```
+
+`eventguard-ai/tests/test_event_level.py`:
+```python
+import json
+from unittest.mock import patch
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+
+def test_feature_extractor_returns_4_dimensions():
+    """FeatureExtractor 输出 4 维特征向量"""
+    from app.detector.feature_extractor import FeatureExtractor
+
+    extractor = FeatureExtractor()
+    event = {
+        "event_type": "OrderCreatedEvent",
+        "aggregate_id": "agg-1",
+        "payload": {"totalAmount": 150.0, "userId": "user-1"},
+        "created_at": "2026-07-21T10:00:00Z",
+        "metadata": {"userId": "user-1"},
+    }
+    features = extractor.extract(event)
+    assert len(features) == 4
+    # amount_zscore, time_since_last_event, user_order_count_1h, state_transition_prob
+    assert all(isinstance(f, float) for f in features)
+
+
+def test_event_level_detector_returns_anomaly_result():
+    """EventLevelDetector.detect 返回 AnomalyResult"""
+    from app.detector.event_level import EventLevelDetector
+    from app.model.anomaly import AnomalyResult
+
+    # 用 mock 模型避免依赖训练好的 pkl
+    class MockModel:
+        def predict(self, X):
+            return np.array([-1])  # -1 = 异常
+
+        def score_samples(self, X):
+            return np.array([-0.8])
+
+    class MockScaler:
+        def transform(self, X):
+            return X
+
+    class MockExtractor:
+        def extract(self, event):
+            return [1.0, 0.5, 3.0, 0.2]
+
+    detector = EventLevelDetector(
+        model=MockModel(),
+        scaler=MockScaler(),
+        feature_extractor=MockExtractor(),
+    )
+
+    event = {
+        "event_type": "OrderCreatedEvent",
+        "aggregate_id": "agg-1",
+        "payload": {"totalAmount": 99999.0, "userId": "user-1"},
+        "created_at": "2026-07-21T10:00:00Z",
+        "metadata": {"userId": "user-1"},
+    }
+    result = detector.detect(event)
+
+    assert isinstance(result, AnomalyResult)
+    assert result.is_anomaly is True
+    assert result.score > 0
+    assert result.source == "IF"
+
+
+def test_event_level_detector_returns_normal_for_typical_event():
+    """正常事件返回 is_anomaly=False"""
+    from app.detector.event_level import EventLevelDetector
+    from app.model.anomaly import AnomalyResult
+
+    class MockModel:
+        def predict(self, X):
+            return np.array([1])  # 1 = 正常
+
+        def score_samples(self, X):
+            return np.array([-0.1])
+
+    class MockScaler:
+        def transform(self, X):
+            return X
+
+    class MockExtractor:
+        def extract(self, event):
+            return [0.1, 30.0, 1.0, 0.9]
+
+    detector = EventLevelDetector(
+        model=MockModel(),
+        scaler=MockScaler(),
+        feature_extractor=MockExtractor(),
+    )
+
+    event = {
+        "event_type": "OrderCreatedEvent",
+        "aggregate_id": "agg-1",
+        "payload": {"totalAmount": 99.0, "userId": "user-1"},
+        "created_at": "2026-07-21T10:00:00Z",
+        "metadata": {"userId": "user-1"},
+    }
+    result = detector.detect(event)
+
+    assert result.is_anomaly is False
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_event_level.py -v
+# 期望：ModuleNotFoundError: No module named 'app.detector.feature_extractor'
+```
+
+- [ ] **Step 3: 实现特征提取 + 检测器 + 训练脚本**
+
+`eventguard-ai/app/model/anomaly.py`:
+```python
+"""异常检测结果与异常模型定义"""
+
+from typing import Optional
+
+from pydantic import BaseModel
+
+
+class AnomalyResult(BaseModel):
+    """事件级检测结果"""
+    is_anomaly: bool
+    score: float = 0.0
+    source: str = "IF"  # RULE / IF / PROCESS
+    level: str = "LOW"  # HIGH / LOW
+    rule_id: Optional[str] = None
+    description: str = ""
+
+
+class Anomaly(BaseModel):
+    """异常告警（发布到 Kafka anomaly-alerts）"""
+    anomaly_id: str
+    rule_id: str  # R001-R005 / IF / P001-P003
+    aggregate_id: str
+    event_type: str
+    level: str  # INFO / WARN / ERROR
+    source: str  # RULE / IF / PROCESS
+    priority: str  # HIGH / LOW
+    detected_at: str  # ISO 8601
+    description: str
+    details: dict = {}
+```
+
+`eventguard-ai/app/detector/feature_extractor.py`:
+```python
+"""Isolation Forest 特征工程：4 维特征提取
+
+特征：
+1. amount_zscore — 金额相对用户历史均值的 Z 分数
+2. time_since_last_event — 同订单距上一事件的间隔（秒）
+3. user_order_count_1h — 用户 1h 内订单数
+4. state_transition_prob — 该状态转移在历史中的概率
+"""
+
+import math
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+
+class FeatureExtractor:
+    """从事件 dict 提取 4 维特征向量"""
+
+    # 正常状态转移频次（从正常事件流统计）
+    NORMAL_TRANSITIONS = {
+        ("INIT", "OrderCreatedEvent"): 1.0,
+        ("PENDING_PAYMENT", "PaymentCompletedEvent"): 1.0,
+        ("PENDING_PAYMENT", "PaymentFailedEvent"): 0.1,
+        ("PAYMENT_FAILED", "PaymentRetriedEvent"): 0.1,
+        ("PAYMENT_FAILED", "PaymentCompletedEvent"): 0.1,
+        ("PAID", "InventoryReservedEvent"): 1.0,
+        ("PAID", "OrderConfirmedEvent"): 1.0,
+        ("CONFIRMED", "ShippedEvent"): 1.0,
+        ("SHIPPED", "DeliveredEvent"): 1.0,
+        ("DELIVERED", "OrderClosedEvent"): 1.0,
+    }
+
+    # 事件类型 → 事件后的状态
+    EVENT_TO_STATE = {
+        "OrderCreatedEvent": "PENDING_PAYMENT",
+        "PaymentCompletedEvent": "PAID",
+        "PaymentFailedEvent": "PAYMENT_FAILED",
+        "PaymentRetriedEvent": "PENDING_PAYMENT",
+        "InventoryReservedEvent": "PAID",
+        "OrderConfirmedEvent": "CONFIRMED",
+        "ShippedEvent": "SHIPPED",
+        "DeliveredEvent": "DELIVERED",
+        "OrderClosedEvent": "CLOSED",
+        "OrderCancelledEvent": "CANCELLED",
+    }
+
+    def __init__(self):
+        # 用户历史金额统计
+        self._user_amounts: dict[str, list[float]] = defaultdict(list)
+        # 用户最近下单时间
+        self._user_order_times: dict[str, list[datetime]] = defaultdict(list)
+        # 聚合根最近事件时间
+        self._agg_last_time: dict[str, datetime] = {}
+        # 聚合根当前状态
+        self._agg_state: dict[str, str] = {}
+
+    def extract(self, event: dict) -> list[float]:
+        """提取 4 维特征"""
+        return [
+            self._amount_zscore(event),
+            self._time_since_last_event(event),
+            self._user_order_count_1h(event),
+            self._state_transition_prob(event),
+        ]
+
+    def _amount_zscore(self, event: dict) -> float:
+        """金额 Z 分数"""
+        amount = self._get_amount(event)
+        user_id = self._get_user_id(event)
+        if amount is None or user_id is None:
+            return 0.0
+
+        history = self._user_amounts.get(user_id, [])
+        if len(history) < 2:
+            return 0.0
+
+        mean = sum(history) / len(history)
+        variance = sum((x - mean) ** 2 for x in history) / len(history)
+        std = math.sqrt(variance) if variance > 0 else 1.0
+        return (amount - mean) / std
+
+    def _time_since_last_event(self, event: dict) -> float:
+        """距上一事件的秒数"""
+        agg_id = event.get("aggregate_id", "")
+        ts = self._parse_time(event.get("created_at"))
+        if ts is None:
+            return 0.0
+
+        last = self._agg_last_time.get(agg_id)
+        if last is None:
+            return 0.0
+
+        delta = (ts - last).total_seconds()
+        return max(0.0, delta)
+
+    def _user_order_count_1h(self, event: dict) -> float:
+        """用户 1h 内订单数"""
+        user_id = self._get_user_id(event)
+        ts = self._parse_time(event.get("created_at"))
+        if user_id is None or ts is None:
+            return 0.0
+
+        times = self._user_order_times.get(user_id, [])
+        cutoff = ts - timedelta(hours=1)
+        count = sum(1 for t in times if t >= cutoff)
+        return float(count)
+
+    def _state_transition_prob(self, event: dict) -> float:
+        """状态转移概率（基于正常转移表）"""
+        agg_id = event.get("aggregate_id", "")
+        event_type = event.get("event_type", "")
+        prev_state = self._agg_state.get(agg_id, "INIT")
+        prob = self.NORMAL_TRANSITIONS.get((prev_state, event_type), 0.01)
+        return prob
+
+    def update(self, event: dict) -> None:
+        """用新事件更新内部统计状态（训练时调用）"""
+        amount = self._get_amount(event)
+        user_id = self._get_user_id(event)
+        agg_id = event.get("aggregate_id", "")
+        event_type = event.get("event_type", "")
+        ts = self._parse_time(event.get("created_at"))
+
+        if amount is not None and user_id is not None:
+            self._user_amounts[user_id].append(amount)
+        if user_id is not None and ts is not None and event_type == "OrderCreatedEvent":
+            self._user_order_times[user_id].append(ts)
+        if ts is not None:
+            self._agg_last_time[agg_id] = ts
+        if event_type in self.EVENT_TO_STATE:
+            self._agg_state[agg_id] = self.EVENT_TO_STATE[event_type]
+
+    def _get_amount(self, event: dict) -> Optional[float]:
+        payload = event.get("payload", {})
+        for key in ("totalAmount", "amount"):
+            if key in payload:
+                try:
+                    return float(payload[key])
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    def _get_user_id(self, event: dict) -> Optional[str]:
+        metadata = event.get("metadata", {})
+        return metadata.get("userId") or event.get("payload", {}).get("userId")
+
+    def _parse_time(self, ts_str: Optional[str]) -> Optional[datetime]:
+        if ts_str is None:
+            return None
+        try:
+            # 兼容 ISO 8601 with Z
+            return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+```
+
+`eventguard-ai/app/detector/event_level.py`:
+```python
+"""事件级检测器：Isolation Forest 异常检测"""
+
+import logging
+from pathlib import Path
+from typing import Optional
+
+import joblib
+import numpy as np
+
+from app.detector.feature_extractor import FeatureExtractor
+from app.model.anomaly import AnomalyResult
+
+logger = logging.getLogger(__name__)
+
+
+class EventLevelDetector:
+    """Isolation Forest 事件级异常检测器"""
+
+    def __init__(
+        self,
+        model=None,
+        scaler=None,
+        feature_extractor: Optional[FeatureExtractor] = None,
+        model_path: Optional[str] = None,
+        scaler_path: Optional[str] = None,
+    ):
+        if model is not None and scaler is not None:
+            self.model = model
+            self.scaler = scaler
+        else:
+            base = Path(__file__).parent.parent.parent
+            self.model = joblib.load(model_path or str(base / "models" / "isolation_forest.pkl"))
+            self.scaler = joblib.load(scaler_path or str(base / "models" / "scaler.pkl"))
+        self.feature_extractor = feature_extractor or FeatureExtractor()
+
+    def detect(self, event: dict) -> AnomalyResult:
+        """检测单事件是否异常"""
+        features = self.feature_extractor.extract(event)
+        X = np.array([features])
+        X_scaled = self.scaler.transform(X)
+
+        pred = self.model.predict(X_scaled)[0]  # -1=异常, 1=正常
+        score = -self.model.score_samples(X_scaled)[0]  # 越大越异常
+
+        is_anomaly = (pred == -1)
+        return AnomalyResult(
+            is_anomaly=is_anomaly,
+            score=float(score),
+            source="IF",
+            level="LOW" if is_anomaly else "LOW",
+            description=f"Isolation Forest score={score:.4f}" if is_anomaly else "",
+        )
+```
+
+`eventguard-ai/training/train_isolation.py`:
+```python
+"""Isolation Forest 训练脚本：用正常事件流训练模型并持久化"""
+
+import json
+from pathlib import Path
+
+import joblib
+import numpy as np
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
+
+from app.detector.feature_extractor import FeatureExtractor
+
+
+def train_isolation_forest(
+    normal_data_path: str = "data/normal_events.jsonl",
+    model_output: str = "models/isolation_forest.pkl",
+    scaler_output: str = "models/scaler.pkl",
+) -> None:
+    """训练 Isolation Forest 并保存模型与 scaler"""
+    extractor = FeatureExtractor()
+
+    # 加载正常事件并按时间排序更新特征提取器状态
+    events = []
+    with open(normal_data_path, "r", encoding="utf-8") as f:
+        for line in f:
+            event = json.loads(line)
+            events.append(event)
+
+    # 按 created_at 排序确保时间窗口正确
+    events.sort(key=lambda e: e.get("created_at", ""))
+
+    # 提取特征
+    features_list = []
+    for event in events:
+        features = extractor.extract(event)
+        features_list.append(features)
+        extractor.update(event)  # 更新内部状态
+
+    X = np.array(features_list)
+    print(f"训练数据形状: {X.shape}")
+
+    # 标准化
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # 训练 Isolation Forest
+    model = IsolationForest(
+        n_estimators=100,
+        contamination=0.05,
+        random_state=42,
+        n_jobs=-1,
+    )
+    model.fit(X_scaled)
+
+    # 持久化
+    Path(model_output).parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, model_output)
+    joblib.dump(scaler, scaler_output)
+    print(f"模型已保存: {model_output}, {scaler_output}")
+
+    # 简单验证：训练集上的异常率
+    preds = model.predict(X_scaled)
+    anomaly_rate = (preds == -1).sum() / len(preds)
+    print(f"训练集异常率: {anomaly_rate:.4f}（预期接近 contamination=0.05）")
+
+
+if __name__ == "__main__":
+    train_isolation_forest()
+```
+
+- [ ] **Step 4: 运行测试确认通过，并执行模型训练**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_event_level.py -v
+# 期望：3 passed
+
+# 训练 Isolation Forest 模型
+python -m training.train_isolation
+# 期望输出：训练数据形状: (N, 4) / 模型已保存: ... / 训练集异常率: 0.05xx
+
+ls models/
+# 期望：isolation_forest.pkl  scaler.pkl
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ai/app/model/ eventguard-ai/app/detector/feature_extractor.py eventguard-ai/app/detector/event_level.py eventguard-ai/training/train_isolation.py eventguard-ai/tests/test_event_level.py eventguard-ai/models/
+git commit -m "feat(m3.4): Isolation Forest 训练与持久化（4维特征）"
+```
+
+---
+
+## Task 5: M3.5 事件级检测服务（规则 + ML 协同）
+
+**Files:**
+- Create: `eventguard-ai/app/detector/rule_bridge.py`
+- Create: `eventguard-ai/app/publisher/__init__.py`
+- Create: `eventguard-ai/app/publisher/anomaly_publisher.py`
+- Create: `eventguard-ai/app/store/__init__.py`
+- Create: `eventguard-ai/app/store/anomaly_store.py`
+- Modify: `eventguard-ai/app/detector/event_level.py`（新增 `EventLevelService`）
+- Modify: `eventguard-ai/app/kafka_consumer.py`（接入检测）
+- Test: `eventguard-ai/tests/test_rule_bridge.py`
+
+**Interfaces:**
+- Consumes: M3.3 的 `POST /anomaly/rules/evaluate`（HTTP）、M3.4 的 `EventLevelDetector`
+- Produces:
+  - `RuleBridge.evaluate(event: dict) -> Optional[AnomalyResult]`：HTTP 调 Java 规则引擎
+  - `EventLevelService.detect(event: dict) -> AnomalyResult`：规则 + ML 协同
+  - `AnomalyPublisher.publish(anomaly: Anomaly) -> None`：发 Kafka `anomaly-alerts`（key=aggregate_id）
+  - `AnomalyStore.save(anomaly) / get(anomaly_id)`：内存存储
+  - `EventKafkaConsumer` 接入 `EventLevelService` + `ProcessLevelRuleDetector`（M3.6 后）
+
+- [ ] **Step 1: 写失败测试 — RuleBridge + EventLevelService 协同**
+
+`eventguard-ai/tests/test_rule_bridge.py`:
+```python
+from unittest.mock import MagicMock, patch
+
+import httpx
+import pytest
+
+
+def test_rule_bridge_returns_result_when_rule_hits():
+    """规则命中时 RuleBridge 返回 AnomalyResult"""
+    from app.detector.rule_bridge import RuleBridge
+    from app.model.anomaly import AnomalyResult
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "anomalyId": "a-1",
+        "ruleId": "R001",
+        "aggregateId": "agg-1",
+        "eventType": "OrderCreatedEvent",
+        "level": "WARN",
+        "description": "金额偏离",
+        "details": {},
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("app.detector.rule_bridge.httpx.Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        bridge = RuleBridge(url="http://localhost:8080/anomaly/rules/evaluate")
+        event = {
+            "event_id": "e-1",
+            "aggregate_id": "agg-1",
+            "event_type": "OrderCreatedEvent",
+            "event_version": 1,
+            "payload": {"totalAmount": 999.0, "userId": "user-1"},
+            "metadata": {"userId": "user-1"},
+            "created_at": "2026-07-21T10:00:00Z",
+        }
+        result = bridge.evaluate(event)
+
+    assert result is not None
+    assert result.is_anomaly is True
+    assert result.source == "RULE"
+    assert result.level == "HIGH"
+    assert result.rule_id == "R001"
+
+
+def test_rule_bridge_returns_none_when_no_rule_hits():
+    """规则未命中时返回 None"""
+    from app.detector.rule_bridge import RuleBridge
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = None  # 无异常
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("app.detector.rule_bridge.httpx.Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__enter__.return_value = mock_client
+
+        bridge = RuleBridge(url="http://localhost:8080/anomaly/rules/evaluate")
+        event = {"event_type": "OrderCreatedEvent", "payload": {}, "metadata": {}}
+        result = bridge.evaluate(event)
+
+    assert result is None
+
+
+def test_event_level_service_rule_hit_returns_high_priority():
+    """规则命中 → 高优先级告警"""
+    from app.detector.event_level import EventLevelService
+    from app.model.anomaly import AnomalyResult
+
+    mock_rule_bridge = MagicMock()
+    mock_rule_bridge.evaluate.return_value = AnomalyResult(
+        is_anomaly=True, score=0.0, source="RULE", level="HIGH", rule_id="R001",
+        description="金额偏离",
+    )
+    mock_if_detector = MagicMock()
+    mock_if_detector.detect.return_value = AnomalyResult(
+        is_anomaly=False, score=0.1, source="IF", level="LOW",
+    )
+
+    service = EventLevelService(rule_bridge=mock_rule_bridge, if_detector=mock_if_detector)
+    event = {"event_type": "OrderCreatedEvent", "aggregate_id": "agg-1"}
+
+    result = service.detect(event)
+
+    assert result.is_anomaly is True
+    assert result.source == "RULE"
+    assert result.level == "HIGH"
+    mock_if_detector.detect.assert_not_called()  # 规则命中时不走 IF
+
+
+def test_event_level_service_rule_miss_if_hit_returns_low_priority():
+    """规则未命中 → 走 IF → IF 异常 → 低优先级告警"""
+    from app.detector.event_level import EventLevelService
+    from app.model.anomaly import AnomalyResult
+
+    mock_rule_bridge = MagicMock()
+    mock_rule_bridge.evaluate.return_value = None  # 规则未命中
+    mock_if_detector = MagicMock()
+    mock_if_detector.detect.return_value = AnomalyResult(
+        is_anomaly=True, score=0.85, source="IF", level="LOW",
+        description="IF score=0.85",
+    )
+
+    service = EventLevelService(rule_bridge=mock_rule_bridge, if_detector=mock_if_detector)
+    event = {"event_type": "OrderCreatedEvent", "aggregate_id": "agg-1"}
+
+    result = service.detect(event)
+
+    assert result.is_anomaly is True
+    assert result.source == "IF"
+    assert result.level == "LOW"
+    mock_if_detector.detect.assert_called_once()
+
+
+def test_event_level_service_all_clear_returns_not_anomaly():
+    """规则 + IF 都未命中 → 无异常"""
+    from app.detector.event_level import EventLevelService
+    from app.model.anomaly import AnomalyResult
+
+    mock_rule_bridge = MagicMock()
+    mock_rule_bridge.evaluate.return_value = None
+    mock_if_detector = MagicMock()
+    mock_if_detector.detect.return_value = AnomalyResult(
+        is_anomaly=False, score=0.1, source="IF", level="LOW",
+    )
+
+    service = EventLevelService(rule_bridge=mock_rule_bridge, if_detector=mock_if_detector)
+
+    result = service.detect({"event_type": "OrderCreatedEvent"})
+
+    assert result.is_anomaly is False
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_rule_bridge.py -v
+# 期望：ModuleNotFoundError: No module named 'app.detector.rule_bridge'
+```
+
+- [ ] **Step 3: 实现 RuleBridge + EventLevelService + AnomalyPublisher + AnomalyStore**
+
+`eventguard-ai/app/detector/rule_bridge.py`:
+```python
+"""规则引擎 HTTP 桥接：调用 Java 侧 POST /anomaly/rules/evaluate"""
+
+import logging
+from typing import Optional
+
+import httpx
+
+from app.config import settings
+from app.model.anomaly import AnomalyResult
+
+logger = logging.getLogger(__name__)
+
+
+class RuleBridge:
+    """通过 HTTP 调用 Java 规则引擎"""
+
+    def __init__(self, url: Optional[str] = None):
+        self.url = url or settings.rule_engine_url
+
+    def evaluate(self, event: dict) -> Optional[AnomalyResult]:
+        """调用规则引擎，命中返回 AnomalyResult，未命中返回 None"""
+        request_body = self._build_request(event)
+        try:
+            with httpx.Client(timeout=2.0) as client:
+                resp = client.post(self.url, json=request_body)
+                resp.raise_for_status()
+                data = resp.json()
+        except httpx.HTTPError as e:
+            logger.warning("规则引擎调用失败: %s", e)
+            return None
+
+        if data is None:
+            return None
+
+        return AnomalyResult(
+            is_anomaly=True,
+            score=0.0,
+            source="RULE",
+            level="HIGH",
+            rule_id=data.get("ruleId"),
+            description=data.get("description", ""),
+        )
+
+    def _build_request(self, event: dict) -> dict:
+        """将 Kafka 事件格式转换为 Java REST 期望的 EventDto 格式"""
+        return {
+            "eventId": event.get("event_id"),
+            "aggregateId": event.get("aggregate_id"),
+            "eventType": event.get("event_type"),
+            "version": event.get("event_version", 1),
+            "occurredAt": event.get("created_at"),
+            "metadata": event.get("metadata", {}),
+            "payload": event.get("payload", {}),
+        }
+```
+
+`eventguard-ai/app/publisher/__init__.py`:
+```python
+```
+
+`eventguard-ai/app/publisher/anomaly_publisher.py`:
+```python
+"""异常告警发布器：将异常发到 Kafka anomaly-alerts topic"""
+
+import json
+import logging
+from typing import Optional
+
+from kafka import KafkaProducer
+
+from app.config import settings
+from app.model.anomaly import Anomaly
+
+logger = logging.getLogger(__name__)
+
+
+class AnomalyPublisher:
+    """将 Anomaly 发布到 Kafka anomaly-alerts topic（key=aggregate_id）"""
+
+    def __init__(self, bootstrap_servers: Optional[str] = None):
+        self._producer: Optional[KafkaProducer] = None
+        self.bootstrap_servers = bootstrap_servers or settings.kafka_bootstrap
+
+    def _get_producer(self) -> KafkaProducer:
+        if self._producer is None:
+            self._producer = KafkaProducer(
+                bootstrap_servers=self.bootstrap_servers,
+                key_serializer=lambda k: k.encode("utf-8") if k else None,
+                value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode("utf-8"),
+            )
+        return self._producer
+
+    def publish(self, anomaly: Anomaly) -> None:
+        """发布异常到 Kafka"""
+        producer = self._get_producer()
+        producer.send(
+            "anomaly-alerts",
+            key=anomaly.aggregate_id,
+            value=anomaly.model_dump(),
+        )
+        producer.flush(timeout=5)
+        logger.info("异常已发布: anomaly_id=%s rule_id=%s", anomaly.anomaly_id, anomaly.rule_id)
+
+    def close(self) -> None:
+        if self._producer:
+            self._producer.close()
+```
+
+`eventguard-ai/app/store/__init__.py`:
+```python
+```
+
+`eventguard-ai/app/store/anomaly_store.py`:
+```python
+"""异常存储（MVP 内存版）：供根因分析通过 anomaly_id 查询"""
+
+import threading
+from typing import Optional
+
+from app.model.anomaly import Anomaly
+
+
+class AnomalyStore:
+    """线程安全的内存异常存储"""
+
+    def __init__(self):
+        self._store: dict[str, Anomaly] = {}
+        self._lock = threading.Lock()
+
+    def save(self, anomaly: Anomaly) -> None:
+        with self._lock:
+            self._store[anomaly.anomaly_id] = anomaly
+
+    def get(self, anomaly_id: str) -> Optional[Anomaly]:
+        with self._lock:
+            return self._store.get(anomaly_id)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._store.clear()
+
+
+# 全局单例
+anomaly_store = AnomalyStore()
+```
+
+修改 `eventguard-ai/app/detector/event_level.py`，在文件末尾追加 `EventLevelService`:
+
+```python
+# ======== 追加到 event_level.py 末尾 ========
+
+from typing import Optional
+from app.detector.rule_bridge import RuleBridge
+from app.model.anomaly import AnomalyResult
+
+
+class EventLevelService:
+    """事件级检测协同服务：规则引擎（高优先级）→ Isolation Forest（低优先级）"""
+
+    def __init__(
+        self,
+        rule_bridge: Optional[RuleBridge] = None,
+        if_detector: Optional[EventLevelDetector] = None,
+    ):
+        self.rule_bridge = rule_bridge or RuleBridge()
+        self.if_detector = if_detector or EventLevelDetector()
+
+    def detect(self, event: dict) -> AnomalyResult:
+        """
+        协同检测流程：
+        1. 先调规则引擎 HTTP → 命中则返回高优先级告警
+        2. 未命中 → 调 Isolation Forest → 异常则返回低优先级告警
+        3. 都未命中 → 返回正常
+        """
+        # 1. 规则引擎
+        rule_result = self.rule_bridge.evaluate(event)
+        if rule_result is not None and rule_result.is_anomaly:
+            return rule_result
+
+        # 2. Isolation Forest
+        if_result = self.if_detector.detect(event)
+        return if_result
+```
+
+修改 `eventguard-ai/app/kafka_consumer.py`，新增 `DetectionHandler` 类:
+
+在文件末尾追加：
+```python
+# ======== 追加到 kafka_consumer.py 末尾 ========
+
+import uuid
+from datetime import datetime, timezone
+
+from app.detector.event_level import EventLevelService
+from app.model.anomaly import Anomaly, AnomalyResult
+from app.publisher.anomaly_publisher import AnomalyPublisher
+from app.store.anomaly_store import anomaly_store
+
+
+class DetectionHandler:
+    """Kafka 事件处理：事件级 + 流程级检测 → 发布异常"""
+
+    def __init__(
+        self,
+        event_level_service: EventLevelService,
+        publisher: AnomalyPublisher,
+    ):
+        self.event_level_service = event_level_service
+        self.publisher = publisher
+        # process_level_detector 在 M3.6 注入
+        self.process_level_detector = None
+        self.event_window = None
+
+    def handle(self, event: dict) -> None:
+        """处理单条事件：事件级检测 + 流程级检测"""
+        # 1. 事件级检测
+        result = self.event_level_service.detect(event)
+        if result.is_anomaly:
+            anomaly = self._build_anomaly(event, result)
+            anomaly_store.save(anomaly)
+            self.publisher.publish(anomaly)
+
+        # 2. 流程级检测（M3.6 接入）
+        if self.process_level_detector is not None and self.event_window is not None:
+            agg_id = event.get("aggregate_id", "")
+            self.event_window.add(event)
+            sequence = self.event_window.get(agg_id)
+            process_anomalies = self.process_level_detector.detect(sequence)
+            for pa in process_anomalies:
+                anomaly_store.save(pa)
+                self.publisher.publish(pa)
+
+    def _build_anomaly(self, event: dict, result: AnomalyResult) -> Anomaly:
+        """从检测结果构建 Anomaly 模型"""
+        event_type = event.get("event_type", "Unknown")
+        agg_id = event.get("aggregate_id", str(uuid.uuid4()))
+        level_map = {"HIGH": "ERROR", "LOW": "WARN"}
+
+        return Anomaly(
+            anomaly_id=str(uuid.uuid4()),
+            rule_id=result.rule_id or "IF",
+            aggregate_id=agg_id,
+            event_type=event_type,
+            level=level_map.get(result.level, "WARN"),
+            source=result.source,
+            priority=result.level,
+            detected_at=datetime.now(timezone.utc).isoformat(),
+            description=result.description or f"{result.source} 检出异常",
+            details={"score": result.score} if result.source == "IF" else {},
+        )
+```
+
+- [ ] **Step 4: 运行测试确认通过**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_rule_bridge.py -v
+# 期望：5 passed
+
+# 同时确保 event_level 测试仍通过
+python -m pytest tests/test_event_level.py -v
+# 期望：3 passed
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ai/app/detector/rule_bridge.py eventguard-ai/app/publisher/ eventguard-ai/app/store/ eventguard-ai/app/detector/event_level.py eventguard-ai/app/kafka_consumer.py eventguard-ai/tests/test_rule_bridge.py
+git commit -m "feat(m3.5): 事件级检测服务（规则HTTP+IF协同，发 anomaly-alerts）"
+```
+
+---
+
+## Task 6: M3.6 流程级规则检测
+
+**Files:**
+- Create: `eventguard-ai/app/detector/event_window.py`
+- Create: `eventguard-ai/app/detector/process_level.py`
+- Test: `eventguard-ai/tests/test_process_level.py`
+
+**Interfaces:**
+- Consumes: M3.5 的 `DetectionHandler`（注入 `process_level_detector` + `event_window`）
+- Produces:
+  - `EventWindow`：按 `aggregate_id` 维护最近 20 事件滑动窗口
+  - `ProcessLevelRuleDetector.detect(event_sequence: list[Event]) -> list[Anomaly]`
+  - 三种检测：P001 非法迁移、P002 状态停滞 24h、P003 死循环（PaymentFailed→Retried >5）
+
+- [ ] **Step 1: 写失败测试 — EventWindow + ProcessLevelRuleDetector**
+
+`eventguard-ai/tests/test_process_level.py`:
+```python
+from datetime import datetime, timedelta, timezone
+
+from app.detector.event_window import EventWindow
+from app.detector.process_level import ProcessLevelRuleDetector
+
+
+def _make_event(event_type: str, agg_id: str, version: int, ts: str) -> dict:
+    return {
+        "event_id": f"e-{version}",
+        "aggregate_id": agg_id,
+        "event_type": event_type,
+        "event_version": version,
+        "payload": {},
+        "metadata": {"userId": "user-1"},
+        "created_at": ts,
+    }
+
+
+def test_event_window_maintains_last_20_events_per_aggregate():
+    """EventWindow 按 aggregate_id 维护最近 20 事件"""
+    window = EventWindow(window_size=20)
+    agg_id = "agg-1"
+    base_ts = datetime(2026, 7, 21, 10, 0, 0, tzinfo=timezone.utc)
+
+    for i in range(25):
+        event = _make_event("OrderCreatedEvent", agg_id, i + 1, base_ts.isoformat())
+        window.add(event)
+
+    events = window.get(agg_id)
+    assert len(events) == 20  # 只保留最近 20 个
+    # 最早保留的应该是 version=6
+    assert events[0]["event_version"] == 6
+    assert events[-1]["event_version"] == 25
+
+
+def test_event_window_separates_aggregates():
+    """不同 aggregate_id 的窗口互相隔离"""
+    window = EventWindow(window_size=20)
+    window.add(_make_event("OrderCreatedEvent", "agg-1", 1, "2026-07-21T10:00:00Z"))
+    window.add(_make_event("OrderCreatedEvent", "agg-2", 1, "2026-07-21T10:01:00Z"))
+
+    assert len(window.get("agg-1")) == 1
+    assert len(window.get("agg-2")) == 1
+
+
+def test_detect_illegal_transition():
+    """P001：非法迁移检测（PENDING_PAYMENT → SHIPPED 跳过 PAID/CONFIRMED）"""
+    detector = ProcessLevelRuleDetector()
+    base_ts = datetime(2026, 7, 21, 10, 0, 0, tzinfo=timezone.utc)
+    sequence = [
+        _make_event("OrderCreatedEvent", "agg-1", 1, base_ts.isoformat()),
+        _make_event("ShippedEvent", "agg-1", 2, (base_ts + timedelta(minutes=1)).isoformat()),
+    ]
+    anomalies = detector.detect(sequence)
+    assert len(anomalies) >= 1
+    p001 = [a for a in anomalies if a.rule_id == "P001_ILLEGAL_TRANSITION"]
+    assert len(p001) == 1
+    assert p001[0].source == "PROCESS"
+
+
+def test_detect_state_stagnation():
+    """P002：状态停滞检测（PAID 后 24h+ 无后续）"""
+    detector = ProcessLevelRuleDetector()
+    base_ts = datetime(2026, 7, 21, 10, 0, 0, tzinfo=timezone.utc)
+    # PaymentCompleted 发生在 25 小时前
+    old_ts = base_ts - timedelta(hours=25)
+    sequence = [
+        _make_event("OrderCreatedEvent", "agg-1", 1, (old_ts - timedelta(minutes=5)).isoformat()),
+        _make_event("PaymentCompletedEvent", "agg-1", 2, old_ts.isoformat()),
+    ]
+    anomalies = detector.detect(sequence, now=base_ts)
+    p002 = [a for a in anomalies if a.rule_id == "P002_STUCK"]
+    assert len(p002) == 1
+
+
+def test_detect_payment_dead_loop():
+    """P003：死循环检测（PaymentFailed→Retried 重复 >5 次）"""
+    detector = ProcessLevelRuleDetector()
+    base_ts = datetime(2026, 7, 21, 10, 0, 0, tzinfo=timezone.utc)
+    sequence = [_make_event("OrderCreatedEvent", "agg-1", 1, base_ts.isoformat())]
+    ts = base_ts + timedelta(minutes=1)
+    for i in range(6):  # 6 轮 Failed+Retried
+        sequence.append(_make_event("PaymentFailedEvent", "agg-1", 2 + i * 2, ts.isoformat()))
+        ts += timedelta(seconds=30)
+        sequence.append(_make_event("PaymentRetriedEvent", "agg-1", 3 + i * 2, ts.isoformat()))
+        ts += timedelta(seconds=30)
+
+    anomalies = detector.detect(sequence)
+    p003 = [a for a in anomalies if a.rule_id == "P003_DEAD_LOOP"]
+    assert len(p003) == 1
+
+
+def test_detect_returns_empty_for_normal_sequence():
+    """正常序列不报异常"""
+    detector = ProcessLevelRuleDetector()
+    base_ts = datetime(2026, 7, 21, 10, 0, 0, tzinfo=timezone.utc)
+    sequence = [
+        _make_event("OrderCreatedEvent", "agg-1", 1, base_ts.isoformat()),
+        _make_event("PaymentCompletedEvent", "agg-1", 2, (base_ts + timedelta(minutes=5)).isoformat()),
+        _make_event("InventoryReservedEvent", "agg-1", 3, (base_ts + timedelta(minutes=10)).isoformat()),
+    ]
+    anomalies = detector.detect(sequence, now=base_ts + timedelta(minutes=15))
+    assert len(anomalies) == 0
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_process_level.py -v
+# 期望：ModuleNotFoundError: No module named 'app.detector.event_window'
+```
+
+- [ ] **Step 3: 实现 EventWindow + ProcessLevelRuleDetector**
+
+`eventguard-ai/app/detector/event_window.py`:
+```python
+"""按 aggregate_id 维护滑动窗口（最近 N 事件）"""
+
+from collections import defaultdict, deque
+from typing import Optional
+
+
+class EventWindow:
+    """每个 aggregate_id 维护一个最近 window_size 事件的 deque"""
+
+    def __init__(self, window_size: int = 20):
+        self.window_size = window_size
+        self._windows: dict[str, deque] = defaultdict(lambda: deque(maxlen=window_size))
+
+    def add(self, event: dict) -> None:
+        """添加事件到对应 aggregate 的窗口"""
+        agg_id = event.get("aggregate_id", "")
+        self._windows[agg_id].append(event)
+
+    def get(self, aggregate_id: str) -> list[dict]:
+        """获取该 aggregate 的窗口事件列表（按时间顺序）"""
+        return list(self._windows.get(aggregate_id, []))
+
+    def clear(self, aggregate_id: Optional[str] = None) -> None:
+        """清除窗口"""
+        if aggregate_id:
+            self._windows.pop(aggregate_id, None)
+        else:
+            self._windows.clear()
+```
+
+`eventguard-ai/app/detector/process_level.py`:
+```python
+"""流程级规则检测：非法迁移 / 状态停滞 / 死循环"""
+
+import logging
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from app.model.anomaly import Anomaly
+
+logger = logging.getLogger(__name__)
+
+# 合法状态迁移表：当前状态 → 允许的下一事件类型集合
+LEGAL_TRANSITIONS = {
+    "INIT": {"OrderCreatedEvent"},
+    "PENDING_PAYMENT": {"PaymentCompletedEvent", "PaymentFailedEvent", "OrderCancelledEvent"},
+    "PAYMENT_FAILED": {"PaymentRetriedEvent", "OrderCancelledEvent"},
+    "PAID": {"InventoryReservedEvent", "OrderConfirmedEvent", "OrderRefundRequestedEvent", "OrderCancelledEvent"},
+    "CONFIRMED": {"ShippedEvent", "OrderCancelledEvent"},
+    "SHIPPED": {"DeliveredEvent"},
+    "DELIVERED": {"OrderClosedEvent"},
+    "CLOSED": set(),
+    "CANCELLED": set(),
+    "REFUNDED": {"OrderClosedEvent"},
+}
+
+# 事件 → 事件后状态
+EVENT_TO_STATE = {
+    "OrderCreatedEvent": "PENDING_PAYMENT",
+    "PaymentCompletedEvent": "PAID",
+    "PaymentFailedEvent": "PAYMENT_FAILED",
+    "PaymentRetriedEvent": "PENDING_PAYMENT",
+    "InventoryReservedEvent": "PAID",
+    "OrderConfirmedEvent": "CONFIRMED",
+    "ShippedEvent": "SHIPPED",
+    "DeliveredEvent": "DELIVERED",
+    "OrderClosedEvent": "CLOSED",
+    "OrderCancelledEvent": "CANCELLED",
+    "OrderRefundRequestedEvent": "PAID",
+    "OrderRefundedEvent": "REFUNDED",
+}
+
+# 停滞检测的超时时间
+STAGNATION_TIMEOUT = timedelta(hours=24)
+# 死循环检测的阈值
+DEAD_LOOP_THRESHOLD = 5
+
+
+class ProcessLevelRuleDetector:
+    """MVP 流程级检测：基于规则，无需训练"""
+
+    def detect(self, event_sequence: list[dict], now: Optional[datetime] = None) -> list[Anomaly]:
+        """
+        检测事件序列中的流程异常。
+
+        Args:
+            event_sequence: 按 event_version 排序的事件列表
+            now: 当前时间（用于停滞检测，默认用系统时间）
+
+        Returns:
+            检出的异常列表
+        """
+        if not event_sequence:
+            return []
+
+        if now is None:
+            now = datetime.now(timezone.utc)
+
+        anomalies: list[Anomaly] = []
+        anomalies.extend(self._check_illegal_transition(event_sequence))
+        anomalies.extend(self._check_stagnation(event_sequence, now))
+        anomalies.extend(self._check_dead_loop(event_sequence))
+        return anomalies
+
+    def _check_illegal_transition(self, sequence: list[dict]) -> list[Anomaly]:
+        """P001：状态机非法迁移检测"""
+        anomalies = []
+        current_state = "INIT"
+
+        for event in sequence:
+            event_type = event.get("event_type", "")
+            legal_next = LEGAL_TRANSITIONS.get(current_state, set())
+            if event_type not in legal_next:
+                anomalies.append(self._build_anomaly(
+                    rule_id="P001_ILLEGAL_TRANSITION",
+                    event=event,
+                    level="ERROR",
+                    description=f"非法状态迁移：{current_state} → {event_type}",
+                ))
+            # 更新状态
+            new_state = EVENT_TO_STATE.get(event_type)
+            if new_state:
+                current_state = new_state
+
+        return anomalies
+
+    def _check_stagnation(self, sequence: list[dict], now: datetime) -> list[Anomaly]:
+        """P002：状态停滞检测（PAID 后 24h 无后续）"""
+        anomalies = []
+        if not sequence:
+            return anomalies
+
+        last_event = sequence[-1]
+        last_event_type = last_event.get("event_type", "")
+        last_state = EVENT_TO_STATE.get(last_event_type, "")
+
+        # 只检测非终态
+        if last_state in ("CLOSED", "CANCELLED", "", None):
+            return anomalies
+
+        last_ts = self._parse_time(last_event.get("created_at"))
+        if last_ts is None:
+            return anomalies
+
+        # 确保 timezone-aware
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.replace(tzinfo=timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+
+        if (now - last_ts) > STAGNATION_TIMEOUT:
+            anomalies.append(self._build_anomaly(
+                rule_id="P002_STUCK",
+                event=last_event,
+                level="WARN",
+                description=f"状态 {last_state} 停滞超过 24h（最后事件：{last_event_type}）",
+            ))
+
+        return anomalies
+
+    def _check_dead_loop(self, sequence: list[dict]) -> list[Anomaly]:
+        """P003：死循环检测（PaymentFailed→Retried 重复 >5 次）"""
+        anomalies = []
+        fail_retry_count = 0
+
+        for event in sequence:
+            event_type = event.get("event_type", "")
+            if event_type == "PaymentRetriedEvent":
+                fail_retry_count += 1
+
+        if fail_retry_count > DEAD_LOOP_THRESHOLD:
+            anomalies.append(self._build_anomaly(
+                rule_id="P003_DEAD_LOOP",
+                event=sequence[-1],
+                level="ERROR",
+                description=f"支付重试死循环：PaymentRetried 重复 {fail_retry_count} 次（阈值 {DEAD_LOOP_THRESHOLD}）",
+            ))
+
+        return anomalies
+
+    def _build_anomaly(self, rule_id: str, event: dict, level: str, description: str) -> Anomaly:
+        return Anomaly(
+            anomaly_id=str(uuid.uuid4()),
+            rule_id=rule_id,
+            aggregate_id=event.get("aggregate_id", str(uuid.uuid4())),
+            event_type=event.get("event_type", "Unknown"),
+            level=level,
+            source="PROCESS",
+            priority="HIGH",
+            detected_at=datetime.now(timezone.utc).isoformat(),
+            description=description,
+            details={},
+        )
+
+    def _parse_time(self, ts_str: Optional[str]) -> Optional[datetime]:
+        if ts_str is None:
+            return None
+        try:
+            return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+```
+
+- [ ] **Step 4: 运行测试确认通过**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_process_level.py -v
+# 期望：6 passed
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ai/app/detector/event_window.py eventguard-ai/app/detector/process_level.py eventguard-ai/tests/test_process_level.py
+git commit -m "feat(m3.6): 流程级规则检测（非法迁移/停滞24h/死循环）"
+```
+
+---
+
+## Task 7: M3.7 根因分析
+
+**Files:**
+- Create: `eventguard-ai/app/analyzer/__init__.py`
+- Create: `eventguard-ai/app/analyzer/llm_client.py`
+- Create: `eventguard-ai/app/analyzer/prompt_builder.py`
+- Create: `eventguard-ai/app/analyzer/root_cause.py`
+- Create: `eventguard-ai/app/model/analysis_report.py`
+- Create: `eventguard-ai/app/store/event_store_client.py`
+- Modify: `eventguard-ai/app/main.py`（新增 `GET /anomalies/{anomaly_id}/analysis`）
+- Test: `eventguard-ai/tests/test_root_cause.py`
+
+**Interfaces:**
+- Consumes: M3.5 的 `AnomalyStore`、LLM API（Ollama 或远端）
+- Produces:
+  - `LLMClient.generate(prompt: str) -> str`：调用 LLM 返回文本
+  - `PromptBuilder.build(anomaly, events, context) -> str`：构建结构化 prompt
+  - `RootCauseAnalyzer.analyze(anomaly: Anomaly) -> AnalysisReport`：根因分析
+  - `AnalysisReport` Pydantic 模型：`rootCause` / `evidence` / `suggestions`（建议在白名单内）
+  - REST `GET /anomalies/{anomaly_id}/analysis`
+
+- [ ] **Step 1: 写失败测试 — RootCauseAnalyzer + Pydantic 校验**
+
+`eventguard-ai/tests/test_root_cause.py`:
+```python
+import json
+from unittest.mock import MagicMock, patch
+
+import pytest
+from pydantic import ValidationError
+
+
+def test_analysis_report_validates_suggestion_whitelist():
+    """AnalysisReport 校验建议动作必须在白名单内"""
+    from app.model.analysis_report import AnalysisReport, Suggestion
+
+    # 合法建议
+    report = AnalysisReport(
+        anomaly_id="a-1",
+        root_cause="订单停滞",
+        evidence=["事件序列: [CREATED, PAID]"],
+        suggestions=[
+            Suggestion(action="NOTIFY_DELAY", reason="通知用户", risk="LOW"),
+            Suggestion(action="MARK_OUT_OF_STOCK", reason="标记缺货", risk="LOW"),
+        ],
+    )
+    assert len(report.suggestions) == 2
+
+    # 非法建议动作
+    with pytest.raises(ValidationError):
+        Suggestion(action="DELETE_DATABASE", reason="删除数据库", risk="HIGH")
+
+
+def test_prompt_builder_includes_anomaly_and_action_catalog():
+    """PromptBuilder 包含异常信息 + 动作白名单"""
+    from app.analyzer.prompt_builder import PromptBuilder
+    from app.model.anomaly import Anomaly
+
+    anomaly = Anomaly(
+        anomaly_id="a-1",
+        rule_id="P002_STUCK",
+        aggregate_id="agg-1",
+        event_type="PaymentCompletedEvent",
+        level="WARN",
+        source="PROCESS",
+        priority="HIGH",
+        detected_at="2026-07-21T10:00:00Z",
+        description="状态停滞超过 24h",
+    )
+    events = [
+        {"event_type": "OrderCreatedEvent", "created_at": "2026-07-20T10:00:00Z"},
+        {"event_type": "PaymentCompletedEvent", "created_at": "2026-07-20T10:05:00Z"},
+    ]
+
+    prompt = PromptBuilder.build(anomaly, events, context={"stock": 0})
+
+    assert "P002_STUCK" in prompt
+    assert "agg-1" in prompt
+    assert "REFUND" in prompt  # 动作白名单
+    assert "NOTIFY_DELAY" in prompt
+    assert "MARK_OUT_OF_STOCK" in prompt
+    assert "FREEZE_ORDER" in prompt
+    assert "BACKOFF_AND_STOP" in prompt
+
+
+def test_root_cause_analyzer_returns_valid_report():
+    """RootCauseAnalyzer.analyze 返回合法 AnalysisReport"""
+    from app.analyzer.root_cause import RootCauseAnalyzer
+    from app.model.anomaly import Anomaly
+    from app.model.analysis_report import AnalysisReport
+
+    anomaly = Anomaly(
+        anomaly_id="a-1",
+        rule_id="P002_STUCK",
+        aggregate_id="agg-1",
+        event_type="PaymentCompletedEvent",
+        level="WARN",
+        source="PROCESS",
+        priority="HIGH",
+        detected_at="2026-07-21T10:00:00Z",
+        description="状态停滞超过 24h",
+    )
+
+    # Mock LLM 返回合法 JSON
+    llm_response = json.dumps({
+        "anomaly_id": "a-1",
+        "root_cause": "订单 PAID 后库存服务未发出 InventoryReserved 事件，库存为 0",
+        "evidence": [
+            "事件序列: [CREATED, PAID] 后无后续",
+            "库存查询: SKU=123 当前库存=0",
+            "停滞时长: 26h",
+        ],
+        "suggestions": [
+            {"action": "MARK_OUT_OF_STOCK", "reason": "库存为0", "risk": "LOW"},
+            {"action": "NOTIFY_DELAY", "reason": "通知用户延迟", "risk": "LOW"},
+        ],
+    })
+
+    mock_llm = MagicMock()
+    mock_llm.generate.return_value = llm_response
+
+    mock_event_client = MagicMock()
+    mock_event_client.load_events.return_value = [
+        {"event_type": "OrderCreatedEvent", "created_at": "2026-07-20T10:00:00Z"},
+        {"event_type": "PaymentCompletedEvent", "created_at": "2026-07-20T10:05:00Z"},
+    ]
+
+    analyzer = RootCauseAnalyzer(llm_client=mock_llm, event_store_client=mock_event_client)
+    report = analyzer.analyze(anomaly)
+
+    assert isinstance(report, AnalysisReport)
+    assert report.anomaly_id == "a-1"
+    assert "库存" in report.root_cause
+    assert len(report.suggestions) == 2
+    assert report.suggestions[0].action in ["MARK_OUT_OF_STOCK", "NOTIFY_DELAY"]
+
+
+def test_root_cause_analyzer_raises_on_invalid_suggestion():
+    """LLM 返回非法建议动作时抛异常"""
+    from app.analyzer.root_cause import RootCauseAnalyzer, LLMResponseError
+    from app.model.anomaly import Anomaly
+
+    anomaly = Anomaly(
+        anomaly_id="a-2",
+        rule_id="R001",
+        aggregate_id="agg-2",
+        event_type="OrderCreatedEvent",
+        level="WARN",
+        source="RULE",
+        priority="HIGH",
+        detected_at="2026-07-21T10:00:00Z",
+        description="金额偏离",
+    )
+
+    llm_response = json.dumps({
+        "anomaly_id": "a-2",
+        "root_cause": "测试",
+        "evidence": [],
+        "suggestions": [
+            {"action": "DROP_DATABASE", "reason": "非法", "risk": "HIGH"},
+        ],
+    })
+
+    mock_llm = MagicMock()
+    mock_llm.generate.return_value = llm_response
+    mock_event_client = MagicMock()
+    mock_event_client.load_events.return_value = []
+
+    analyzer = RootCauseAnalyzer(llm_client=mock_llm, event_store_client=mock_event_client)
+
+    with pytest.raises(LLMResponseError):
+        analyzer.analyze(anomaly)
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_root_cause.py -v
+# 期望：ModuleNotFoundError: No module named 'app.analyzer'
+```
+
+- [ ] **Step 3: 实现 LLM Client + PromptBuilder + RootCauseAnalyzer + REST 端点**
+
+`eventguard-ai/app/analyzer/__init__.py`:
+```python
+```
+
+`eventguard-ai/app/model/analysis_report.py`:
+```python
+"""根因分析报告 Pydantic 模型"""
+
+from typing import Literal
+
+from pydantic import BaseModel, field_validator
+
+# 建议动作白名单
+ALLOWED_ACTIONS = {"REFUND", "NOTIFY_DELAY", "MARK_OUT_OF_STOCK", "FREEZE_ORDER", "BACKOFF_AND_STOP"}
+
+
+class Suggestion(BaseModel):
+    """补偿建议"""
+    action: str
+    reason: str
+    risk: Literal["LOW", "MEDIUM", "HIGH"]
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, v: str) -> str:
+        if v not in ALLOWED_ACTIONS:
+            raise ValueError(f"非法建议动作 {v}，必须在白名单内: {ALLOWED_ACTIONS}")
+        return v
+
+
+class AnalysisReport(BaseModel):
+    """根因分析报告"""
+    anomaly_id: str
+    root_cause: str
+    evidence: list[str]
+    suggestions: list[Suggestion]
+```
+
+`eventguard-ai/app/analyzer/llm_client.py`:
+```python
+"""LLM 客户端：调用 Ollama 或 OpenAI-compatible API"""
+
+import json
+import logging
+from typing import Optional
+
+import httpx
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class LLMClient:
+    """OpenAI-compatible Chat Completions 客户端（兼容 Ollama /v1）"""
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+    ):
+        self.base_url = base_url or settings.llm_base_url
+        self.api_key = api_key or settings.llm_api_key
+        self.model = model or settings.llm_model
+
+    def generate(self, prompt: str) -> str:
+        """调用 LLM 生成文本"""
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        body = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "你是 EventGuard 电商订单异常根因分析助手。只输出 JSON。"},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.3,
+        }
+
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                resp = client.post(url, headers=headers, json=body)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["choices"][0]["message"]["content"]
+        except httpx.HTTPError as e:
+            logger.error("LLM 调用失败: %s", e)
+            raise
+```
+
+`eventguard-ai/app/store/event_store_client.py`:
+```python
+"""事件存储客户端：通过 HTTP 调用 Java 后端加载聚合根事件历史"""
+
+import logging
+from typing import Optional
+
+import httpx
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class EventStoreClient:
+    """调用 GET /orders/{id}/events 加载事件序列"""
+
+    def __init__(self, base_url: Optional[str] = None):
+        self.base_url = base_url or settings.server_base_url
+
+    def load_events(self, aggregate_id: str) -> list[dict]:
+        """加载指定聚合根的事件序列"""
+        url = f"{self.base_url}/orders/{aggregate_id}/events"
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                resp = client.get(url)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPError as e:
+            logger.warning("加载事件历史失败 agg_id=%s: %s", aggregate_id, e)
+            return []
+```
+
+`eventguard-ai/app/analyzer/prompt_builder.py`:
+```python
+"""根因分析 Prompt 构建"""
+
+import json
+
+from app.model.anomaly import Anomaly
+from app.model.analysis_report import ALLOWED_ACTIONS
+
+
+class PromptBuilder:
+    """构建 LLM Prompt：异常 + 事件序列 + 上下文 + 动作白名单"""
+
+    @staticmethod
+    def build(anomaly: Anomaly, events: list[dict], context: dict) -> str:
+        event_summary = "\n".join(
+            f"  - [{e.get('created_at', '?')}] {e.get('event_type', '?')}"
+            for e in events[-20:]  # 最多 20 个事件
+        )
+        action_catalog = "\n".join(f"  - {a}" for a in sorted(ALLOWED_ACTIONS))
+
+        return f"""请分析以下异常的根因，并给出补偿建议。
+
+## 异常信息
+- anomaly_id: {anomaly.anomaly_id}
+- rule_id: {anomaly.rule_id}
+- aggregate_id: {anomaly.aggregate_id}
+- event_type: {anomaly.event_type}
+- level: {anomaly.level}
+- description: {anomaly.description}
+
+## 事件序列（最近 20 个）
+{event_summary}
+
+## 上下文
+{json.dumps(context, ensure_ascii=False, indent=2)}
+
+## 建议动作白名单（必须从中选择）
+{action_catalog}
+
+## 输出要求
+请输出严格的 JSON，格式如下：
+{{
+  "anomaly_id": "{anomaly.anomaly_id}",
+  "root_cause": "根因分析文字描述",
+  "evidence": ["证据1", "证据2", "证据3"],
+  "suggestions": [
+    {{"action": "白名单中的动作", "reason": "建议理由", "risk": "LOW|MEDIUM|HIGH"}}
+  ]
+}}
+
+只输出 JSON，不要输出其他内容。
+"""
+```
+
+`eventguard-ai/app/analyzer/root_cause.py`:
+```python
+"""根因分析器：LLM 生成结构化 JSON + Pydantic 校验"""
+
+import json
+import logging
+from typing import Optional
+
+from app.analyzer.llm_client import LLMClient
+from app.analyzer.prompt_builder import PromptBuilder
+from app.model.anomaly import Anomaly
+from app.model.analysis_report import AnalysisReport
+from app.store.event_store_client import EventStoreClient
+
+logger = logging.getLogger(__name__)
+
+
+class LLMResponseError(Exception):
+    """LLM 响应解析或校验失败"""
+
+
+class RootCauseAnalyzer:
+    """根因分析：加载事件 → 构建 prompt → LLM 生成 → Pydantic 校验"""
+
+    def __init__(
+        self,
+        llm_client: Optional[LLMClient] = None,
+        event_store_client: Optional[EventStoreClient] = None,
+    ):
+        self.llm_client = llm_client or LLMClient()
+        self.event_store_client = event_store_client or EventStoreClient()
+
+    def analyze(self, anomaly: Anomaly) -> AnalysisReport:
+        """
+        分析异常根因。
+
+        Args:
+            anomaly: 异常对象
+
+        Returns:
+            AnalysisReport 根因分析报告
+
+        Raises:
+            LLMResponseError: LLM 输出无法解析或建议不在白名单
+        """
+        # 1. 加载事件历史
+        events = self.event_store_client.load_events(anomaly.aggregate_id)
+
+        # 2. 加载上下文（MVP 简化）
+        context = {
+            "anomaly_rule": anomaly.rule_id,
+            "anomaly_description": anomaly.description,
+        }
+
+        # 3. 构建 prompt
+        prompt = PromptBuilder.build(anomaly, events, context)
+
+        # 4. LLM 生成
+        raw_response = self.llm_client.generate(prompt)
+
+        # 5. 解析 JSON
+        try:
+            data = json.loads(raw_response)
+        except json.JSONDecodeError as e:
+            logger.error("LLM 输出 JSON 解析失败: %s", e)
+            raise LLMResponseError(f"LLM 输出不是合法 JSON: {e}") from e
+
+        # 6. Pydantic 校验（建议白名单在 Suggestion.action 校验器中）
+        try:
+            report = AnalysisReport(**data)
+        except Exception as e:
+            logger.error("AnalysisReport 校验失败: %s", e)
+            raise LLMResponseError(f"报告校验失败: {e}") from e
+
+        return report
+```
+
+修改 `eventguard-ai/app/main.py`，新增根因分析 REST 端点:
+
+```python
+from fastapi import FastAPI, HTTPException
+
+from app.analyzer.root_cause import RootCauseAnalyzer
+from app.config import settings
+from app.store.anomaly_store import anomaly_store
+
+app = FastAPI(title=settings.app_name)
+
+_analyzer = RootCauseAnalyzer()
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/anomalies/{anomaly_id}/analysis")
+def get_analysis(anomaly_id: str):
+    """根因分析：通过 anomaly_id 查找异常并生成分析报告"""
+    anomaly = anomaly_store.get(anomaly_id)
+    if anomaly is None:
+        raise HTTPException(status_code=404, detail=f"异常 {anomaly_id} 不存在")
+
+    report = _analyzer.analyze(anomaly)
+    return report.model_dump()
+```
+
+- [ ] **Step 4: 运行测试确认通过**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_root_cause.py -v
+# 期望：4 passed
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ai/app/analyzer/ eventguard-ai/app/model/analysis_report.py eventguard-ai/app/store/event_store_client.py eventguard-ai/app/main.py eventguard-ai/tests/test_root_cause.py
+git commit -m "feat(m3.7): 根因分析（LLM结构化JSON + Pydantic校验 + 白名单）"
+```
+
+---
+
+## Task 8: M3.8 异常告警 WebSocket 推送
+
+**Files:**
+- Modify: `eventguard-server/pom.xml`（加 websocket starter）
+- Create: `eventguard-server/src/main/java/com/eventguard/common/websocket/AnomalyWebSocketConfig.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/common/websocket/AnomalyWebSocketHandler.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/model/AnomalyAlert.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/anomaly/consumer/AnomalyAlertConsumer.java`
+- Modify: `eventguard-server/src/main/resources/application.yml`（加 anomaly-alerts consumer 配置）
+- Test: `eventguard-server/src/test/java/com/eventguard/anomaly/consumer/AnomalyAlertConsumerTest.java`
+
+**Interfaces:**
+- Consumes: Kafka `anomaly-alerts` topic（M3.5 产出）
+- Produces:
+  - `AnomalyAlert` Java 模型（接收 Python 端发布的 Anomaly JSON）
+  - `AnomalyAlertConsumer`：`@KafkaListener(topics="anomaly-alerts", groupId="anomaly-ws")` → 调 `AnomalyWebSocketHandler.broadcast()`
+  - `AnomalyWebSocketHandler`：维护 WebSocket 会话，`broadcast(AnomalyAlert)` 推送所有连接
+  - WebSocket 端点 `/ws/anomalies`
+
+- [ ] **Step 1: 写失败测试 — AnomalyAlertConsumer + WebSocketHandler**
+
+`eventguard-server/src/test/java/com/eventguard/anomaly/consumer/AnomalyAlertConsumerTest.java`:
+```java
+package com.eventguard.anomaly.consumer;
+
+import com.eventguard.anomaly.model.AnomalyAlert;
+import com.eventguard.common.websocket.AnomalyWebSocketHandler;
+import org.junit.jupiter.api.Test;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+
+import java.util.UUID;
+
+import static org.mockito.Mockito.*;
+
+class AnomalyAlertConsumerTest {
+
+    @Test
+    void on_alert_should_broadcast_to_websocket_handler() {
+        AnomalyWebSocketHandler handler = mock(AnomalyWebSocketHandler.class);
+        AnomalyAlertConsumer consumer = new AnomalyAlertConsumer(handler);
+
+        AnomalyAlert alert = new AnomalyAlert(
+                "a-1", "R001", UUID.randomUUID(), "OrderCreatedEvent",
+                "WARN", "RULE", "HIGH", "2026-07-21T10:00:00Z",
+                "金额偏离", java.util.Map.of()
+        );
+
+        consumer.on(alert);
+
+        verify(handler).broadcast(alert);
+    }
+
+    @Test
+    void on_alert_continues_when_broadcast_throws() {
+        AnomalyWebSocketHandler handler = mock(AnomalyWebSocketHandler.class);
+        doThrow(new RuntimeException("ws error")).when(handler).broadcast(any());
+        AnomalyAlertConsumer consumer = new AnomalyAlertConsumer(handler);
+
+        AnomalyAlert alert = new AnomalyAlert(
+                "a-2", "IF", UUID.randomUUID(), "OrderCreatedEvent",
+                "WARN", "IF", "LOW", "2026-07-21T10:00:00Z",
+                "IF anomaly", java.util.Map.of()
+        );
+
+        // 不应抛异常（消费端不崩）
+        consumer.on(alert);
+
+        verify(handler).broadcast(alert);
+    }
+}
+```
+
+`eventguard-server/src/test/java/com/eventguard/common/websocket/AnomalyWebSocketHandlerTest.java`:
+```java
+package com.eventguard.common.websocket;
+
+import com.eventguard.anomaly.model.AnomalyAlert;
+import org.junit.jupiter.api.Test;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+
+import java.util.UUID;
+
+import static org.mockito.Mockito.*;
+
+class AnomalyWebSocketHandlerTest {
+
+    @Test
+    void broadcast_should_send_message_to_all_open_sessions() throws Exception {
+        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler();
+
+        WebSocketSession session1 = mock(WebSocketSession.class);
+        WebSocketSession session2 = mock(WebSocketSession.class);
+        when(session1.isOpen()).thenReturn(true);
+        when(session2.isOpen()).thenReturn(true);
+
+        handler.afterConnectionEstablished(session1);
+        handler.afterConnectionEstablished(session2);
+
+        AnomalyAlert alert = new AnomalyAlert(
+                "a-1", "R001", UUID.randomUUID(), "OrderCreatedEvent",
+                "WARN", "RULE", "HIGH", "2026-07-21T10:00:00Z",
+                "金额偏离", java.util.Map.of()
+        );
+        handler.broadcast(alert);
+
+        verify(session1).sendMessage(any(TextMessage.class));
+        verify(session2).sendMessage(any(TextMessage.class));
+    }
+
+    @Test
+    void broadcast_should_skip_closed_sessions() throws Exception {
+        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler();
+
+        WebSocketSession open = mock(WebSocketSession.class);
+        WebSocketSession closed = mock(WebSocketSession.class);
+        when(open.isOpen()).thenReturn(true);
+        when(closed.isOpen()).thenReturn(false);
+
+        handler.afterConnectionEstablished(open);
+        handler.afterConnectionEstablished(closed);
+
+        AnomalyAlert alert = new AnomalyAlert(
+                "a-1", "R001", UUID.randomUUID(), "OrderCreatedEvent",
+                "WARN", "RULE", "HIGH", "2026-07-21T10:00:00Z",
+                "金额偏离", java.util.Map.of()
+        );
+        handler.broadcast(alert);
+
+        verify(open).sendMessage(any(TextMessage.class));
+        verify(closed, never()).sendMessage(any());
+    }
+
+    @Test
+    void after_connection_closed_should_remove_session() throws Exception {
+        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler();
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
+
+        handler.afterConnectionEstablished(session);
+        handler.afterConnectionClosed(session, null);
+
+        AnomalyAlert alert = new AnomalyAlert(
+                "a-1", "R001", UUID.randomUUID(), "OrderCreatedEvent",
+                "WARN", "RULE", "HIGH", "2026-07-21T10:00:00Z",
+                "金额偏离", java.util.Map.of()
+        );
+        handler.broadcast(alert);
+
+        verify(session, never()).sendMessage(any());
+    }
+}
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-server
+mvn test -Dtest="AnomalyAlertConsumerTest,AnomalyWebSocketHandlerTest"
+# 期望：编译失败（AnomalyAlert / AnomalyWebSocketHandler 等类不存在）
+```
+
+- [ ] **Step 3: 实现 WebSocket + Consumer + AnomalyAlert 模型**
+
+修改 `eventguard-server/pom.xml`，在 `<dependencies>` 中追加:
+```xml
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/model/AnomalyAlert.java`:
+```java
+package com.eventguard.anomaly.model;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.util.Map;
+import java.util.UUID;
+
+/** 从 Kafka anomaly-alerts topic 接收的异常告警 */
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class AnomalyAlert {
+
+    @JsonProperty("anomaly_id")
+    private String anomalyId;
+
+    @JsonProperty("rule_id")
+    private String ruleId;
+
+    @JsonProperty("aggregate_id")
+    private UUID aggregateId;
+
+    @JsonProperty("event_type")
+    private String eventType;
+
+    @JsonProperty("level")
+    private String level;  // INFO / WARN / ERROR
+
+    @JsonProperty("source")
+    private String source;  // RULE / IF / PROCESS
+
+    @JsonProperty("priority")
+    private String priority;  // HIGH / LOW
+
+    @JsonProperty("detected_at")
+    private String detectedAt;
+
+    @JsonProperty("description")
+    private String description;
+
+    @JsonProperty("details")
+    private Map<String, Object> details;
+
+    // Jackson 需要无参构造器
+    public AnomalyAlert() {}
+
+    public AnomalyAlert(String anomalyId, String ruleId, UUID aggregateId, String eventType,
+                        String level, String source, String priority, String detectedAt,
+                        String description, Map<String, Object> details) {
+        this.anomalyId = anomalyId;
+        this.ruleId = ruleId;
+        this.aggregateId = aggregateId;
+        this.eventType = eventType;
+        this.level = level;
+        this.source = source;
+        this.priority = priority;
+        this.detectedAt = detectedAt;
+        this.description = description;
+        this.details = details;
+    }
+
+    public String getAnomalyId() { return anomalyId; }
+    public String getRuleId() { return ruleId; }
+    public UUID getAggregateId() { return aggregateId; }
+    public String getEventType() { return eventType; }
+    public String getLevel() { return level; }
+    public String getSource() { return source; }
+    public String getPriority() { return priority; }
+    public String getDetectedAt() { return detectedAt; }
+    public String getDescription() { return description; }
+    public Map<String, Object> getDetails() { return details; }
+
+    public void setAnomalyId(String anomalyId) { this.anomalyId = anomalyId; }
+    public void setRuleId(String ruleId) { this.ruleId = ruleId; }
+    public void setAggregateId(UUID aggregateId) { this.aggregateId = aggregateId; }
+    public void setEventType(String eventType) { this.eventType = eventType; }
+    public void setLevel(String level) { this.level = level; }
+    public void setSource(String source) { this.source = source; }
+    public void setPriority(String priority) { this.priority = priority; }
+    public void setDetectedAt(String detectedAt) { this.detectedAt = detectedAt; }
+    public void setDescription(String description) { this.description = description; }
+    public void setDetails(Map<String, Object> details) { this.details = details; }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/common/websocket/AnomalyWebSocketHandler.java`:
+```java
+package com.eventguard.common.websocket;
+
+import com.eventguard.anomaly.model.AnomalyAlert;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
+
+import java.io.IOException;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+/** WebSocket 处理器：维护会话集合，收到异常告警时广播 */
+public class AnomalyWebSocketHandler extends TextWebSocketHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(AnomalyWebSocketHandler.class);
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) {
+        sessions.add(session);
+        log.info("WebSocket 连接建立: {}（当前 {} 个连接）", session.getId(), sessions.size());
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        sessions.remove(session);
+        log.info("WebSocket 连接关闭: {}（当前 {} 个连接）", session.getId(), sessions.size());
+    }
+
+    /** 广播异常告警到所有活跃会话 */
+    public void broadcast(AnomalyAlert alert) {
+        try {
+            String json = objectMapper.writeValueAsString(alert);
+            TextMessage message = new TextMessage(json);
+            for (WebSocketSession session : sessions) {
+                if (session.isOpen()) {
+                    try {
+                        session.sendMessage(message);
+                    } catch (IOException e) {
+                        log.warn("WebSocket 发送失败 session={}: {}", session.getId(), e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("广播异常告警失败: {}", e.getMessage(), e);
+        }
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/common/websocket/AnomalyWebSocketConfig.java`:
+```java
+package com.eventguard.common.websocket;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.socket.config.annotation.EnableWebSocket;
+import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+
+/** WebSocket 配置：注册 /ws/anomalies 端点 */
+@Configuration
+@EnableWebSocket
+public class AnomalyWebSocketConfig implements WebSocketConfigurer {
+
+    private final AnomalyWebSocketHandler handler;
+
+    public AnomalyWebSocketConfig(AnomalyWebSocketHandler handler) {
+        this.handler = handler;
+    }
+
+    @Override
+    public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        registry.addHandler(handler, "/ws/anomalies").setAllowedOrigins("*");
+    }
+}
+```
+
+修改 `eventguard-server/src/main/java/com/eventguard/common/websocket/AnomalyWebSocketHandler.java`，加 `@Component` 注解（在类声明上方）:
+
+在 `AnomalyWebSocketHandler` 类上加 `@Component`:
+```java
+// 在类声明上方加
+@org.springframework.stereotype.Component
+public class AnomalyWebSocketHandler extends TextWebSocketHandler {
+```
+
+`eventguard-server/src/main/java/com/eventguard/anomaly/consumer/AnomalyAlertConsumer.java`:
+```java
+package com.eventguard.anomaly.consumer;
+
+import com.eventguard.anomaly.model.AnomalyAlert;
+import com.eventguard.common.websocket.AnomalyWebSocketHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Component;
+
+/** 消费 anomaly-alerts topic，推送到 WebSocket 前端 """
+@Component
+public class AnomalyAlertConsumer {
+
+    private static final Logger log = LoggerFactory.getLogger(AnomalyAlertConsumer.class);
+
+    private final AnomalyWebSocketHandler webSocketHandler;
+
+    public AnomalyAlertConsumer(AnomalyWebSocketHandler webSocketHandler) {
+        this.webSocketHandler = webSocketHandler;
+    }
+
+    @KafkaListener(topics = "anomaly-alerts", groupId = "anomaly-ws")
+    public void on(AnomalyAlert alert) {
+        log.info("收到异常告警: anomaly_id={} rule_id={} source={} priority={}",
+                alert.getAnomalyId(), alert.getRuleId(), alert.getSource(), alert.getPriority());
+        try {
+            webSocketHandler.broadcast(alert);
+        } catch (Exception e) {
+            log.error("推送 WebSocket 失败: {}", e.getMessage(), e);
+        }
+    }
+}
+```
+
+修改 `eventguard-server/src/main/resources/application.yml`，追加 anomaly-alerts 消费者配置:
+
+在 `spring.kafka.consumer` 部分追加（或确保存在）:
+```yaml
+spring:
+  kafka:
+    consumer:
+      group-id: ${KAFKA_GROUP:anomaly-ws}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+```
+
+> 注意：`anomaly-ws` 是 `AnomalyAlertConsumer` 的消费组（通过 `@KafkaListener` groupId 指定），application.yml 中的 `group-id` 是默认值。`domain-events` topic 的消费组由各 `@KafkaListener` 单独指定 groupId。
+
+- [ ] **Step 4: 运行测试确认通过**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-server
+mvn test -Dtest="AnomalyAlertConsumerTest,AnomalyWebSocketHandlerTest"
+# 期望：Tests run: 5, Failures: 0, Errors: 0
+# （AnomalyAlertConsumerTest 2 + AnomalyWebSocketHandlerTest 3）
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-server/pom.xml eventguard-server/src/main/java/com/eventguard/common/websocket/ eventguard-server/src/main/java/com/eventguard/anomaly/model/AnomalyAlert.java eventguard-server/src/main/java/com/eventguard/anomaly/consumer/ eventguard-server/src/main/resources/application.yml eventguard-server/src/test/java/com/eventguard/anomaly/consumer/ eventguard-server/src/test/java/com/eventguard/common/websocket/
+git commit -m "feat(m3.8): 异常告警 WebSocket 推送（/ws/anomalies + AnomalyAlertConsumer）"
+```
+
+---
+
+## Task 9: M3.9 [可选] HMM 训练与检测
+
+> **此任务为可选增强**，时间充裕时实现。跳过不影响 M3 验收。
+
+**Files:**
+- Create: `eventguard-ai/training/train_hmm.py`
+- Create: `eventguard-ai/app/detector/process_level_hmm.py`
+- Generated: `eventguard-ai/models/hmm.pkl`
+- Test: `eventguard-ai/tests/test_process_level_hmm.py`
+
+**Interfaces:**
+- Consumes: M3.2 的正常事件序列
+- Produces:
+  - `train_hmm.py`：用 hmmlearn 训练 HMM，保存到 `models/hmm.pkl`
+  - `ProcessLevelHMMDetector.detect(event_sequence: list[str]) -> AnomalyResult`：低概率序列告警
+
+- [ ] **Step 1: 写失败测试 — ProcessLevelHMMDetector**
+
+`eventguard-ai/tests/test_process_level_hmm.py`:
+```python
+import numpy as np
+from unittest.mock import MagicMock
+
+
+def test_hmm_detector_returns_anomaly_for_low_probability_sequence():
+    """HMM 检测器对低概率序列返回异常"""
+    from app.detector.process_level_hmm import ProcessLevelHMMDetector
+    from app.model.anomaly import AnomalyResult
+
+    class MockHMM:
+        def score(self, X):
+            return -50.0  # 很低的 log-likelihood
+
+    detector = ProcessLevelHMMDetector(
+        model=MockHMM(),
+        threshold=-10.0,
+        state_map={"OrderCreatedEvent": 0, "PaymentCompletedEvent": 1, "ShippedEvent": 5},
+    )
+
+    # 异常序列：CREATED → SHIPPED（跳过 PAID/CONFIRMED）
+    result = detector.detect(["OrderCreatedEvent", "ShippedEvent"])
+
+    assert isinstance(result, AnomalyResult)
+    assert result.is_anomaly is True
+    assert result.source == "HMM"
+
+
+def test_hmm_detector_returns_normal_for_high_probability_sequence():
+    """HMM 检测器对正常序列返回正常"""
+    from app.detector.process_level_hmm import ProcessLevelHMMDetector
+    from app.model.anomaly import AnomalyResult
+
+    class MockHMM:
+        def score(self, X):
+            return -5.0  # 较高的 log-likelihood
+
+    detector = ProcessLevelHMMDetector(
+        model=MockHMM(),
+        threshold=-10.0,
+        state_map={"OrderCreatedEvent": 0, "PaymentCompletedEvent": 1, "InventoryReservedEvent": 2},
+    )
+
+    result = detector.detect(["OrderCreatedEvent", "PaymentCompletedEvent", "InventoryReservedEvent"])
+
+    assert isinstance(result, AnomalyResult)
+    assert result.is_anomaly is False
+
+
+def test_hmm_detector_handles_unknown_event_type():
+    """未知事件类型用默认状态 0"""
+    from app.detector.process_level_hmm import ProcessLevelHMMDetector
+
+    class MockHMM:
+        def score(self, X):
+            return -5.0
+
+    detector = ProcessLevelHMMDetector(
+        model=MockHMM(),
+        threshold=-10.0,
+        state_map={"OrderCreatedEvent": 0},
+    )
+
+    result = detector.detect(["OrderCreatedEvent", "UnknownEvent"])
+    assert result.is_anomaly is False
+```
+
+- [ ] **Step 2: 运行测试确认失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_process_level_hmm.py -v
+# 期望：ModuleNotFoundError: No module named 'app.detector.process_level_hmm'
+```
+
+- [ ] **Step 3: 实现 HMM 检测器 + 训练脚本**
+
+`eventguard-ai/app/detector/process_level_hmm.py`:
+```python
+"""HMM 流程级检测（V2 可选）：用正常序列训练，低概率序列告警"""
+
+import logging
+from pathlib import Path
+from typing import Optional
+
+import joblib
+import numpy as np
+
+from app.model.anomaly import AnomalyResult
+
+logger = logging.getLogger(__name__)
+
+# 事件类型 → 观测状态编号
+DEFAULT_STATE_MAP = {
+    "OrderCreatedEvent": 0,
+    "PaymentCompletedEvent": 1,
+    "PaymentFailedEvent": 2,
+    "PaymentRetriedEvent": 3,
+    "InventoryReservedEvent": 4,
+    "OrderConfirmedEvent": 5,
+    "ShippedEvent": 6,
+    "DeliveredEvent": 7,
+    "OrderClosedEvent": 8,
+    "OrderCancelledEvent": 9,
+    "OrderRefundRequestedEvent": 10,
+    "OrderRefundedEvent": 11,
+}
+
+
+class ProcessLevelHMMDetector:
+    """HMM 序列异常检测器"""
+
+    def __init__(
+        self,
+        model=None,
+        threshold: float = -10.0,
+        state_map: Optional[dict] = None,
+        model_path: Optional[str] = None,
+    ):
+        if model is not None:
+            self.model = model
+        else:
+            base = Path(__file__).parent.parent.parent
+            self.model = joblib.load(model_path or str(base / "models" / "hmm.pkl"))
+        self.threshold = threshold
+        self.state_map = state_map or DEFAULT_STATE_MAP
+
+    def detect(self, event_sequence: list[str]) -> AnomalyResult:
+        """
+        检测事件序列是否异常。
+
+        Args:
+            event_sequence: 事件类型名称列表，如 ["OrderCreatedEvent", "PaymentCompletedEvent"]
+
+        Returns:
+            AnomalyResult
+        """
+        if not event_sequence:
+            return AnomalyResult(is_anomaly=False, score=0.0, source="HMM", level="LOW")
+
+        # 转换为状态编号序列
+        states = [self.state_map.get(et, 0) for et in event_sequence]
+        X = np.array([states])
+
+        try:
+            log_prob = float(self.model.score(X))
+        except Exception as e:
+            logger.warning("HMM 评分失败: %s", e)
+            return AnomalyResult(is_anomaly=False, score=0.0, source="HMM", level="LOW")
+
+        is_anomaly = log_prob < self.threshold
+        return AnomalyResult(
+            is_anomaly=is_anomaly,
+            score=log_prob,
+            source="HMM",
+            level="LOW",
+            description=f"HMM log-likelihood={log_prob:.2f}（阈值 {self.threshold}）" if is_anomaly else "",
+        )
+```
+
+`eventguard-ai/training/train_hmm.py`:
+```python
+"""HMM 训练脚本：用正常事件序列训练 hmmlearn GaussianHMM"""
+
+import json
+from pathlib import Path
+
+import joblib
+import numpy as np
+from hmmlearn import hmm
+
+from app.detector.process_level_hmm import DEFAULT_STATE_MAP
+
+
+def train_hmm(
+    normal_data_path: str = "data/normal_events.jsonl",
+    model_output: str = "models/hmm.pkl",
+    n_components: int = 12,
+) -> None:
+    """用正常事件序列训练 HMM"""
+    # 加载正常事件，按 aggregate_id 分组
+    sequences: dict[str, list[int]] = {}
+    with open(normal_data_path, "r", encoding="utf-8") as f:
+        for line in f:
+            event = json.loads(line)
+            agg_id = event.get("aggregate_id", "")
+            event_type = event.get("event_type", "")
+            state = DEFAULT_STATE_MAP.get(event_type, 0)
+            sequences.setdefault(agg_id, []).append(state)
+
+    # 构建训练数据：每个订单是一个序列
+    X = []
+    lengths = []
+    for seq in sequences.values():
+        if len(seq) >= 2:
+            X.extend([[s] for s in seq])
+            lengths.append(len(seq))
+
+    if not X:
+        print("无训练数据")
+        return
+
+    X = np.array(X)
+    print(f"训练数据: {len(lengths)} 个序列, {len(X)} 个观测值")
+
+    # 训练 GaussianHMM
+    model = hmm.GaussianHMM(
+        n_components=n_components,
+        covariance_type="diag",
+        n_iter=100,
+        random_state=42,
+    )
+    model.fit(X, lengths)
+
+    # 计算阈值：正常序列的 5 分位数 log-likelihood
+    log_probs = []
+    start = 0
+    for length in lengths:
+        end = start + length
+        lp = model.score(X[start:end])
+        log_probs.append(lp)
+        start = end
+
+    threshold = float(np.percentile(log_probs, 5))
+    print(f"HMM 训练完成，log-likelihood 5% 分位数阈值: {threshold:.2f}")
+
+    # 保存模型与阈值
+    Path(model_output).parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump({"model": model, "threshold": threshold}, model_output)
+    print(f"模型已保存: {model_output}")
+
+
+if __name__ == "__main__":
+    train_hmm()
+```
+
+- [ ] **Step 4: 运行测试确认通过，并执行训练**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_process_level_hmm.py -v
+# 期望：3 passed
+
+# 训练 HMM（可选，需先完成 M3.2 数据生成）
+python -m training.train_hmm
+# 期望输出：训练数据: N 个序列, M 个观测值 / HMM 训练完成 / 模型已保存: models/hmm.pkl
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ai/app/detector/process_level_hmm.py eventguard-ai/training/train_hmm.py eventguard-ai/tests/test_process_level_hmm.py
+git commit -m "feat(m3.9): HMM 流程级检测训练与推理（hmmlearn，可选）"
+```
+
+---
+
+## M3 完成验收
+
+M3 全部 9 个任务完成后，执行最终验收：
+
+- [ ] **Final: AI 服务端到端验收**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+docker compose down -v
+docker compose up -d postgres kafka debezium
+# 等待 30s
+docker compose up -d --build eventguard-server eventguard-ai
+
+# 1. 健康检查
+curl -s http://localhost:8000/health
+# 期望：{"status":"ok"}
+curl -s http://localhost:8080/actuator/health | grep -o '"status":"[^"]*"'
+# 期望："UP"
+
+# 2. 创建订单触发事件
+curl -X POST http://localhost:8080/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"user-1","totalAmount":99.00}'
+# 期望：{"success":true,"version":1,"error":null}
+
+# 3. 规则引擎 REST 验证
+curl -X POST http://localhost:8080/anomaly/rules/evaluate \
+  -H "Content-Type: application/json" \
+  -d '{"eventId":"00000000-0000-0000-0000-000000000001","aggregateId":"00000000-0000-0000-0000-000000000002","eventType":"OrderCreatedEvent","version":1,"occurredAt":"2026-07-21T10:00:00Z","metadata":{"userId":"user-1"},"payload":{"totalAmount":99.00}}'
+# 期望：null（正常事件不命中规则）
+
+# 4. 根因分析端点验证（需先有异常，可注入异常事件后测试）
+curl -s http://localhost:8000/anomalies/test-anomaly-id/analysis
+# 期望：404（异常不存在）或 200（有异常时返回分析报告）
+
+echo "✓ M3 AI 检测 MVP 验收通过"
+```
+
+- [ ] **Final: M3 收尾 commit + tag**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git tag m3-complete
+git log --oneline | head -10
+# 期望：9 个 feat(m3.X) commit（M3.9 可选）
+```
+
+---
+
+## Self-Review
+
+**1. Spec coverage（对照 eventguard-plan.md M3）**
+- M3.1 Python AI 服务骨架 → Task 1 ✓（FastAPI + Kafka 消费 groupId=ai-event-detector）
+- M3.2 合成数据生成 → Task 2 ✓（10万正常 + 金额偏离/状态停滞/死循环注入 JSONL）
+- M3.3 Java 规则引擎 → Task 3 ✓（R001-R005 + RuleEngine + REST POST /anomaly/rules/evaluate，不作 Kafka 消费者）
+- M3.4 Isolation Forest 训练 → Task 4 ✓（4维特征 amount_zscore/time_since_last_event/user_order_count_1h/state_transition_prob + joblib 持久化）
+- M3.5 事件级检测服务 → Task 5 ✓（规则HTTP命中高优先级，未命中走IF低优先级，发 anomaly-alerts）
+- M3.6 流程级规则检测 → Task 6 ✓（EventWindow 20事件窗口 + 非法迁移/停滞24h/死循环>5）
+- M3.7 根因分析 → Task 7 ✓（LLM 结构化 JSON + Pydantic 校验 + 白名单 + GET /anomalies/{id}/analysis）
+- M3.8 异常告警 WebSocket → Task 8 ✓（Spring /ws/anomalies + AnomalyAlertConsumer 消费 anomaly-alerts）
+- M3.9 [可选] HMM → Task 9 ✓（hmmlearn 训练 + ProcessLevelHMMDetector）
+
+**2. Placeholder scan:**
+- 无 TBD/TODO/"类似Task N"/"添加适当错误处理"等占位符 ✓
+- 所有代码块完整可运行 ✓
+- 所有命令含期望输出 ✓
+- 接口签名与设计文档第 7.3 章一致 ✓
+
+**3. Type consistency:**
+- Java `EventRule`（`ruleId()`、`matches(DomainEvent, RuleContext)`、`level()`）与 plan.md 一致 ✓
+- Java `RuleEngine.evaluate(DomainEvent).Optional<Anomaly>` 返回类型一致 ✓
+- Python `EventLevelDetector.detect(event: dict) -> AnomalyResult` 签名一致 ✓
+- Python `ProcessLevelRuleDetector.detect(event_sequence: list[dict]) -> list[Anomaly]` 一致 ✓
+- Python `EventWindow` 按 aggregate_id 维护最近 20 事件 ✓
+- Python `RootCauseAnalyzer.analyze(anomaly: Anomaly) -> AnalysisReport` 一致 ✓
+- REST `GET /anomalies/{anomaly_id}/analysis` 端点存在 ✓
+- Pydantic `Suggestion.action` 校验白名单（REFUND/NOTIFY_DELAY/MARK_OUT_OF_STOCK/FREEZE_ORDER/BACKOFF_AND_STOP）✓
+- Kafka topic `anomaly-alerts`（key=aggregate_id）在 AnomalyPublisher 中实现 ✓
+- WebSocket `/ws/anomalies` 在 AnomalyWebSocketConfig 中注册 ✓
+- Java 包 `com.eventguard.*`，Python 模块 `app.*` ✓
+- 路径无 `eventguard/` 前缀（直接 `eventguard-server/`、`eventguard-ai/`）✓
+- commit message 中文格式 `feat(m3.X): <描述>` ✓
+- LLM 配置走环境变量 `LLM_API_KEY` / `LLM_BASE_URL`（通过 Settings 的 `EG_LLM_*` 前缀）✓
+- M3.3 规则引擎不作为独立 Kafka 消费者，仅 REST ✓

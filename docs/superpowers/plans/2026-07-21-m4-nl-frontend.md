@@ -1,0 +1,3697 @@
+# M4 NL 查询与前端 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** 在 M2 事件溯源与 M3 AI 检测基础之上构建自然语言查询能力与前端 Admin 看板：Python AI 服务通过 LLM 意图分类（3 类）+ 模板查询执行器回答用户问题，后端补充订单列表/统计/事件回放 REST 接口，Vue3 + Element Plus + ECharts 实现订单列表、异常看板（WebSocket 实时告警 + 根因报告）、NL 查询框、事件时间线、补偿执行按钮，最终走通 5 分钟 Demo 雏形。
+
+**Architecture:** 前端 Vue3 调用后端 Spring Boot REST（`GET /orders`、`GET /orders/stats`、`GET /orders/{id}/events`、`POST /compensations`）与 AI 服务 REST（`POST /ai/query`、`GET /anomalies/{id}/analysis`），原生 WebSocket API 连接 `/ws/anomalies` 接收实时告警。AI 服务 `NLQueryEngine` 通过 `IntentClassifier`（LLM + 关键词兜底）路由到 3 类模板执行器，模板执行器通过 HTTP 调后端 REST 接口获取数据（AI 服务不直连 DB），LLM 润色结果回答。补偿为人工触发版：前端按钮 → `POST /compensations` → 后端校验白名单 → 转补偿命令 → 命令处理器写补偿事件。
+
+**Tech Stack:** JDK 17, Spring Boot 3.3, Spring Web, Spring JdbcTemplate, PostgreSQL 16, Python 3.11 + FastAPI + httpx + pydantic v2 + pytest 8, Ollama / OpenAI-compatible LLM API, Node 20 + Vue3 + Vite + Element Plus + ECharts + axios + vue-router + vitest + @vue/test-utils
+
+## Global Constraints
+
+- Java 17（`sourceCompatibility = '17'`），Spring Boot 3.3+
+- Python 3.11，依赖固定在 `requirements.txt`
+- 前端 Node 20，Vue3 + Vite + Element Plus + ECharts
+- Java 包前缀 `com.eventguard`，Python 模块 `app`，前端模块 `src`
+- 所有源码文件 UTF-8 编码，关键注释用中文
+- 每个任务结束 commit 一次，commit message 格式 `feat(m4.X): <描述>`
+- 项目根目录 `D:/File/Studyproject/EventGuard/`
+- 代码子模块直接在根目录下，无 `eventguard/` 前缀：Python 在 `eventguard-ai/`，Java 在 `eventguard-server/`，前端在 `eventguard-ui/`
+- 接口签名严格遵循设计文档第 7.3.3、7.4 章与 plan.md M4：
+  - Python：`IntentClassifier.classify(question: str) -> str`（返回 `event_lookup|stats_aggregation|trace_replay`）
+  - Python：`NLQueryEngine.query(question: str) -> QueryResult`、REST `POST /ai/query`
+  - 模板查询执行：`event_lookup` 调后端 `GET /orders/{id}`；`stats_aggregation` 调后端 `GET /orders/stats?status=&from=&to=`；`trace_replay` 调后端 `GET /orders/{id}/events`（AI 服务不直连 DB）
+  - 后端补充：`OrderQueryService` 加 `GET /orders/stats` 聚合查询（按 status 分组 + 时间窗过滤）
+  - 补偿执行：后端 `POST /compensations`（接收 actionType+aggId+params，校验白名单，转补偿命令），前端按钮触发
+  - 根因报告：前端调 `GET /anomalies/{id}/analysis`（M3.7 提供）
+  - WebSocket：前端连接 `/ws/anomalies`（M3.8 提供）
+- M4 是 MVP 简化版：NL 查询用「意图分类+模板查询」，不用 Text-to-SQL（V2）；补偿是「人工触发」，不是 Agent 自动执行（V2）
+- LLM 用 Ollama 本地（`http://ollama:11434/v1`）或远端 API，配置走环境变量 `LLM_API_KEY` / `LLM_BASE_URL`，复用 M3 的 `app.analyzer.llm_client.LLMClient`
+- M3 已存在的文件（`LLMClient`、`Anomaly` 模型、`/anomalies/{id}/analysis` 端点、`/ws/anomalies` 端点）在本计划中直接 import / 调用，不重新实现
+- M2 已存在的文件（`OrderView`、`OrderViewRepository`、`OrderQueryService`、`OrderQueryController`、`DomainEvent`、各事件类、`application.yml`、`pom.xml`、`V2__full_schema.sql`）在本计划中用 Modify 标注扩展
+
+---
+
+## File Structure
+
+M4 涉及的文件清单（新建 / 修改）：
+
+```
+EventGuard/
+├── eventguard-ai/
+│   ├── app/
+│   │   ├── query/                                # New - Task 1, 2
+│   │   │   ├── __init__.py                       # New - Task 1
+│   │   │   ├── intent_classifier.py              # New - Task 1
+│   │   │   ├── prompts.py                        # New - Task 1
+│   │   │   ├── query_result.py                   # New - Task 2
+│   │   │   ├── backend_client.py                 # New - Task 2
+│   │   │   ├── template_executor.py              # New - Task 2
+│   │   │   └── nl_query_engine.py                # New - Task 2
+│   │   └── main.py                               # Modify - Task 2（注册 POST /ai/query）
+│   ├── tests/
+│   │   ├── __init__.py                           # New - Task 1
+│   │   ├── test_intent_classifier.py             # New - Task 1
+│   │   ├── test_template_executor.py             # New - Task 2
+│   │   └── test_nl_query_engine.py               # New - Task 2
+│   └── requirements.txt                          # Modify - Task 1（加 httpx）
+├── eventguard-server/
+│   └── src/
+│       ├── main/
+│       │   └── java/com/eventguard/
+│       │       ├── query/
+│       │       │   ├── controller/
+│       │       │   │   └── OrderQueryController.java  # Modify - Task 2（加 GET /orders、GET /orders/{id}/events）
+│       │       │   ├── service/
+│       │       │   │   ├── OrderQueryService.java     # Modify - Task 2（加 listOrders、getEvents）
+│       │       │   │   └── OrderStatsService.java     # New - Task 2
+│       │       │   ├── controller/
+│       │       │   │   └── OrderStatsController.java  # New - Task 2
+│       │       │   └── model/
+│       │       │       ├── OrderListItem.java         # New - Task 2
+│       │       │       ├── OrderListResponse.java     # New - Task 2
+│       │       │       ├── OrderStats.java            # New - Task 2
+│       │       │       └── EventDto.java              # New - Task 2
+│       │       ├── compensation/                       # New - Task 7
+│       │       │   ├── model/
+│       │       │   │   ├── CompensationRequest.java    # New - Task 7
+│       │       │   │   ├── CompensationResult.java     # New - Task 7
+│       │       │   │   └── CompensationCommand.java    # New - Task 7
+│       │       │   ├── action/
+│       │       │   │   ├── CompensationAction.java     # New - Task 7
+│       │       │   │   ├── CompensationActionRegistry.java # New - Task 7
+│       │       │   │   ├── RefundAction.java           # New - Task 7
+│       │       │   │   ├── NotifyDelayAction.java      # New - Task 7
+│       │       │   │   ├── MarkOutOfStockAction.java   # New - Task 7
+│       │       │   │   ├── FreezeOrderAction.java      # New - Task 7
+│       │       │   │   └── BackoffAndStopAction.java   # New - Task 7
+│       │       │   ├── service/
+│       │       │   │   └── CompensationService.java    # New - Task 7
+│       │       │   └── controller/
+│       │       │       └── CompensationController.java # New - Task 7
+│       │       └── event/
+│       │           └── model/
+│       │               └── CompensationExecutedEvent.java # New - Task 7
+│       └── test/
+│           └── java/com/eventguard/
+│               ├── query/
+│               │   └── service/
+│               │       └── OrderStatsServiceTest.java  # New - Task 2
+│               └── compensation/
+│                   └── service/
+│                       └── CompensationServiceTest.java # New - Task 7
+├── eventguard-ui/
+│   ├── package.json                              # Modify - Task 3（加 element-plus/axios/vue-router/vitest 等）
+│   ├── vite.config.ts                            # Modify - Task 3（加 vitest 配置）
+│   ├── vitest.config.ts                          # New - Task 3
+│   ├── src/
+│   │   ├── main.ts                               # Modify - Task 3（挂载 router + Element Plus）
+│   │   ├── App.vue                               # Modify - Task 3（布局 + router-view）
+│   │   ├── router/
+│   │   │   └── index.ts                          # New - Task 3
+│   │   ├── api/                                  # New - Task 3
+│   │   │   ├── http.ts                           # New - Task 3
+│   │   │   ├── order.ts                          # New - Task 3
+│   │   │   ├── anomaly.ts                        # New - Task 4
+│   │   │   ├── ai.ts                             # New - Task 5
+│   │   │   └── compensation.ts                   # New - Task 7
+│   │   ├── composables/
+│   │   │   └── useAnomalyWebSocket.ts            # New - Task 4
+│   │   ├── components/
+│   │   │   └── EventTimeline.vue                 # New - Task 6
+│   │   └── views/
+│   │       ├── OrderList.vue                     # New - Task 3
+│   │       ├── AnomalyDashboard.vue              # New - Task 4
+│   │       ├── NLQuery.vue                       # New - Task 5
+│   │       ├── OrderTimeline.vue                 # New - Task 6
+│   │       └── CompensationExecute.vue           # New - Task 7
+│   └── src/views/__tests__/
+│       ├── OrderList.test.ts                     # New - Task 3
+│       ├── AnomalyDashboard.test.ts              # New - Task 4
+│       ├── NLQuery.test.ts                       # New - Task 5
+│       └── CompensationExecute.test.ts           # New - Task 7
+└── src/components/__tests__/
+    └── EventTimeline.test.ts                     # New - Task 6
+```
+
+---
+
+## Task 1: M4.1 意图分类（TDD）
+
+**Files:**
+- Create: `eventguard-ai/app/query/__init__.py`
+- Create: `eventguard-ai/app/query/intent_classifier.py`
+- Create: `eventguard-ai/app/query/prompts.py`
+- Modify: `eventguard-ai/requirements.txt`（加 `httpx`）
+- Test: `eventguard-ai/tests/__init__.py`
+- Test: `eventguard-ai/tests/test_intent_classifier.py`
+
+**Interfaces:**
+- Consumes: M3 的 `app.analyzer.llm_client.LLMClient`（`generate(prompt: str) -> str`）
+- Produces:
+  - `IntentClassifier.classify(question: str) -> str`：返回 `event_lookup|stats_aggregation|trace_replay`
+  - LLM 失败时关键词兜底（"状态变更/经历了" → `trace_replay`；"多少/统计/数量" → `stats_aggregation`；其余 → `event_lookup`）
+
+- [ ] **Step 1: 写失败测试 — IntentClassifier 3 类意图 + LLM 失败兜底**
+
+`eventguard-ai/tests/__init__.py`:
+```python
+```
+
+`eventguard-ai/tests/test_intent_classifier.py`:
+```python
+"""IntentClassifier 单元测试。
+
+覆盖：
+- LLM 返回合法意图标签时，3 类意图正确分类
+- LLM 抛异常或返回非法标签时，关键词兜底
+- 关键词匹配规则
+"""
+from unittest.mock import MagicMock
+
+import pytest
+
+from app.query.intent_classifier import IntentClassifier
+from app.query.prompts import INTENT_SYSTEM_PROMPT
+
+
+class TestIntentClassifier:
+    """意图分类器测试。"""
+
+    def test_classify_event_lookup_when_llm_returns_event_lookup(self):
+        """LLM 返回 'event_lookup' 时分类为 event_lookup。"""
+        mock_llm = MagicMock()
+        mock_llm.generate.return_value = "event_lookup"
+        classifier = IntentClassifier(llm_client=mock_llm)
+
+        intent = classifier.classify("订单 #abc 当前状态是什么？")
+
+        assert intent == "event_lookup"
+        mock_llm.generate.assert_called_once()
+
+    def test_classify_stats_aggregation_when_llm_returns_stats(self):
+        """LLM 返回 'stats_aggregation' 时分类为 stats_aggregation。"""
+        mock_llm = MagicMock()
+        mock_llm.generate.return_value = "stats_aggregation"
+        classifier = IntentClassifier(llm_client=mock_llm)
+
+        intent = classifier.classify("昨天有多少订单支付失败？")
+
+        assert intent == "stats_aggregation"
+
+    def test_classify_trace_replay_when_llm_returns_trace(self):
+        """LLM 返回 'trace_replay' 时分类为 trace_replay。"""
+        mock_llm = MagicMock()
+        mock_llm.generate.return_value = "trace_replay"
+        classifier = IntentClassifier(llm_client=mock_llm)
+
+        intent = classifier.classify("订单 #1234 经历了哪些状态变更？")
+
+        assert intent == "trace_replay"
+
+    def test_classify_falls_back_to_keyword_when_llm_raises(self):
+        """LLM 抛异常时走关键词兜底。"""
+        mock_llm = MagicMock()
+        mock_llm.generate.side_effect = RuntimeError("llm unavailable")
+        classifier = IntentClassifier(llm_client=mock_llm)
+
+        # 含"状态变更" → trace_replay
+        assert classifier.classify("订单 #1234 经历了哪些状态变更？") == "trace_replay"
+        # 含"多少" → stats_aggregation
+        assert classifier.classify("昨天有多少支付失败？") == "stats_aggregation"
+        # 含"当前" → event_lookup
+        assert classifier.classify("订单 #abc 当前状态是什么？") == "event_lookup"
+
+    def test_classify_falls_back_to_keyword_when_llm_returns_invalid_label(self):
+        """LLM 返回非合法标签时走关键词兜底。"""
+        mock_llm = MagicMock()
+        mock_llm.generate.return_value = "unknown_intent"
+        classifier = IntentClassifier(llm_client=mock_llm)
+
+        # 含"统计" → stats_aggregation
+        assert classifier.classify("统计昨天支付失败的订单数量") == "stats_aggregation"
+
+    def test_classify_default_fallback_is_event_lookup(self):
+        """LLM 异常且无关键词命中时默认 event_lookup。"""
+        mock_llm = MagicMock()
+        mock_llm.generate.side_effect = RuntimeError("llm unavailable")
+        classifier = IntentClassifier(llm_client=mock_llm)
+
+        assert classifier.classify("hello world") == "event_lookup"
+
+    def test_prompt_includes_three_intents(self):
+        """系统 prompt 应包含 3 类意图标签。"""
+        assert "event_lookup" in INTENT_SYSTEM_PROMPT
+        assert "stats_aggregation" in INTENT_SYSTEM_PROMPT
+        assert "trace_replay" in INTENT_SYSTEM_PROMPT
+```
+
+- [ ] **Step 2: 运行测试，验证失败（IntentClassifier 未实现）**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_intent_classifier.py -v
+# 期望：ImportError — app.query.intent_classifier 模块不存在
+```
+
+- [ ] **Step 3: 实现 IntentClassifier + prompts**
+
+`eventguard-ai/requirements.txt`（在末尾追加）:
+```text
+httpx==0.27.0
+```
+
+`eventguard-ai/app/query/__init__.py`:
+```python
+"""NL 查询模块：意图分类 + 模板查询执行。"""
+```
+
+`eventguard-ai/app/query/prompts.py`:
+```python
+"""NL 查询相关 prompt 模板。"""
+
+INTENT_SYSTEM_PROMPT = """你是一个意图分类器。将用户问题分类为以下 3 类意图之一，只返回意图标签，不返回其他内容。
+
+意图定义：
+1. event_lookup — 查询某个订单的当前状态或基本信息。示例：
+   - "订单 #abc 当前状态是什么？"
+   - "查一下订单 1234 的信息"
+
+2. stats_aggregation — 统计聚合查询，涉及数量、时间窗、状态分布。示例：
+   - "昨天有多少订单支付失败？"
+   - "统计本周已发货订单数量"
+   - "过去 7 天 PAID 状态的订单有多少"
+
+3. trace_replay — 查询某个订单经历的状态变更/事件历史。示例：
+   - "订单 #1234 经历了哪些状态变更？"
+   - "订单 abc 的事件回放"
+
+只返回意图标签：event_lookup / stats_aggregation / trace_replay
+"""
+
+
+INTENT_USER_TEMPLATE = "用户问题：{question}\n\n请返回意图标签："
+
+
+NL_ANSWER_SYSTEM_PROMPT = """你是一个数据分析助手。根据用户问题和查询结果，用简洁的中文回答用户问题。
+回答应基于查询结果数据，不要编造。如果查询结果为空，说明没有找到相关数据。
+"""
+
+
+NL_ANSWER_USER_TEMPLATE = """用户问题：{question}
+
+查询意图：{intent}
+
+查询结果：
+{result}
+
+请用简洁的中文回答用户问题：
+"""
+```
+
+`eventguard-ai/app/query/intent_classifier.py`:
+```python
+"""意图分类器：LLM 分类 + 关键词兜底。
+
+设计文档 7.3.3 第 3 层 NL 查询 MVP。
+"""
+import logging
+from typing import Optional
+
+from app.analyzer.llm_client import LLMClient
+from app.query.prompts import INTENT_SYSTEM_PROMPT, INTENT_USER_TEMPLATE
+
+logger = logging.getLogger(__name__)
+
+
+class IntentClassifier:
+    """意图分类器，3 类意图：event_lookup / stats_aggregation / trace_replay。
+
+    LLM 优先，失败或返回非法标签时走关键词兜底。
+    """
+
+    VALID_INTENTS = ("event_lookup", "stats_aggregation", "trace_replay")
+
+    # 关键词兜底规则（按优先级，第一个命中的返回）
+    KEYWORD_RULES = (
+        ("stats_aggregation", ("多少", "数量", "统计", "count", "总数", "占比")),
+        ("trace_replay", ("状态变更", "经历了", "事件回放", "事件历史", "回放", "时间线")),
+        ("event_lookup", ("当前", "状态是", "信息", "详情", "查询订单")),
+    )
+
+    def __init__(self, llm_client: Optional[LLMClient] = None):
+        self.llm_client = llm_client or LLMClient()
+
+    def classify(self, question: str) -> str:
+        """对用户问题分类，返回 3 类意图之一。
+
+        Args:
+            question: 用户自然语言问题
+
+        Returns:
+            意图标签：event_lookup / stats_aggregation / trace_replay
+        """
+        # 1. LLM 分类
+        intent = self._classify_by_llm(question)
+        if intent is not None:
+            return intent
+
+        # 2. 关键词兜底
+        fallback = self._classify_by_keyword(question)
+        logger.info("LLM 分类失败，关键词兜底：%s -> %s", question, fallback)
+        return fallback
+
+    def _classify_by_llm(self, question: str) -> Optional[str]:
+        """调用 LLM 分类，返回合法意图或 None。"""
+        try:
+            prompt = INTENT_SYSTEM_PROMPT + "\n" + INTENT_USER_TEMPLATE.format(question=question)
+            raw = self.llm_client.generate(prompt)
+            label = raw.strip().lower()
+            # 兼容 LLM 可能返回带标点或多余文字
+            for intent in self.VALID_INTENTS:
+                if intent in label:
+                    return intent
+            logger.warning("LLM 返回非法意图标签：%s", raw)
+            return None
+        except Exception as e:
+            logger.warning("LLM 分类异常：%s", e)
+            return None
+
+    def _classify_by_keyword(self, question: str) -> str:
+        """关键词兜底分类。"""
+        q = question.lower()
+        for intent, keywords in self.KEYWORD_RULES:
+            for kw in keywords:
+                if kw in q:
+                    return intent
+        # 默认 event_lookup
+        return "event_lookup"
+```
+
+- [ ] **Step 4: 运行测试，验证通过**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_intent_classifier.py -v
+# 期望：7 passed
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ai/app/query/__init__.py eventguard-ai/app/query/intent_classifier.py \
+        eventguard-ai/app/query/prompts.py eventguard-ai/requirements.txt \
+        eventguard-ai/tests/__init__.py eventguard-ai/tests/test_intent_classifier.py
+git commit -m "feat(m4.1): 意图分类器（LLM 3 类 + 关键词兜底）"
+```
+
+---
+
+## Task 2: M4.2 模板查询执行器（TDD）
+
+**Files:**
+- Create: `eventguard-ai/app/query/query_result.py`
+- Create: `eventguard-ai/app/query/backend_client.py`
+- Create: `eventguard-ai/app/query/template_executor.py`
+- Create: `eventguard-ai/app/query/nl_query_engine.py`
+- Modify: `eventguard-ai/app/main.py`（注册 `POST /ai/query`）
+- Create: `eventguard-server/src/main/java/com/eventguard/query/service/OrderStatsService.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/query/controller/OrderStatsController.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/query/model/OrderStats.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/query/model/OrderListItem.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/query/model/OrderListResponse.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/query/model/EventDto.java`
+- Modify: `eventguard-server/src/main/java/com/eventguard/query/service/OrderQueryService.java`（加 `listOrders`、`getEvents`）
+- Modify: `eventguard-server/src/main/java/com/eventguard/query/controller/OrderQueryController.java`（加 `GET /orders`、`GET /orders/{id}/events`）
+- Modify: `eventguard-server/src/main/java/com/eventguard/query/repository/OrderViewRepository.java`（加 `list`、`count` 方法）
+- Test: `eventguard-ai/tests/test_template_executor.py`
+- Test: `eventguard-ai/tests/test_nl_query_engine.py`
+- Test: `eventguard-server/src/test/java/com/eventguard/query/service/OrderStatsServiceTest.java`
+
+**Interfaces:**
+- Consumes:
+  - M4.1 的 `IntentClassifier`
+  - M3 的 `app.analyzer.llm_client.LLMClient`
+  - M2 的 `OrderViewRepository`、`domain_events` 表
+- Produces:
+  - Python `BackendClient`：`get_order(order_id)` / `get_stats(status, from_, to)` / `get_events(order_id)`，HTTP 调后端
+  - Python `TemplateExecutor`：`execute_event_lookup(question)` / `execute_stats_aggregation(question)` / `execute_trace_replay(question)`
+  - Python `NLQueryEngine.query(question: str) -> QueryResult`
+  - Python `QueryResult` Pydantic 模型：`intent` / `data` / `answer`
+  - REST `POST /ai/query`（body `{question}`，返回 `QueryResult`）
+  - Java `OrderStatsService.getStats(status, from, to).List<OrderStats>`
+  - Java REST `GET /orders/stats?status=&from=&to=`、`GET /orders?status=&page=&size=`、`GET /orders/{id}/events`
+
+- [ ] **Step 1: 写失败测试 — Python TemplateExecutor + NLQueryEngine**
+
+`eventguard-ai/tests/test_template_executor.py`:
+```python
+"""TemplateExecutor 单元测试。
+
+mock BackendClient，验证 3 类模板的路由与参数提取。
+"""
+from unittest.mock import MagicMock
+
+import pytest
+
+from app.query.template_executor import TemplateExecutor
+
+
+class TestTemplateExecutor:
+    """模板查询执行器测试。"""
+
+    def test_event_lookup_extracts_order_id_and_calls_get_order(self):
+        """event_lookup 从问题中提取 order_id 并调 BackendClient.get_order。"""
+        mock_backend = MagicMock()
+        mock_backend.get_order.return_value = {
+            "orderId": "11111111-1111-1111-1111-111111111111",
+            "status": "PAID",
+            "totalAmount": 99.00,
+            "version": 2,
+        }
+        executor = TemplateExecutor(backend_client=mock_backend)
+
+        data = executor.execute_event_lookup("订单 11111111-1111-1111-1111-111111111111 当前状态是什么？")
+
+        mock_backend.get_order.assert_called_once_with("11111111-1111-1111-1111-111111111111")
+        assert data["orderId"] == "11111111-1111-1111-1111-111111111111"
+        assert data["status"] == "PAID"
+
+    def test_stats_aggregation_extracts_status_and_time_window(self):
+        """stats_aggregation 从问题中提取状态关键词与时间窗。"""
+        mock_backend = MagicMock()
+        mock_backend.get_stats.return_value = [
+            {"status": "PAID", "orderCount": 10, "totalAmount": 990.00}
+        ]
+        executor = TemplateExecutor(backend_client=mock_backend)
+
+        data = executor.execute_stats_aggregation("昨天有多少 PAID 订单？")
+
+        mock_backend.get_stats.assert_called_once()
+        call_args = mock_backend.get_stats.call_args
+        # 第一个位置参数是 status，应为 "PAID"
+        assert call_args.args[0] == "PAID"
+        # 应有 from / to 时间参数
+        assert call_args.args[1] is not None  # from_
+        assert call_args.args[2] is not None  # to
+        assert data[0]["orderCount"] == 10
+
+    def test_stats_aggregation_without_status_passes_none(self):
+        """stats_aggregation 未匹配状态时 status=None（全状态聚合）。"""
+        mock_backend = MagicMock()
+        mock_backend.get_stats.return_value = []
+        executor = TemplateExecutor(backend_client=mock_backend)
+
+        executor.execute_stats_aggregation("昨天有多少订单？")
+
+        assert mock_backend.get_stats.call_args.args[0] is None
+
+    def test_trace_replay_extracts_order_id_and_calls_get_events(self):
+        """trace_replay 从问题中提取 order_id 并调 BackendClient.get_events。"""
+        mock_backend = MagicMock()
+        mock_backend.get_events.return_value = [
+            {"eventType": "OrderCreatedEvent", "version": 1, "createdAt": "2026-07-21T10:00:00Z"},
+            {"eventType": "PaymentCompletedEvent", "version": 2, "createdAt": "2026-07-21T10:05:00Z"},
+        ]
+        executor = TemplateExecutor(backend_client=mock_backend)
+
+        data = executor.execute_trace_replay("订单 22222222-2222-2222-2222-222222222222 经历了哪些状态变更？")
+
+        mock_backend.get_events.assert_called_once_with("22222222-2222-2222-2222-222222222222")
+        assert len(data) == 2
+        assert data[0]["eventType"] == "OrderCreatedEvent"
+```
+
+`eventguard-ai/tests/test_nl_query_engine.py`:
+```python
+"""NLQueryEngine 单元测试。
+
+mock IntentClassifier + TemplateExecutor + LLMClient，验证路由与回答生成。
+"""
+from unittest.mock import MagicMock
+
+import pytest
+
+from app.query.nl_query_engine import NLQueryEngine
+from app.query.query_result import QueryResult
+
+
+class TestNLQueryEngine:
+    """NL 查询引擎测试。"""
+
+    def test_query_event_lookup_routes_to_event_lookup_template(self):
+        """event_lookup 意图路由到 execute_event_lookup。"""
+        mock_classifier = MagicMock()
+        mock_classifier.classify.return_value = "event_lookup"
+        mock_executor = MagicMock()
+        mock_executor.execute_event_lookup.return_value = {"orderId": "abc", "status": "PAID"}
+        mock_llm = MagicMock()
+        mock_llm.generate.return_value = "订单 abc 当前状态为 PAID。"
+
+        engine = NLQueryEngine(
+            intent_classifier=mock_classifier,
+            template_executor=mock_executor,
+            llm_client=mock_llm,
+        )
+
+        result = engine.query("订单 abc 当前状态是什么？")
+
+        assert isinstance(result, QueryResult)
+        assert result.intent == "event_lookup"
+        mock_executor.execute_event_lookup.assert_called_once()
+        assert "PAID" in result.answer
+
+    def test_query_stats_aggregation_routes_to_stats_template(self):
+        """stats_aggregation 意图路由到 execute_stats_aggregation。"""
+        mock_classifier = MagicMock()
+        mock_classifier.classify.return_value = "stats_aggregation"
+        mock_executor = MagicMock()
+        mock_executor.execute_stats_aggregation.return_value = [
+            {"status": "PAID", "orderCount": 5}
+        ]
+        mock_llm = MagicMock()
+        mock_llm.generate.return_value = "昨天有 5 个 PAID 订单。"
+
+        engine = NLQueryEngine(
+            intent_classifier=mock_classifier,
+            template_executor=mock_executor,
+            llm_client=mock_llm,
+        )
+
+        result = engine.query("昨天有多少 PAID 订单？")
+
+        assert result.intent == "stats_aggregation"
+        mock_executor.execute_stats_aggregation.assert_called_once()
+        assert "5" in result.answer
+
+    def test_query_trace_replay_routes_to_trace_template(self):
+        """trace_replay 意图路由到 execute_trace_replay。"""
+        mock_classifier = MagicMock()
+        mock_classifier.classify.return_value = "trace_replay"
+        mock_executor = MagicMock()
+        mock_executor.execute_trace_replay.return_value = [
+            {"eventType": "OrderCreatedEvent", "version": 1}
+        ]
+        mock_llm = MagicMock()
+        mock_llm.generate.return_value = "订单经历了 OrderCreatedEvent 事件。"
+
+        engine = NLQueryEngine(
+            intent_classifier=mock_classifier,
+            template_executor=mock_executor,
+            llm_client=mock_llm,
+        )
+
+        result = engine.query("订单 abc 经历了哪些状态变更？")
+
+        assert result.intent == "trace_replay"
+        mock_executor.execute_trace_replay.assert_called_once()
+
+    def test_query_llm_failure_returns_data_with_raw_answer(self):
+        """LLM 润色失败时仍返回 QueryResult，answer 为数据摘要。"""
+        mock_classifier = MagicMock()
+        mock_classifier.classify.return_value = "event_lookup"
+        mock_executor = MagicMock()
+        mock_executor.execute_event_lookup.return_value = {"orderId": "abc", "status": "PAID"}
+        mock_llm = MagicMock()
+        mock_llm.generate.side_effect = RuntimeError("llm down")
+
+        engine = NLQueryEngine(
+            intent_classifier=mock_classifier,
+            template_executor=mock_executor,
+            llm_client=mock_llm,
+        )
+
+        result = engine.query("订单 abc 状态？")
+
+        assert result.intent == "event_lookup"
+        # answer 应含原始数据摘要，不抛异常
+        assert "abc" in result.answer or "PAID" in result.answer
+```
+
+- [ ] **Step 2: 写失败测试 — Java OrderStatsService**
+
+`eventguard-server/src/test/java/com/eventguard/query/service/OrderStatsServiceTest.java`:
+```java
+package com.eventguard.query.service;
+
+import com.eventguard.query.model.OrderStats;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+
+import java.time.Instant;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class OrderStatsServiceTest {
+
+    @Mock
+    JdbcTemplate jdbc;
+
+    @InjectMocks
+    OrderStatsService service;
+
+    @Test
+    void getStats_should_group_by_status_and_filter_by_time_window() {
+        Instant from = Instant.parse("2026-07-20T00:00:00Z");
+        Instant to = Instant.parse("2026-07-21T00:00:00Z");
+
+        OrderStats row = new OrderStats("PAID", 5L, new java.math.BigDecimal("495.00"));
+        when(jdbc.query(anyString(), any(RowMapper.class), eq(from), eq(to)))
+                .thenReturn(List.of(row));
+
+        List<OrderStats> result = service.getStats(null, from, to);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getStatus()).isEqualTo("PAID");
+        assertThat(result.get(0).getOrderCount()).isEqualTo(5L);
+    }
+
+    @Test
+    void getStats_with_status_should_filter_by_status() {
+        Instant from = Instant.parse("2026-07-20T00:00:00Z");
+        Instant to = Instant.parse("2026-07-21T00:00:00Z");
+
+        when(jdbc.query(anyString(), any(RowMapper.class), eq("PAID"), eq(from), eq(to)))
+                .thenReturn(List.of(new OrderStats("PAID", 3L, new java.math.BigDecimal("300.00"))));
+
+        List<OrderStats> result = service.getStats("PAID", from, to);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getOrderCount()).isEqualTo(3L);
+    }
+
+    @Test
+    void getStats_empty_result_when_no_data() {
+        Instant from = Instant.parse("2026-07-20T00:00:00Z");
+        Instant to = Instant.parse("2026-07-21T00:00:00Z");
+        when(jdbc.query(anyString(), any(RowMapper.class), eq(from), eq(to)))
+                .thenReturn(List.of());
+
+        List<OrderStats> result = service.getStats(null, from, to);
+
+        assertThat(result).isEmpty();
+    }
+}
+```
+
+- [ ] **Step 3: 运行测试，验证失败**
+
+```bash
+# Python
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_template_executor.py tests/test_nl_query_engine.py -v
+# 期望：ImportError — app.query.template_executor / nl_query_engine 模块不存在
+
+# Java
+cd D:/File/Studyproject/EventGuard/eventguard-server
+mvn test -Dtest=OrderStatsServiceTest
+# 期望：编译失败 — OrderStatsService / OrderStats 类不存在
+```
+
+- [ ] **Step 4: 实现 Java 后端 OrderStatsService + Controller + DTOs**
+
+`eventguard-server/src/main/java/com/eventguard/query/model/OrderStats.java`:
+```java
+package com.eventguard.query.model;
+
+import java.math.BigDecimal;
+
+/**
+ * 订单统计聚合结果（按 status 分组）。
+ */
+public class OrderStats {
+
+    private String status;
+    private long orderCount;
+    private BigDecimal totalAmount;
+
+    public OrderStats() {}
+
+    public OrderStats(String status, long orderCount, BigDecimal totalAmount) {
+        this.status = status;
+        this.orderCount = orderCount;
+        this.totalAmount = totalAmount == null ? BigDecimal.ZERO : totalAmount;
+    }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public long getOrderCount() { return orderCount; }
+    public void setOrderCount(long orderCount) { this.orderCount = orderCount; }
+
+    public BigDecimal getTotalAmount() { return totalAmount; }
+    public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/query/model/OrderListItem.java`:
+```java
+package com.eventguard.query.model;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * 订单列表项（GET /orders 返回）。
+ */
+public class OrderListItem {
+
+    private UUID orderId;
+    private String status;
+    private BigDecimal totalAmount;
+    private int version;
+    private Instant updatedAt;
+
+    public OrderListItem() {}
+
+    public OrderListItem(UUID orderId, String status, BigDecimal totalAmount, int version, Instant updatedAt) {
+        this.orderId = orderId;
+        this.status = status;
+        this.totalAmount = totalAmount;
+        this.version = version;
+        this.updatedAt = updatedAt;
+    }
+
+    public UUID getOrderId() { return orderId; }
+    public void setOrderId(UUID orderId) { this.orderId = orderId; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public BigDecimal getTotalAmount() { return totalAmount; }
+    public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
+
+    public int getVersion() { return version; }
+    public void setVersion(int version) { this.version = version; }
+
+    public Instant getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/query/model/OrderListResponse.java`:
+```java
+package com.eventguard.query.model;
+
+import java.util.List;
+
+/**
+ * 订单列表分页响应。
+ */
+public class OrderListResponse {
+
+    private List<OrderListItem> orders;
+    private long total;
+    private int page;
+    private int size;
+
+    public OrderListResponse() {}
+
+    public OrderListResponse(List<OrderListItem> orders, long total, int page, int size) {
+        this.orders = orders;
+        this.total = total;
+        this.page = page;
+        this.size = size;
+    }
+
+    public List<OrderListItem> getOrders() { return orders; }
+    public void setOrders(List<OrderListItem> orders) { this.orders = orders; }
+
+    public long getTotal() { return total; }
+    public void setTotal(long total) { this.total = total; }
+
+    public int getPage() { return page; }
+    public void setPage(int page) { this.page = page; }
+
+    public int getSize() { return size; }
+    public void setSize(int size) { this.size = size; }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/query/model/EventDto.java`:
+```java
+package com.eventguard.query.model;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * 事件 DTO（GET /orders/{id}/events 返回）。
+ */
+public class EventDto {
+
+    private UUID eventId;
+    private UUID aggregateId;
+    private String eventType;
+    private int version;
+    private Map<String, Object> payload;
+    private Instant createdAt;
+
+    public EventDto() {}
+
+    public EventDto(UUID eventId, UUID aggregateId, String eventType, int version,
+                    Map<String, Object> payload, Instant createdAt) {
+        this.eventId = eventId;
+        this.aggregateId = aggregateId;
+        this.eventType = eventType;
+        this.version = version;
+        this.payload = payload;
+        this.createdAt = createdAt;
+    }
+
+    public UUID getEventId() { return eventId; }
+    public void setEventId(UUID eventId) { this.eventId = eventId; }
+
+    public UUID getAggregateId() { return aggregateId; }
+    public void setAggregateId(UUID aggregateId) { this.aggregateId = aggregateId; }
+
+    public String getEventType() { return eventType; }
+    public void setEventType(String eventType) { this.eventType = eventType; }
+
+    public int getVersion() { return version; }
+    public void setVersion(int version) { this.version = version; }
+
+    public Map<String, Object> getPayload() { return payload; }
+    public void setPayload(Map<String, Object> payload) { this.payload = payload; }
+
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/query/service/OrderStatsService.java`:
+```java
+package com.eventguard.query.service;
+
+import com.eventguard.query.model.OrderStats;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * 订单统计聚合服务（GET /orders/stats）。
+ *
+ * MVP：模板 SQL，按 status 分组 + 时间窗过滤，AI 服务不直连 DB。
+ */
+@Service
+public class OrderStatsService {
+
+    private final JdbcTemplate jdbc;
+
+    public OrderStatsService(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    /**
+     * 按状态分组统计订单数量与金额。
+     *
+     * @param status 状态过滤（null 表示全状态聚合）
+     * @param from   时间窗起点（含），null 表示不限制
+     * @param to     时间窗终点（含），null 表示不限制
+     */
+    public List<OrderStats> getStats(String status, Instant from, Instant to) {
+        RowMapper<OrderStats> mapper = (rs, rowNum) -> new OrderStats(
+                rs.getString("status"),
+                rs.getLong("order_count"),
+                rs.getBigDecimal("total_amount"));
+
+        if (status == null || status.isBlank()) {
+            String sql = "SELECT status, count(*) AS order_count, COALESCE(sum(total_amount), 0) AS total_amount " +
+                    "FROM order_view WHERE updated_at >= ? AND updated_at <= ? GROUP BY status";
+            return jdbc.query(sql, mapper, from, to);
+        } else {
+            String sql = "SELECT status, count(*) AS order_count, COALESCE(sum(total_amount), 0) AS total_amount " +
+                    "FROM order_view WHERE status = ? AND updated_at >= ? AND updated_at <= ? GROUP BY status";
+            return jdbc.query(sql, mapper, status, from, to);
+        }
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/query/controller/OrderStatsController.java`:
+```java
+package com.eventguard.query.controller;
+
+import com.eventguard.query.model.OrderStats;
+import com.eventguard.query.service.OrderStatsService;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * 订单统计 REST 接口（GET /orders/stats）。
+ */
+@RestController
+@RequestMapping("/orders/stats")
+public class OrderStatsController {
+
+    private final OrderStatsService statsService;
+
+    public OrderStatsController(OrderStatsService statsService) {
+        this.statsService = statsService;
+    }
+
+    @GetMapping
+    public List<OrderStats> getStats(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to) {
+        return statsService.getStats(status, from, to);
+    }
+}
+```
+
+- [ ] **Step 5: 扩展 OrderViewRepository / OrderQueryService / OrderQueryController**
+
+修改 `eventguard-server/src/main/java/com/eventguard/query/repository/OrderViewRepository.java`，在类中追加 `list` 与 `count` 方法（保留原有 `findById`）：
+
+```java
+// 在 OrderViewRepository 类中追加以下方法（保留 M2 已有的 findById）
+
+    public com.eventguard.query.model.OrderListResponse list(String status, int page, int size) {
+        int offset = page * size;
+        RowMapper<com.eventguard.query.model.OrderListItem> mapper = (rs, rowNum) -> {
+            com.eventguard.query.model.OrderListItem item = new com.eventguard.query.model.OrderListItem();
+            item.setOrderId(rs.getObject("order_id", java.util.UUID.class));
+            item.setStatus(rs.getString("status"));
+            item.setTotalAmount(rs.getBigDecimal("total_amount"));
+            item.setVersion(rs.getInt("version"));
+            item.setUpdatedAt(rs.getObject("updated_at", java.time.Instant.class));
+            return item;
+        };
+
+        List<com.eventguard.query.model.OrderListItem> orders;
+        long total;
+        if (status == null || status.isBlank()) {
+            orders = jdbc.query(
+                    "SELECT order_id, status, total_amount, version, updated_at " +
+                            "FROM order_view ORDER BY updated_at DESC NULLS LAST LIMIT ? OFFSET ?",
+                    mapper, size, offset);
+            Long cnt = jdbc.queryForObject("SELECT count(*) FROM order_view", Long.class);
+            total = cnt == null ? 0 : cnt;
+        } else {
+            orders = jdbc.query(
+                    "SELECT order_id, status, total_amount, version, updated_at " +
+                            "FROM order_view WHERE status = ? ORDER BY updated_at DESC NULLS LAST LIMIT ? OFFSET ?",
+                    mapper, status, size, offset);
+            Long cnt = jdbc.queryForObject(
+                    "SELECT count(*) FROM order_view WHERE status = ?", Long.class, status);
+            total = cnt == null ? 0 : cnt;
+        }
+        return new com.eventguard.query.model.OrderListResponse(orders, total, page, size);
+    }
+
+    public List<com.eventguard.query.model.EventDto> findEventsByAggregateId(java.util.UUID aggregateId) {
+        RowMapper<com.eventguard.query.model.EventDto> mapper = (rs, rowNum) -> {
+            com.eventguard.query.model.EventDto dto = new com.eventguard.query.model.EventDto();
+            dto.setEventId(rs.getObject("event_id", java.util.UUID.class));
+            dto.setAggregateId(rs.getObject("aggregate_id", java.util.UUID.class));
+            dto.setEventType(rs.getString("event_type"));
+            dto.setVersion(rs.getInt("event_version"));
+            dto.setPayload(rs.getObject("payload", com.fasterxml.jackson.databind.JsonNode.class)
+                    != null ? new com.fasterxml.jackson.databind.ObjectMapper().convertValue(
+                            rs.getObject("payload", com.fasterxml.jackson.databind.JsonNode.class),
+                            new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {}) : null);
+            dto.setCreatedAt(rs.getObject("created_at", java.time.Instant.class));
+            return dto;
+        };
+        return jdbc.query(
+                "SELECT event_id, aggregate_id, event_type, event_version, payload, created_at " +
+                        "FROM domain_events WHERE aggregate_id = ? ORDER BY event_version",
+                mapper, aggregateId);
+    }
+```
+
+修改 `eventguard-server/src/main/java/com/eventguard/query/service/OrderQueryService.java`，追加 `listOrders` 与 `getEvents` 方法（保留 M2 已有的 `readAfterWrite` / `findById`）：
+
+```java
+// 在 OrderQueryService 类中追加以下方法（保留 M2 已有的 readAfterWrite / findById）
+
+    public com.eventguard.query.model.OrderListResponse listOrders(String status, int page, int size) {
+        return orderViewRepository.list(status, page, size);
+    }
+
+    public List<com.eventguard.query.model.EventDto> getEvents(java.util.UUID orderId) {
+        return orderViewRepository.findEventsByAggregateId(orderId);
+    }
+```
+
+> 注：`OrderQueryService` 在 M2 中已注入 `OrderViewRepository`，此处复用。需在文件顶部补 `import java.util.List;`（若未导入）。
+
+修改 `eventguard-server/src/main/java/com/eventguard/query/controller/OrderQueryController.java`，追加列表与事件回放端点（保留 M2 已有的 `GET /orders/{orderId}`）：
+
+```java
+// 在 OrderQueryController 类中追加以下方法（保留 M2 已有的 @GetMapping("/{orderId}")）
+
+    @GetMapping
+    public com.eventguard.query.model.OrderListResponse listOrders(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return queryService.listOrders(status, page, size);
+    }
+
+    @GetMapping("/{orderId}/events")
+    public List<com.eventguard.query.model.EventDto> getEvents(@PathVariable java.util.UUID orderId) {
+        return queryService.getEvents(orderId);
+    }
+```
+
+> 注：需在文件顶部补 `import java.util.List;`（若未导入）。
+
+- [ ] **Step 6: 实现 Python BackendClient + TemplateExecutor + NLQueryEngine + QueryResult**
+
+`eventguard-ai/app/query/query_result.py`:
+```python
+"""NL 查询结果模型。"""
+from typing import Any, Optional
+
+from pydantic import BaseModel
+
+
+class QueryResult(BaseModel):
+    """NL 查询引擎返回结构。"""
+    intent: str  # event_lookup / stats_aggregation / trace_replay
+    data: Any = None  # 原始查询数据
+    answer: str = ""  # LLM 润色后的自然语言回答
+```
+
+`eventguard-ai/app/query/backend_client.py`:
+```python
+"""后端 REST 客户端：AI 服务通过 HTTP 调后端，不直连 DB。"""
+import logging
+from typing import Any, Optional
+
+import httpx
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+class BackendClient:
+    """调用 Spring Boot 后端 REST 接口。"""
+
+    def __init__(self, base_url: Optional[str] = None):
+        self.base_url = base_url or getattr(settings, "backend_base_url", "http://eventguard-server:8080")
+        self.client = httpx.Client(timeout=10.0)
+
+    def get_order(self, order_id: str) -> dict:
+        """GET /orders/{id} — 查询订单基本信息。"""
+        url = f"{self.base_url}/orders/{order_id}"
+        resp = self.client.get(url)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_stats(self, status: Optional[str], from_: Optional[str], to: Optional[str]) -> list:
+        """GET /orders/stats?status=&from=&to= — 统计聚合。"""
+        params = {}
+        if status:
+            params["status"] = status
+        if from_:
+            params["from"] = from_
+        if to:
+            params["to"] = to
+        url = f"{self.base_url}/orders/stats"
+        resp = self.client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_events(self, order_id: str) -> list:
+        """GET /orders/{id}/events — 事件回放。"""
+        url = f"{self.base_url}/orders/{order_id}/events"
+        resp = self.client.get(url)
+        resp.raise_for_status()
+        return resp.json()
+```
+
+`eventguard-ai/app/query/template_executor.py`:
+```python
+"""模板查询执行器：3 类意图对应的模板。"""
+import logging
+import re
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+from app.query.backend_client import BackendClient
+
+logger = logging.getLogger(__name__)
+
+
+class TemplateExecutor:
+    """3 类模板查询执行器。
+
+    每个模板从问题中提取参数（order_id / status / 时间窗），调 BackendClient 获取数据。
+    """
+
+    # 状态关键词映射
+    STATUS_KEYWORDS = {
+        "PENDING_PAYMENT": ("待支付", "PENDING_PAYMENT", "待付款"),
+        "PAID": ("已支付", "PAID", "支付完成"),
+        "CONFIRMED": ("已确认", "CONFIRMED"),
+        "SHIPPED": ("已发货", "SHIPPED"),
+        "DELIVERED": ("已送达", "DELIVERED"),
+        "CLOSED": ("已关闭", "CLOSED"),
+        "CANCELLED": ("已取消", "CANCELLED"),
+        "PAYMENT_FAILED": ("支付失败", "PAYMENT_FAILED"),
+        "REFUNDED": ("已退款", "REFUNDED"),
+    }
+
+    # 时间关键词映射（相对今天）
+    TIME_KEYWORDS = {
+        "今天": 0,
+        "今日": 0,
+        "昨天": -1,
+        "昨日": -1,
+        "前天": -2,
+        "本周": -7,
+        "过去7天": -7,
+        "过去 7 天": -7,
+        "近一周": -7,
+    }
+
+    UUID_PATTERN = re.compile(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    )
+
+    def __init__(self, backend_client: Optional[BackendClient] = None):
+        self.backend_client = backend_client or BackendClient()
+
+    def execute_event_lookup(self, question: str) -> dict:
+        """event_lookup 模板：提取 order_id → GET /orders/{id}。"""
+        order_id = self._extract_order_id(question)
+        return self.backend_client.get_order(order_id)
+
+    def execute_stats_aggregation(self, question: str) -> list:
+        """stats_aggregation 模板：提取 status + 时间窗 → GET /orders/stats。"""
+        status = self._extract_status(question)
+        from_, to = self._extract_time_window(question)
+        return self.backend_client.get_stats(status, from_, to)
+
+    def execute_trace_replay(self, question: str) -> list:
+        """trace_replay 模板：提取 order_id → GET /orders/{id}/events。"""
+        order_id = self._extract_order_id(question)
+        return self.backend_client.get_events(order_id)
+
+    def _extract_order_id(self, question: str) -> str:
+        """从问题中提取 UUID 格式的 order_id。"""
+        match = self.UUID_PATTERN.search(question)
+        if match:
+            return match.group(0)
+        # 兜底：尝试校验是否为合法 UUID（无连字符也尝试）
+        tokens = question.replace("#", " ").split()
+        for token in tokens:
+            try:
+                return str(uuid.UUID(token))
+            except ValueError:
+                continue
+        raise ValueError(f"无法从问题中提取 order_id：{question}")
+
+    def _extract_status(self, question: str) -> Optional[str]:
+        """从问题中提取订单状态关键词。"""
+        q = question.upper()
+        for status, keywords in self.STATUS_KEYWORDS.items():
+            for kw in keywords:
+                if kw.upper() in q:
+                    return status
+        return None
+
+    def _extract_time_window(self, question: str) -> tuple:
+        """从问题中提取时间窗，返回 (from_iso, to_iso)。"""
+        now = datetime.now(timezone.utc)
+        for kw, delta_days in self.TIME_KEYWORDS.items():
+            if kw in question:
+                start = now + timedelta(days=delta_days)
+                start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+                return start.isoformat(), now.isoformat()
+        # 默认：最近 7 天
+        start = now + timedelta(days=-7)
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start.isoformat(), now.isoformat()
+```
+
+`eventguard-ai/app/query/nl_query_engine.py`:
+```python
+"""NL 查询引擎：意图分类 → 模板执行 → LLM 润色回答。"""
+import json
+import logging
+from typing import Optional
+
+from app.analyzer.llm_client import LLMClient
+from app.query.intent_classifier import IntentClassifier
+from app.query.prompts import NL_ANSWER_SYSTEM_PROMPT, NL_ANSWER_USER_TEMPLATE
+from app.query.query_result import QueryResult
+from app.query.template_executor import TemplateExecutor
+
+logger = logging.getLogger(__name__)
+
+
+class NLQueryEngine:
+    """自然语言查询引擎。
+
+    流程：IntentClassifier 分类 → TemplateExecutor 模板查询 → LLMClient 润色回答。
+    """
+
+    def __init__(
+        self,
+        intent_classifier: Optional[IntentClassifier] = None,
+        template_executor: Optional[TemplateExecutor] = None,
+        llm_client: Optional[LLMClient] = None,
+    ):
+        self.intent_classifier = intent_classifier or IntentClassifier()
+        self.template_executor = template_executor or TemplateExecutor()
+        self.llm_client = llm_client or LLMClient()
+
+    def query(self, question: str) -> QueryResult:
+        """处理用户问题，返回 QueryResult。"""
+        # 1. 意图分类
+        intent = self.intent_classifier.classify(question)
+        logger.info("NL 查询意图：%s（问题：%s）", intent, question)
+
+        # 2. 模板路由
+        data = self._route_template(intent, question)
+
+        # 3. LLM 润色回答
+        answer = self._generate_answer(question, intent, data)
+
+        return QueryResult(intent=intent, data=data, answer=answer)
+
+    def _route_template(self, intent: str, question: str):
+        """根据意图路由到对应模板。"""
+        if intent == "event_lookup":
+            return self.template_executor.execute_event_lookup(question)
+        elif intent == "stats_aggregation":
+            return self.template_executor.execute_stats_aggregation(question)
+        elif intent == "trace_replay":
+            return self.template_executor.execute_trace_replay(question)
+        else:
+            raise ValueError(f"未知意图：{intent}")
+
+    def _generate_answer(self, question: str, intent: str, data) -> str:
+        """LLM 润色回答，失败时返回数据摘要。"""
+        try:
+            result_str = json.dumps(data, ensure_ascii=False, default=str)
+            prompt = NL_ANSWER_SYSTEM_PROMPT + "\n" + NL_ANSWER_USER_TEMPLATE.format(
+                question=question, intent=intent, result=result_str
+            )
+            return self.llm_client.generate(prompt).strip()
+        except Exception as e:
+            logger.warning("LLM 润色失败，返回数据摘要：%s", e)
+            return self._fallback_answer(intent, data)
+
+    def _fallback_answer(self, intent: str, data) -> str:
+        """LLM 失败时的兜底回答（数据摘要）。"""
+        if intent == "event_lookup" and isinstance(data, dict):
+            return f"订单状态：{data.get('status', '未知')}，版本：{data.get('version', '未知')}。"
+        elif intent == "stats_aggregation" and isinstance(data, list):
+            parts = [f"{item.get('status')}: {item.get('orderCount')} 单" for item in data]
+            return "统计结果：" + "；".join(parts) if parts else "未查询到数据。"
+        elif intent == "trace_replay" and isinstance(data, list):
+            events = [item.get("eventType", "?") for item in data]
+            return f"事件序列：{' → '.join(events)}" if events else "未查询到事件。"
+        return "查询完成。"
+```
+
+修改 `eventguard-ai/app/main.py`，追加 `POST /ai/query` 端点（保留 M3 已有的 `/health`、`/anomalies/{id}/analysis` 等端点）：
+
+```python
+# 在 main.py 顶部追加导入（保留原有 import）
+from app.query.nl_query_engine import NLQueryEngine
+from app.query.query_result import QueryResult
+from pydantic import BaseModel
+
+# 在 main.py 中追加（保留原有路由）
+class NLQueryRequest(BaseModel):
+    question: str
+
+
+# 单例引擎（首次调用时初始化）
+_nl_query_engine = None
+
+
+def _get_nl_query_engine() -> NLQueryEngine:
+    global _nl_query_engine
+    if _nl_query_engine is None:
+        _nl_query_engine = NLQueryEngine()
+    return _nl_query_engine
+
+
+@app.post("/ai/query", response_model=QueryResult)
+def ai_query(req: NLQueryRequest):
+    """自然语言查询：意图分类 + 模板查询 + LLM 润色。"""
+    engine = _get_nl_query_engine()
+    return engine.query(req.question)
+```
+
+- [ ] **Step 7: 运行测试，验证通过**
+
+```bash
+# Python
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/test_template_executor.py tests/test_nl_query_engine.py -v
+# 期望：7 passed（TemplateExecutor 4 + NLQueryEngine 4 = 8 passed）
+
+# Java
+cd D:/File/Studyproject/EventGuard/eventguard-server
+mvn test -Dtest=OrderStatsServiceTest
+# 期望：Tests run: 3, Failures: 0, Errors: 0
+```
+
+- [ ] **Step 8: 端到端验证（需 docker-compose 全栈起）**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+docker compose up -d postgres kafka debezium eventguard-server eventguard-ai
+
+# 触发若干订单事件
+curl -X POST http://localhost:8080/orders -H "Content-Type: application/json" \
+  -d '{"userId":"user-1","totalAmount":99.00}'
+# 等待投影
+
+# 测试 GET /orders 列表
+curl http://localhost:8080/orders?page=0&size=10
+# 期望：返回 OrderListResponse JSON
+
+# 测试 GET /orders/stats
+curl "http://localhost:8080/orders/stats?from=2026-07-20T00:00:00Z&to=2026-07-22T00:00:00Z"
+# 期望：返回 [{status, orderCount, totalAmount}, ...]
+
+# 测试 POST /ai/query
+curl -X POST http://localhost:8000/ai/query \
+  -H "Content-Type: application/json" \
+  -d '{"question":"订单列表里第一个订单当前状态是什么？"}'
+# 期望：返回 QueryResult JSON（含 intent / data / answer）
+
+docker compose down
+```
+
+- [ ] **Step 9: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ai/app/query/ eventguard-ai/app/main.py eventguard-ai/tests/ \
+        eventguard-server/src/main/java/com/eventguard/query/ \
+        eventguard-server/src/test/java/com/eventguard/query/service/OrderStatsServiceTest.java
+git commit -m "feat(m4.2): 模板查询执行器（NLQueryEngine + 后端 stats/list/events 接口）"
+```
+
+---
+
+## Task 3: M4.3 订单列表页（TDD）
+
+**Files:**
+- Modify: `eventguard-ui/package.json`（加 element-plus、axios、vue-router、vitest、@vue/test-utils、jsdom）
+- Modify: `eventguard-ui/vite.config.ts`
+- Create: `eventguard-ui/vitest.config.ts`
+- Modify: `eventguard-ui/src/main.ts`
+- Modify: `eventguard-ui/src/App.vue`
+- Create: `eventguard-ui/src/api/http.ts`
+- Create: `eventguard-ui/src/api/order.ts`
+- Create: `eventguard-ui/src/router/index.ts`
+- Create: `eventguard-ui/src/views/OrderList.vue`
+- Test: `eventguard-ui/src/views/__tests__/OrderList.test.ts`
+
+**Interfaces:**
+- Consumes: M4.2 的后端 `GET /orders?status=&page=&size=`
+- Produces:
+  - `http` axios 实例（baseURL 通过环境变量配置）
+  - `OrderApi.list(status, page, size)` 调 `GET /orders`
+  - Vue Router 路由表
+  - `OrderList.vue` 组件（Element Plus Table + 分页 + 状态筛选）
+
+- [ ] **Step 1: 写失败测试 — OrderList 组件渲染与交互**
+
+`eventguard-ui/src/views/__tests__/OrderList.test.ts`:
+```typescript
+import { mount, flushPromises } from '@vue/test-utils'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import ElementPlus from 'element-plus'
+import OrderList from '../OrderList.vue'
+
+// mock order API
+vi.mock('../../api/order', () => ({
+  OrderApi: {
+    list: vi.fn(),
+  },
+}))
+
+import { OrderApi } from '../../api/order'
+
+describe('OrderList', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('挂载时调用 API 加载订单列表', async () => {
+    ;(OrderApi.list as any).mockResolvedValue({
+      orders: [
+        { orderId: '11111111-1111-1111-1111-111111111111', status: 'PAID', totalAmount: 99, version: 2, updatedAt: '2026-07-21T10:00:00Z' },
+      ],
+      total: 1,
+      page: 0,
+      size: 20,
+    })
+
+    const wrapper = mount(OrderList, {
+      global: { plugins: [ElementPlus] },
+    })
+
+    await flushPromises()
+
+    expect(OrderApi.list).toHaveBeenCalledWith(null, 0, 20)
+    expect(wrapper.text()).toContain('11111111-1111-1111-1111-111111111111')
+    expect(wrapper.text()).toContain('PAID')
+  })
+
+  it('状态筛选变化时重新查询', async () => {
+    ;(OrderApi.list as any).mockResolvedValue({ orders: [], total: 0, page: 0, size: 20 })
+
+    const wrapper = mount(OrderList, {
+      global: { plugins: [ElementPlus] },
+    })
+    await flushPromises()
+
+    // 模拟状态筛选变化
+    await wrapper.find('select[data-testid="status-filter"]').setValue('PAID')
+    await flushPromises()
+
+    expect(OrderApi.list).toHaveBeenLastCalledWith('PAID', 0, 20)
+  })
+
+  it('API 失败时显示错误提示', async () => {
+    ;(OrderApi.list as any).mockRejectedValue(new Error('网络错误'))
+
+    const wrapper = mount(OrderList, {
+      global: { plugins: [ElementPlus] },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('加载失败')
+  })
+})
+```
+
+- [ ] **Step 2: 运行测试，验证失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ui
+npm install
+npx vitest run src/views/__tests__/OrderList.test.ts
+# 期望：失败 — OrderList.vue 与 api/order 模块不存在
+```
+
+- [ ] **Step 3: 实现前端基础设施 + OrderList 组件**
+
+修改 `eventguard-ui/package.json`（合并到 dependencies / devDependencies）:
+```json
+{
+  "name": "eventguard-ui",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "vue": "^3.4.0",
+    "vue-router": "^4.3.0",
+    "element-plus": "^2.7.0",
+    "axios": "^1.7.0",
+    "echarts": "^5.5.0",
+    "vue-echarts": "^7.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.3.0",
+    "vitest": "^2.0.0",
+    "@vue/test-utils": "^2.4.0",
+    "jsdom": "^24.0.0",
+    "@element-plus/icons-vue": "^2.3.0"
+  }
+}
+```
+
+修改 `eventguard-ui/vite.config.ts`:
+```typescript
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+
+export default defineConfig({
+  plugins: [vue()],
+  server: {
+    host: true,
+    port: 3000,
+    proxy: {
+      '/orders': 'http://localhost:8080',
+      '/anomalies': 'http://localhost:8000',
+      '/ai': 'http://localhost:8000',
+      '/compensations': 'http://localhost:8080',
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
+    },
+  },
+})
+```
+
+`eventguard-ui/vitest.config.ts`:
+```typescript
+import { defineConfig } from 'vitest/config'
+import vue from '@vitejs/plugin-vue'
+
+export default defineConfig({
+  plugins: [vue()],
+  test: {
+    environment: 'jsdom',
+    globals: false,
+  },
+})
+```
+
+`eventguard-ui/src/api/http.ts`:
+```typescript
+import axios from 'axios'
+
+// 通过 Vite 环境变量配置后端地址，默认走 vite proxy（同源）
+const baseURL = import.meta.env.VITE_API_BASE_URL || ''
+
+export const http = axios.create({
+  baseURL,
+  timeout: 10000,
+  headers: { 'Content-Type': 'application/json' },
+})
+
+http.interceptors.response.use(
+  (resp) => resp,
+  (error) => {
+    console.error('[HTTP]', error.config?.url, error.message)
+    return Promise.reject(error)
+  }
+)
+```
+
+`eventguard-ui/src/api/order.ts`:
+```typescript
+import { http } from './http'
+
+export interface OrderListItem {
+  orderId: string
+  status: string
+  totalAmount: number
+  version: number
+  updatedAt: string
+}
+
+export interface OrderListResponse {
+  orders: OrderListItem[]
+  total: number
+  page: number
+  size: number
+}
+
+export const OrderApi = {
+  list(status: string | null, page: number, size: number): Promise<OrderListResponse> {
+    const params: Record<string, number | string> = { page, size }
+    if (status) params.status = status
+    return http.get<OrderListResponse>('/orders', { params }).then((r) => r.data)
+  },
+
+  get(orderId: string): Promise<OrderListItem> {
+    return http.get<OrderListItem>(`/orders/${orderId}`).then((r) => r.data)
+  },
+
+  getEvents(orderId: string): Promise<any[]> {
+    return http.get<any[]>(`/orders/${orderId}/events`).then((r) => r.data)
+  },
+
+  getStats(status: string | null, from: string | null, to: string | null): Promise<any[]> {
+    const params: Record<string, string> = {}
+    if (status) params.status = status
+    if (from) params.from = from
+    if (to) params.to = to
+    return http.get<any[]>('/orders/stats', { params }).then((r) => r.data)
+  },
+}
+```
+
+`eventguard-ui/src/router/index.ts`:
+```typescript
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+
+const routes: RouteRecordRaw[] = [
+  { path: '/', redirect: '/orders' },
+  { path: '/orders', name: 'OrderList', component: () => import('../views/OrderList.vue') },
+  { path: '/anomalies', name: 'AnomalyDashboard', component: () => import('../views/AnomalyDashboard.vue') },
+  { path: '/nl-query', name: 'NLQuery', component: () => import('../views/NLQuery.vue') },
+  { path: '/orders/:id/timeline', name: 'OrderTimeline', component: () => import('../views/OrderTimeline.vue') },
+  { path: '/compensations', name: 'CompensationExecute', component: () => import('../views/CompensationExecute.vue') },
+]
+
+export const router = createRouter({
+  history: createWebHistory(),
+  routes,
+})
+```
+
+修改 `eventguard-ui/src/main.ts`:
+```typescript
+import { createApp } from 'vue'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import App from './App.vue'
+import { router } from './router'
+
+const app = createApp(App)
+app.use(router)
+app.use(ElementPlus)
+app.mount('#app')
+```
+
+修改 `eventguard-ui/src/App.vue`:
+```vue
+<template>
+  <el-container style="min-height: 100vh">
+    <el-header style="background: #409eff; color: white; display: flex; align-items: center">
+      <h1 style="margin: 0; font-size: 18px">EventGuard 控制台</h1>
+      <el-menu
+        :default-active="$route.path"
+        mode="horizontal"
+        background-color="#409eff"
+        text-color="#fff"
+        active-text-color="#fff"
+        router
+        style="margin-left: 40px; flex: 1"
+      >
+        <el-menu-item index="/orders">订单列表</el-menu-item>
+        <el-menu-item index="/anomalies">异常看板</el-menu-item>
+        <el-menu-item index="/nl-query">NL 查询</el-menu-item>
+        <el-menu-item index="/compensations">补偿执行</el-menu-item>
+      </el-menu>
+    </el-header>
+    <el-main>
+      <router-view />
+    </el-main>
+  </el-container>
+</template>
+
+<script setup lang="ts">
+</script>
+```
+
+`eventguard-ui/src/views/OrderList.vue`:
+```vue
+<template>
+  <div>
+    <el-card>
+      <template #header>
+        <div style="display: flex; align-items: center; gap: 16px">
+          <span>订单列表</span>
+          <select
+            v-model="statusFilter"
+            data-testid="status-filter"
+            @change="onFilterChange"
+            style="padding: 4px 8px"
+          >
+            <option :value="null">全部状态</option>
+            <option v-for="s in statuses" :key="s" :value="s">{{ s }}</option>
+          </select>
+          <el-button size="small" @click="loadData">刷新</el-button>
+        </div>
+      </template>
+
+      <el-table :data="orders" v-loading="loading" border style="width: 100%">
+        <el-table-column prop="orderId" label="订单 ID" width="320" />
+        <el-table-column prop="status" label="状态" width="160" />
+        <el-table-column prop="totalAmount" label="金额" width="120" />
+        <el-table-column prop="version" label="版本" width="80" />
+        <el-table-column prop="updatedAt" label="更新时间" />
+        <el-table-column label="操作" width="160">
+          <template #default="{ row }">
+            <el-button size="small" @click="goTimeline(row.orderId)">事件时间线</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-pagination
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="total"
+        layout="prev, pager, next, total"
+        style="margin-top: 16px"
+        @current-change="onPageChange"
+      />
+
+      <el-alert v-if="error" type="error" :title="error" :closable="false" style="margin-top: 16px" />
+    </el-card>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { OrderApi, type OrderListItem } from '../api/order'
+
+const router = useRouter()
+
+const orders = ref<OrderListItem[]>([])
+const loading = ref(false)
+const error = ref('')
+const statusFilter = ref<string | null>(null)
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+
+const statuses = [
+  'PENDING_PAYMENT', 'PAYMENT_FAILED', 'PAID', 'CONFIRMED',
+  'SHIPPED', 'DELIVERED', 'CLOSED', 'CANCELLED', 'REFUNDED',
+]
+
+async function loadData() {
+  loading.value = true
+  error.value = ''
+  try {
+    const resp = await OrderApi.list(statusFilter.value, currentPage.value - 1, pageSize.value)
+    orders.value = resp.orders
+    total.value = resp.total
+  } catch (e: any) {
+    error.value = '加载失败：' + (e.message || '未知错误')
+    orders.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+function onFilterChange() {
+  currentPage.value = 1
+  loadData()
+}
+
+function onPageChange(page: number) {
+  currentPage.value = page
+  loadData()
+}
+
+function goTimeline(orderId: string) {
+  router.push(`/orders/${orderId}/timeline`)
+}
+
+onMounted(loadData)
+</script>
+```
+
+- [ ] **Step 4: 运行测试，验证通过**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ui
+npm install
+npx vitest run src/views/__tests__/OrderList.test.ts
+# 期望：3 passed
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ui/
+git commit -m "feat(m4.3): 订单列表页（Element Plus Table + 分页 + 状态筛选）"
+```
+
+---
+
+## Task 4: M4.4 异常看板（TDD）
+
+**Files:**
+- Create: `eventguard-ui/src/api/anomaly.ts`
+- Create: `eventguard-ui/src/composables/useAnomalyWebSocket.ts`
+- Create: `eventguard-ui/src/views/AnomalyDashboard.vue`
+- Test: `eventguard-ui/src/views/__tests__/AnomalyDashboard.test.ts`
+
+**Interfaces:**
+- Consumes:
+  - M3 的 `GET /anomalies/{id}/analysis`（根因分析报告）
+  - M3 的 WebSocket `/ws/anomalies`（实时告警推送）
+- Produces:
+  - `AnomalyApi.getAnalysis(anomalyId)` 调 `GET /anomalies/{id}/analysis`
+  - `useAnomalyWebSocket(url)` composable：原生 WebSocket API，返回 `alerts` ref 与连接状态
+  - `AnomalyDashboard.vue` 组件：实时告警列表 + 历史查询 + 点击查根因报告
+
+- [ ] **Step 1: 写失败测试 — AnomalyDashboard 渲染 + WebSocket + 根因报告**
+
+`eventguard-ui/src/views/__tests__/AnomalyDashboard.test.ts`:
+```typescript
+import { mount, flushPromises } from '@vue/test-utils'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import ElementPlus from 'element-plus'
+import AnomalyDashboard from '../AnomalyDashboard.vue'
+
+// mock anomaly API
+vi.mock('../../api/anomaly', () => ({
+  AnomalyApi: {
+    getAnalysis: vi.fn(),
+  },
+}))
+
+// mock WebSocket composable
+vi.mock('../../composables/useAnomalyWebSocket', () => ({
+  useAnomalyWebSocket: vi.fn(() => ({
+    alerts: { value: [] },
+    connected: { value: false },
+  })),
+}))
+
+import { AnomalyApi } from '../../api/anomaly'
+import { useAnomalyWebSocket } from '../../composables/useAnomalyWebSocket'
+
+describe('AnomalyDashboard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('挂载时初始化 WebSocket 连接', () => {
+    mount(AnomalyDashboard, {
+      global: { plugins: [ElementPlus] },
+    })
+    expect(useAnomalyWebSocket).toHaveBeenCalled()
+  })
+
+  it('WebSocket alerts 变化时渲染告警列表', async () => {
+    ;(useAnomalyWebSocket as any).mockReturnValue({
+      alerts: {
+        value: [
+          {
+            anomaly_id: 'a-1',
+            rule_id: 'R001',
+            aggregate_id: '11111111-1111-1111-1111-111111111111',
+            level: 'ERROR',
+            description: '金额偏离',
+            detected_at: '2026-07-21T10:00:00Z',
+          },
+        ],
+      },
+      connected: { value: true },
+    })
+
+    const wrapper = mount(AnomalyDashboard, {
+      global: { plugins: [ElementPlus] },
+    })
+
+    expect(wrapper.text()).toContain('a-1')
+    expect(wrapper.text()).toContain('金额偏离')
+    expect(wrapper.text()).toContain('ERROR')
+  })
+
+  it('点击异常项调用 getAnalysis 并显示根因报告', async () => {
+    ;(useAnomalyWebSocket as any).mockReturnValue({
+      alerts: {
+        value: [
+          { anomaly_id: 'a-1', rule_id: 'R001', aggregate_id: 'agg-1', level: 'ERROR', description: '金额偏离', detected_at: '2026-07-21T10:00:00Z' },
+        ],
+      },
+      connected: { value: true },
+    })
+    ;(AnomalyApi.getAnalysis as any).mockResolvedValue({
+      anomaly_id: 'a-1',
+      root_cause: '订单金额偏离用户历史均值 3σ',
+      evidence: ['均值 100，本次 500'],
+      suggestions: [{ action: 'FREEZE_ORDER', reason: '冻结订单', risk: 'LOW' }],
+    })
+
+    const wrapper = mount(AnomalyDashboard, {
+      global: { plugins: [ElementPlus] },
+    })
+
+    // 点击第一条异常
+    await wrapper.find('[data-testid="anomaly-item-a-1"]').trigger('click')
+    await flushPromises()
+
+    expect(AnomalyApi.getAnalysis).toHaveBeenCalledWith('a-1')
+    expect(wrapper.text()).toContain('订单金额偏离用户历史均值')
+    expect(wrapper.text()).toContain('FREEZE_ORDER')
+  })
+})
+```
+
+- [ ] **Step 2: 运行测试，验证失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ui
+npx vitest run src/views/__tests__/AnomalyDashboard.test.ts
+# 期望：失败 — AnomalyDashboard.vue / api/anomaly / composables 模块不存在
+```
+
+- [ ] **Step 3: 实现 AnomalyApi + WebSocket composable + AnomalyDashboard 组件**
+
+`eventguard-ui/src/api/anomaly.ts`:
+```typescript
+import { http } from './http'
+
+export interface AnalysisReport {
+  anomaly_id: string
+  root_cause: string
+  evidence: string[]
+  suggestions: { action: string; reason: string; risk: string }[]
+}
+
+export interface AnomalyAlert {
+  anomaly_id: string
+  rule_id: string
+  aggregate_id: string
+  event_type?: string
+  level: string
+  source?: string
+  priority?: string
+  detected_at: string
+  description: string
+  details?: Record<string, any>
+}
+
+export const AnomalyApi = {
+  getAnalysis(anomalyId: string): Promise<AnalysisReport> {
+    return http.get<AnalysisReport>(`/anomalies/${anomalyId}/analysis`).then((r) => r.data)
+  },
+}
+```
+
+`eventguard-ui/src/composables/useAnomalyWebSocket.ts`:
+```typescript
+import { ref, onMounted, onUnmounted, type Ref } from 'vue'
+import type { AnomalyAlert } from '../api/anomaly'
+
+/**
+ * 异常告警 WebSocket composable。
+ *
+ * 连接 /ws/anomalies，实时推送异常告警到 alerts 列表（保留最近 100 条）。
+ */
+export function useAnomalyWebSocket(url?: string): {
+  alerts: Ref<AnomalyAlert[]>
+  connected: Ref<boolean>
+} {
+  const alerts = ref<AnomalyAlert[]>([])
+  const connected = ref(false)
+  let ws: WebSocket | null = null
+
+  // 默认连接同源 /ws/anomalies（vite proxy 转发到后端 8080）
+  const wsUrl = url || `ws://${window.location.host}/ws/anomalies`
+
+  onMounted(() => {
+    try {
+      ws = new WebSocket(wsUrl)
+      ws.onopen = () => { connected.value = true }
+      ws.onclose = () => { connected.value = false }
+      ws.onerror = () => { connected.value = false }
+      ws.onmessage = (ev) => {
+        try {
+          const alert: AnomalyAlert = JSON.parse(ev.data)
+          alerts.value.unshift(alert)
+          // 保留最近 100 条
+          if (alerts.value.length > 100) {
+            alerts.value = alerts.value.slice(0, 100)
+          }
+        } catch (e) {
+          console.error('[WS] 解析告警失败', e)
+        }
+      }
+    } catch (e) {
+      console.error('[WS] 连接失败', e)
+    }
+  })
+
+  onUnmounted(() => {
+    if (ws) {
+      ws.close()
+      ws = null
+    }
+  })
+
+  return { alerts, connected }
+}
+```
+
+`eventguard-ui/src/views/AnomalyDashboard.vue`:
+```vue
+<template>
+  <div>
+    <el-card>
+      <template #header>
+        <div style="display: flex; align-items: center; gap: 16px">
+          <span>异常看板</span>
+          <el-tag :type="connected ? 'success' : 'danger'" size="small">
+            {{ connected ? 'WebSocket 已连接' : 'WebSocket 未连接' }}
+          </el-tag>
+        </div>
+      </template>
+
+      <el-table :data="alerts" border style="width: 100%" max-height="400">
+        <el-table-column prop="anomaly_id" label="异常 ID" width="180" />
+        <el-table-column prop="rule_id" label="规则 ID" width="100" />
+        <el-table-column prop="level" label="级别" width="80">
+          <template #default="{ row }">
+            <el-tag :type="levelType(row.level)" size="small">{{ row.level }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="description" label="描述" />
+        <el-table-column prop="detected_at" label="检测时间" width="200" />
+        <el-table-column label="操作" width="140">
+          <template #default="{ row }">
+            <el-button
+              size="small"
+              :data-testid="`anomaly-item-${row.anomaly_id}`"
+              @click="showAnalysis(row.anomaly_id)"
+            >
+              查看根因
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-empty v-if="alerts.length === 0" description="暂无异常告警" />
+    </el-card>
+
+    <el-dialog v-model="dialogVisible" title="根因分析报告" width="60%">
+      <div v-if="currentReport" v-loading="analysisLoading">
+        <h3>根因</h3>
+        <p>{{ currentReport.root_cause }}</p>
+
+        <h3>证据</h3>
+        <ul>
+          <li v-for="(ev, idx) in currentReport.evidence" :key="idx">{{ ev }}</li>
+        </ul>
+
+        <h3>建议动作</h3>
+        <el-table :data="currentReport.suggestions" border size="small">
+          <el-table-column prop="action" label="动作" width="180" />
+          <el-table-column prop="reason" label="原因" />
+          <el-table-column prop="risk" label="风险" width="100" />
+        </el-table>
+
+        <div style="margin-top: 16px; text-align: right">
+          <el-button
+            v-for="s in currentReport.suggestions"
+            :key="s.action"
+            type="primary"
+            plain
+            style="margin-left: 8px"
+            @click="goCompensate(s.action, currentReport.anomaly_id)"
+          >
+            执行 {{ s.action }}
+          </el-button>
+        </div>
+      </div>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAnomalyWebSocket } from '../composables/useAnomalyWebSocket'
+import { AnomalyApi, type AnalysisReport, type AnomalyAlert } from '../api/anomaly'
+
+const router = useRouter()
+const { alerts, connected } = useAnomalyWebSocket()
+
+const dialogVisible = ref(false)
+const analysisLoading = ref(false)
+const currentReport = ref<AnalysisReport | null>(null)
+
+function levelType(level: string): 'danger' | 'warning' | 'info' {
+  if (level === 'ERROR') return 'danger'
+  if (level === 'WARN') return 'warning'
+  return 'info'
+}
+
+async function showAnalysis(anomalyId: string) {
+  dialogVisible.value = true
+  analysisLoading.value = true
+  currentReport.value = null
+  try {
+    currentReport.value = await AnomalyApi.getAnalysis(anomalyId)
+  } catch (e: any) {
+    console.error('加载根因报告失败', e)
+  } finally {
+    analysisLoading.value = false
+  }
+}
+
+function goCompensate(action: string, anomalyId: string) {
+  router.push({ path: '/compensations', query: { actionType: action, anomalyId } })
+}
+</script>
+```
+
+- [ ] **Step 4: 运行测试，验证通过**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ui
+npx vitest run src/views/__tests__/AnomalyDashboard.test.ts
+# 期望：3 passed
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ui/src/api/anomaly.ts eventguard-ui/src/composables/ eventguard-ui/src/views/AnomalyDashboard.vue \
+        eventguard-ui/src/views/__tests__/AnomalyDashboard.test.ts
+git commit -m "feat(m4.4): 异常看板（WebSocket 实时告警 + 根因报告）"
+```
+
+---
+
+## Task 5: M4.5 NL 查询框（TDD）
+
+**Files:**
+- Create: `eventguard-ui/src/api/ai.ts`
+- Create: `eventguard-ui/src/views/NLQuery.vue`
+- Test: `eventguard-ui/src/views/__tests__/NLQuery.test.ts`
+
+**Interfaces:**
+- Consumes: M4.2 的 `POST /ai/query`
+- Produces:
+  - `AiApi.query(question)` 调 `POST /ai/query`，返回 `QueryResult`
+  - `NLQuery.vue` 组件：输入框 + 提交按钮 + 3 类结果展示
+
+- [ ] **Step 1: 写失败测试 — NLQuery 组件提交与结果展示**
+
+`eventguard-ui/src/views/__tests__/NLQuery.test.ts`:
+```typescript
+import { mount, flushPromises } from '@vue/test-utils'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import ElementPlus from 'element-plus'
+import NLQuery from '../NLQuery.vue'
+
+vi.mock('../../api/ai', () => ({
+  AiApi: {
+    query: vi.fn(),
+  },
+}))
+
+import { AiApi } from '../../api/ai'
+
+describe('NLQuery', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('输入问题并提交后调用 AiApi.query', async () => {
+    ;(AiApi.query as any).mockResolvedValue({
+      intent: 'event_lookup',
+      data: { orderId: 'abc', status: 'PAID' },
+      answer: '订单 abc 当前状态为 PAID。',
+    })
+
+    const wrapper = mount(NLQuery, {
+      global: { plugins: [ElementPlus] },
+    })
+
+    await wrapper.find('input[data-testid="question-input"]').setValue('订单 abc 当前状态？')
+    await wrapper.find('button[data-testid="submit-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(AiApi.query).toHaveBeenCalledWith('订单 abc 当前状态？')
+    expect(wrapper.text()).toContain('订单 abc 当前状态为 PAID')
+    expect(wrapper.text()).toContain('event_lookup')
+  })
+
+  it('stats_aggregation 结果展示统计表格', async () => {
+    ;(AiApi.query as any).mockResolvedValue({
+      intent: 'stats_aggregation',
+      data: [{ status: 'PAID', orderCount: 5, totalAmount: 495 }],
+      answer: '昨天有 5 个 PAID 订单。',
+    })
+
+    const wrapper = mount(NLQuery, {
+      global: { plugins: [ElementPlus] },
+    })
+
+    await wrapper.find('input[data-testid="question-input"]').setValue('昨天有多少 PAID 订单？')
+    await wrapper.find('button[data-testid="submit-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('5 个 PAID')
+    expect(wrapper.text()).toContain('stats_aggregation')
+  })
+
+  it('查询失败时显示错误提示', async () => {
+    ;(AiApi.query as any).mockRejectedValue(new Error('AI 服务不可用'))
+
+    const wrapper = mount(NLQuery, {
+      global: { plugins: [ElementPlus] },
+    })
+
+    await wrapper.find('input[data-testid="question-input"]').setValue('测试问题')
+    await wrapper.find('button[data-testid="submit-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('查询失败')
+  })
+})
+```
+
+- [ ] **Step 2: 运行测试，验证失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ui
+npx vitest run src/views/__tests__/NLQuery.test.ts
+# 期望：失败 — NLQuery.vue / api/ai 模块不存在
+```
+
+- [ ] **Step 3: 实现 AiApi + NLQuery 组件**
+
+`eventguard-ui/src/api/ai.ts`:
+```typescript
+import { http } from './http'
+
+export interface QueryResult {
+  intent: string  // event_lookup / stats_aggregation / trace_replay
+  data: any
+  answer: string
+}
+
+export const AiApi = {
+  query(question: string): Promise<QueryResult> {
+    return http.post<QueryResult>('/ai/query', { question }).then((r) => r.data)
+  },
+}
+```
+
+`eventguard-ui/src/views/NLQuery.vue`:
+```vue
+<template>
+  <div>
+    <el-card>
+      <template #header>自然语言查询</template>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 16px">
+        <el-input
+          v-model="question"
+          placeholder="例如：订单 #abc 当前状态是什么？/ 昨天有多少支付失败？/ 订单 #1234 经历了哪些状态变更？"
+          data-testid="question-input"
+          @keyup.enter="submit"
+        />
+        <el-button type="primary" data-testid="submit-btn" :loading="loading" @click="submit">
+          查询
+        </el-button>
+      </div>
+
+      <el-alert v-if="error" type="error" :title="error" :closable="false" style="margin-bottom: 16px" />
+
+      <div v-if="result" v-loading="loading">
+        <el-descriptions :column="1" border style="margin-bottom: 16px">
+          <el-descriptions-item label="意图">{{ result.intent }}</el-descriptions-item>
+          <el-descriptions-item label="回答">{{ result.answer }}</el-descriptions-item>
+        </el-descriptions>
+
+        <h4>原始数据</h4>
+        <!-- event_lookup: 单订单信息 -->
+        <el-descriptions
+          v-if="result.intent === 'event_lookup' && result.data"
+          :column="1"
+          border
+          size="small"
+        >
+          <el-descriptions-item
+            v-for="(v, k) in result.data"
+            :key="k"
+            :label="String(k)"
+          >{{ v }}</el-descriptions-item>
+        </el-descriptions>
+
+        <!-- stats_aggregation: 统计表格 -->
+        <el-table
+          v-else-if="result.intent === 'stats_aggregation' && Array.isArray(result.data)"
+          :data="result.data"
+          border
+          size="small"
+        >
+          <el-table-column prop="status" label="状态" width="180" />
+          <el-table-column prop="orderCount" label="订单数" width="120" />
+          <el-table-column prop="totalAmount" label="总金额" />
+        </el-table>
+
+        <!-- trace_replay: 事件序列 -->
+        <el-table
+          v-else-if="result.intent === 'trace_replay' && Array.isArray(result.data)"
+          :data="result.data"
+          border
+          size="small"
+        >
+          <el-table-column prop="version" label="版本" width="80" />
+          <el-table-column prop="eventType" label="事件类型" width="220" />
+          <el-table-column prop="createdAt" label="发生时间" />
+        </el-table>
+
+        <!-- 兜底：JSON 展示 -->
+        <pre v-else style="background: #f5f5f5; padding: 12px">{{ JSON.stringify(result.data, null, 2) }}</pre>
+      </div>
+    </el-card>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { AiApi, type QueryResult } from '../api/ai'
+
+const question = ref('')
+const loading = ref(false)
+const error = ref('')
+const result = ref<QueryResult | null>(null)
+
+async function submit() {
+  if (!question.value.trim()) return
+  loading.value = true
+  error.value = ''
+  result.value = null
+  try {
+    result.value = await AiApi.query(question.value)
+  } catch (e: any) {
+    error.value = '查询失败：' + (e.message || '未知错误')
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+```
+
+- [ ] **Step 4: 运行测试，验证通过**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ui
+npx vitest run src/views/__tests__/NLQuery.test.ts
+# 期望：3 passed
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ui/src/api/ai.ts eventguard-ui/src/views/NLQuery.vue eventguard-ui/src/views/__tests__/NLQuery.test.ts
+git commit -m "feat(m4.5): NL 查询框（输入框 + POST /ai/query + 3 类结果展示）"
+```
+
+---
+
+## Task 6: M4.6 事件时间线可视化（TDD）
+
+**Files:**
+- Create: `eventguard-ui/src/components/EventTimeline.vue`
+- Create: `eventguard-ui/src/views/OrderTimeline.vue`
+- Test: `eventguard-ui/src/components/__tests__/EventTimeline.test.ts`
+
+**Interfaces:**
+- Consumes: M4.2 的后端 `GET /orders/{id}/events`
+- Produces:
+  - `EventTimeline.vue` 组件：ECharts 时间线，props `events`，渲染事件节点（类型 + 时间 + payload）
+  - `OrderTimeline.vue` 页面：从路由参数取 orderId，调 `OrderApi.getEvents`，传给 `EventTimeline`
+
+- [ ] **Step 1: 写失败测试 — EventTimeline 组件渲染事件节点**
+
+`eventguard-ui/src/components/__tests__/EventTimeline.test.ts`:
+```typescript
+import { mount } from '@vue/test-utils'
+import { describe, it, expect, vi } from 'vitest'
+import EventTimeline from '../EventTimeline.vue'
+
+// mock vue-echarts 避免实际渲染 canvas
+vi.mock('vue-echarts', () => ({
+  default: {
+    name: 'VChart',
+    props: ['option', 'autoresize'],
+    render: () => null,
+  },
+}))
+
+describe('EventTimeline', () => {
+  it('传入空事件列表时不渲染图表', () => {
+    const wrapper = mount(EventTimeline, {
+      props: { events: [] },
+    })
+    expect(wrapper.find('[data-testid="timeline-empty"]').exists()).toBe(true)
+  })
+
+  it('传入事件列表时构建 ECharts option', () => {
+    const events = [
+      { eventId: 'e1', aggregateId: 'a1', eventType: 'OrderCreatedEvent', version: 1, createdAt: '2026-07-21T10:00:00Z', payload: { amount: 99 } },
+      { eventId: 'e2', aggregateId: 'a1', eventType: 'PaymentCompletedEvent', version: 2, createdAt: '2026-07-21T10:05:00Z', payload: {} },
+    ]
+
+    const wrapper = mount(EventTimeline, {
+      props: { events },
+    })
+
+    // 验证构建了 option（通过组件暴露的 computeOption 或检查 props 传递）
+    const chart = wrapper.findComponent({ name: 'VChart' })
+    expect(chart.exists()).toBe(true)
+    const option = chart.props('option')
+    expect(option).toBeTruthy()
+    expect(option.series).toBeDefined()
+    expect(option.xAxis.data).toContain('OrderCreatedEvent')
+    expect(option.xAxis.data).toContain('PaymentCompletedEvent')
+  })
+
+  it('事件节点按 version 排序', () => {
+    const events = [
+      { eventId: 'e2', aggregateId: 'a1', eventType: 'PaymentCompletedEvent', version: 2, createdAt: '2026-07-21T10:05:00Z', payload: {} },
+      { eventId: 'e1', aggregateId: 'a1', eventType: 'OrderCreatedEvent', version: 1, createdAt: '2026-07-21T10:00:00Z', payload: {} },
+    ]
+
+    const wrapper = mount(EventTimeline, {
+      props: { events },
+    })
+
+    const chart = wrapper.findComponent({ name: 'VChart' })
+    const option = chart.props('option')
+    expect(option.xAxis.data[0]).toBe('OrderCreatedEvent')
+    expect(option.xAxis.data[1]).toBe('PaymentCompletedEvent')
+  })
+})
+```
+
+- [ ] **Step 2: 运行测试，验证失败**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ui
+npx vitest run src/components/__tests__/EventTimeline.test.ts
+# 期望：失败 — EventTimeline.vue 不存在
+```
+
+- [ ] **Step 3: 实现 EventTimeline 组件 + OrderTimeline 页面**
+
+`eventguard-ui/src/components/EventTimeline.vue`:
+```vue
+<template>
+  <div>
+    <div v-if="events.length === 0" data-testid="timeline-empty">
+      <el-empty description="暂无事件" />
+    </div>
+    <v-chart
+      v-else
+      class="chart"
+      :option="chartOption"
+      autoresize
+      style="height: 400px"
+    />
+
+    <el-table :data="sortedEvents" border size="small" style="margin-top: 16px">
+      <el-table-column prop="version" label="版本" width="80" />
+      <el-table-column prop="eventType" label="事件类型" width="220" />
+      <el-table-column prop="createdAt" label="发生时间" width="220" />
+      <el-table-column label="Payload">
+        <template #default="{ row }">
+          <pre style="margin: 0; font-size: 12px">{{ JSON.stringify(row.payload, null, 2) }}</pre>
+        </template>
+      </el-table-column>
+    </el-table>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+import VChart from 'vue-echarts'
+import { use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import { LineChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+
+use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
+
+interface EventItem {
+  eventId: string
+  aggregateId: string
+  eventType: string
+  version: number
+  createdAt: string
+  payload: Record<string, any>
+}
+
+const props = defineProps<{ events: EventItem[] }>()
+
+const sortedEvents = computed(() =>
+  [...props.events].sort((a, b) => a.version - b.version)
+)
+
+const chartOption = computed(() => {
+  const sorted = sortedEvents.value
+  return {
+    title: {
+      text: '事件时间线',
+      left: 'center',
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: any) => {
+        const idx = params[0].dataIndex
+        const ev = sorted[idx]
+        return `${ev.eventType}<br/>版本：${ev.version}<br/>时间：${ev.createdAt}<br/>payload：${JSON.stringify(ev.payload)}`
+      },
+    },
+    xAxis: {
+      type: 'category',
+      data: sorted.map((e) => e.eventType),
+      axisLabel: { rotate: 30 },
+    },
+    yAxis: {
+      type: 'value',
+      name: '版本号',
+    },
+    series: [
+      {
+        name: '事件版本',
+        type: 'line',
+        data: sorted.map((e) => e.version),
+        symbolSize: 12,
+        lineStyle: { width: 3 },
+      },
+    ],
+  }
+})
+</script>
+
+<style scoped>
+.chart {
+  width: 100%;
+}
+</style>
+```
+
+`eventguard-ui/src/views/OrderTimeline.vue`:
+```vue
+<template>
+  <div>
+    <el-card>
+      <template #header>
+        <div style="display: flex; align-items: center; gap: 16px">
+          <span>订单事件时间线</span>
+          <el-tag>{{ orderId }}</el-tag>
+          <el-button size="small" @click="loadEvents">刷新</el-button>
+          <el-button size="small" @click="$router.back()">返回</el-button>
+        </div>
+      </template>
+
+      <EventTimeline :events="events" v-loading="loading" />
+
+      <el-alert v-if="error" type="error" :title="error" :closable="false" style="margin-top: 16px" />
+    </el-card>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+import EventTimeline from '../components/EventTimeline.vue'
+import { OrderApi } from '../api/order'
+
+const route = useRoute()
+const orderId = route.params.id as string
+
+const events = ref<any[]>([])
+const loading = ref(false)
+const error = ref('')
+
+async function loadEvents() {
+  loading.value = true
+  error.value = ''
+  try {
+    events.value = await OrderApi.getEvents(orderId)
+  } catch (e: any) {
+    error.value = '加载失败：' + (e.message || '未知错误')
+    events.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadEvents)
+</script>
+```
+
+- [ ] **Step 4: 运行测试，验证通过**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ui
+npx vitest run src/components/__tests__/EventTimeline.test.ts
+# 期望：3 passed
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-ui/src/components/ eventguard-ui/src/views/OrderTimeline.vue
+git commit -m "feat(m4.6): 事件时间线可视化（ECharts + GET /orders/{id}/events）"
+```
+
+---
+
+## Task 7: M4.7 补偿执行按钮（TDD）
+
+**Files:**
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/model/CompensationRequest.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/model/CompensationResult.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/model/CompensationCommand.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/action/CompensationAction.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/action/CompensationActionRegistry.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/action/RefundAction.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/action/NotifyDelayAction.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/action/MarkOutOfStockAction.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/action/FreezeOrderAction.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/action/BackoffAndStopAction.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/service/CompensationService.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/compensation/controller/CompensationController.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/event/model/CompensationExecutedEvent.java`
+- Create: `eventguard-server/src/main/java/com/eventguard/command/handler/CompensationCommandHandler.java`
+- Test: `eventguard-server/src/test/java/com/eventguard/compensation/service/CompensationServiceTest.java`
+- Create: `eventguard-ui/src/api/compensation.ts`
+- Create: `eventguard-ui/src/views/CompensationExecute.vue`
+- Test: `eventguard-ui/src/views/__tests__/CompensationExecute.test.ts`
+
+**Interfaces:**
+- Consumes:
+  - M2 的 `EventStore`（写补偿事件）
+  - M2 的 `Command` 接口
+- Produces:
+  - Java `CompensationRequest`：`actionType` / `aggregateId` / `params`
+  - Java `CompensationResult`：`success` / `message`
+  - Java `CompensationAction` 接口：`actionType()` / `execute(aggregateId, params)`
+  - Java `CompensationActionRegistry`：维护 5 个 action 的白名单
+  - Java `CompensationService.execute(CompensationRequest).CompensationResult`：校验白名单 → 调 action → 写补偿事件
+  - Java REST `POST /compensations`
+  - 5 个白名单动作：`REFUND` / `NOTIFY_DELAY` / `MARK_OUT_OF_STOCK` / `FREEZE_ORDER` / `BACKOFF_AND_STOP`
+  - 前端 `CompensationApi.execute(req)` 调 `POST /compensations`
+  - 前端 `CompensationExecute.vue`：表单 + 提交按钮
+
+- [ ] **Step 1: 写失败测试 — Java CompensationService**
+
+`eventguard-server/src/test/java/com/eventguard/compensation/service/CompensationServiceTest.java`:
+```java
+package com.eventguard.compensation.service;
+
+import com.eventguard.compensation.action.CompensationActionRegistry;
+import com.eventguard.compensation.model.CompensationRequest;
+import com.eventguard.compensation.model.CompensationResult;
+import com.eventguard.event.store.EventStore;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class CompensationServiceTest {
+
+    @Mock
+    EventStore eventStore;
+
+    @Mock
+    CompensationActionRegistry registry;
+
+    @InjectMocks
+    CompensationService service;
+
+    @Test
+    void execute_should_reject_unknown_action_type() {
+        CompensationRequest req = new CompensationRequest(
+                "UNKNOWN_ACTION", UUID.randomUUID(), Map.of());
+
+        when(registry.isSupported("UNKNOWN_ACTION")).thenReturn(false);
+
+        CompensationResult result = service.execute(req);
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getMessage()).contains("不在白名单");
+        verify(eventStore, never()).append(any(), any(), anyInt());
+    }
+
+    @Test
+    void execute_should_dispatch_compensation_and_write_event_for_refund() {
+        UUID aggId = UUID.randomUUID();
+        CompensationRequest req = new CompensationRequest(
+                "REFUND", aggId, Map.of("amount", 100));
+
+        when(registry.isSupported("REFUND")).thenReturn(true);
+
+        CompensationResult result = service.execute(req);
+
+        assertThat(result.isSuccess()).isTrue();
+        // 验证写了补偿事件
+        verify(eventStore, times(1)).append(eq(aggId), anyList(), anyInt());
+    }
+
+    @Test
+    void execute_should_support_all_five_whitelist_actions() {
+        String[] actions = {"REFUND", "NOTIFY_DELAY", "MARK_OUT_OF_STOCK", "FREEZE_ORDER", "BACKOFF_AND_STOP"};
+        for (String action : actions) {
+            when(registry.isSupported(action)).thenReturn(true);
+            CompensationRequest req = new CompensationRequest(action, UUID.randomUUID(), Map.of());
+            CompensationResult result = service.execute(req);
+            assertThat(result.isSuccess()).as("动作 %s 应成功", action).isTrue();
+        }
+    }
+
+    @Test
+    void execute_should_return_failure_when_event_store_throws() {
+        UUID aggId = UUID.randomUUID();
+        CompensationRequest req = new CompensationRequest("REFUND", aggId, Map.of());
+
+        when(registry.isSupported("REFUND")).thenReturn(true);
+        doThrow(new RuntimeException("db error")).when(eventStore)
+                .append(any(), anyList(), anyInt());
+
+        CompensationResult result = service.execute(req);
+
+        assertThat(result.isSuccess()).isFalse();
+        assertThat(result.getMessage()).contains("db error");
+    }
+}
+```
+
+- [ ] **Step 2: 写失败测试 — 前端 CompensationExecute 组件**
+
+`eventguard-ui/src/views/__tests__/CompensationExecute.test.ts`:
+```typescript
+import { mount, flushPromises } from '@vue/test-utils'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import ElementPlus from 'element-plus'
+import CompensationExecute from '../CompensationExecute.vue'
+
+vi.mock('../../api/compensation', () => ({
+  CompensationApi: {
+    execute: vi.fn(),
+  },
+}))
+
+import { CompensationApi } from '../../api/compensation'
+
+describe('CompensationExecute', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('从路由 query 预填 actionType 与 aggregateId', async () => {
+    const wrapper = mount(CompensationExecute, {
+      global: {
+        plugins: [ElementPlus],
+      },
+      props: {
+        initialActionType: 'FREEZE_ORDER',
+        initialAggregateId: 'agg-from-anomaly',
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="action-type"]').attributes('value') || (wrapper.find('[data-testid="action-type"]').element as any).value).toContain('FREEZE_ORDER')
+  })
+
+  it('点击执行按钮调用 CompensationApi.execute', async () => {
+    ;(CompensationApi.execute as any).mockResolvedValue({ success: true, message: '补偿已执行' })
+
+    const wrapper = mount(CompensationExecute, {
+      global: { plugins: [ElementPlus] },
+    })
+
+    await wrapper.find('[data-testid="aggregate-id"]').setValue('11111111-1111-1111-1111-111111111111')
+    await wrapper.find('button[data-testid="execute-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(CompensationApi.execute).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('补偿已执行')
+  })
+
+  it('执行失败时显示错误', async () => {
+    ;(CompensationApi.execute as any).mockRejectedValue(new Error('不在白名单'))
+
+    const wrapper = mount(CompensationExecute, {
+      global: { plugins: [ElementPlus] },
+    })
+
+    await wrapper.find('[data-testid="aggregate-id"]').setValue('11111111-1111-1111-1111-111111111111')
+    await wrapper.find('button[data-testid="execute-btn"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('不在白名单')
+  })
+})
+```
+
+- [ ] **Step 3: 运行测试，验证失败**
+
+```bash
+# Java
+cd D:/File/Studyproject/EventGuard/eventguard-server
+mvn test -Dtest=CompensationServiceTest
+# 期望：编译失败 — CompensationService / CompensationRequest 等类不存在
+
+# 前端
+cd D:/File/Studyproject/EventGuard/eventguard-ui
+npx vitest run src/views/__tests__/CompensationExecute.test.ts
+# 期望：失败 — CompensationExecute.vue 不存在
+```
+
+- [ ] **Step 4: 实现 Java 补偿端**
+
+`eventguard-server/src/main/java/com/eventguard/compensation/model/CompensationRequest.java`:
+```java
+package com.eventguard.compensation.model;
+
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * 补偿执行请求（POST /compensations）。
+ */
+public class CompensationRequest {
+
+    private String actionType;       // REFUND / NOTIFY_DELAY / MARK_OUT_OF_STOCK / FREEZE_ORDER / BACKOFF_AND_STOP
+    private UUID aggregateId;
+    private Map<String, Object> params;
+
+    public CompensationRequest() {}
+
+    public CompensationRequest(String actionType, UUID aggregateId, Map<String, Object> params) {
+        this.actionType = actionType;
+        this.aggregateId = aggregateId;
+        this.params = params == null ? Map.of() : params;
+    }
+
+    public String getActionType() { return actionType; }
+    public void setActionType(String actionType) { this.actionType = actionType; }
+
+    public UUID getAggregateId() { return aggregateId; }
+    public void setAggregateId(UUID aggregateId) { this.aggregateId = aggregateId; }
+
+    public Map<String, Object> getParams() { return params; }
+    public void setParams(Map<String, Object> params) { this.params = params; }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/compensation/model/CompensationResult.java`:
+```java
+package com.eventguard.compensation.model;
+
+/**
+ * 补偿执行结果。
+ */
+public class CompensationResult {
+
+    private boolean success;
+    private String message;
+
+    public CompensationResult() {}
+
+    public CompensationResult(boolean success, String message) {
+        this.success = success;
+        this.message = message;
+    }
+
+    public static CompensationResult success(String message) {
+        return new CompensationResult(true, message);
+    }
+
+    public static CompensationResult failure(String message) {
+        return new CompensationResult(false, message);
+    }
+
+    public boolean isSuccess() { return success; }
+    public void setSuccess(boolean success) { this.success = success; }
+
+    public String getMessage() { return message; }
+    public void setMessage(String message) { this.message = message; }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/compensation/model/CompensationCommand.java`:
+```java
+package com.eventguard.compensation.model;
+
+import com.eventguard.command.command.Command;
+
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * 补偿命令（实现 Command 接口，由 CompensationCommandHandler 处理）。
+ */
+public record CompensationCommand(
+        UUID commandId,
+        UUID aggregateId,
+        String actionType,
+        Map<String, Object> params
+) implements Command {
+    @Override
+    public UUID getCommandId() { return commandId; }
+    @Override
+    public UUID getAggregateId() { return aggregateId; }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/event/model/CompensationExecutedEvent.java`:
+```java
+package com.eventguard.event.model;
+
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * 补偿已执行事件（记录补偿动作的执行）。
+ */
+public class CompensationExecutedEvent extends DomainEvent {
+
+    private final String actionType;
+    private final Map<String, Object> params;
+
+    public CompensationExecutedEvent(UUID aggregateId, int version, String actionType,
+                                     Map<String, Object> params, Map<String, String> metadata) {
+        super(aggregateId, version, metadata);
+        this.actionType = actionType;
+        this.params = params;
+    }
+
+    @Override
+    public Object getPayload() {
+        return Map.of(
+                "orderId", getAggregateId(),
+                "actionType", actionType,
+                "params", params
+        );
+    }
+
+    public String getActionType() { return actionType; }
+    public Map<String, Object> getParams() { return params; }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/compensation/action/CompensationAction.java`:
+```java
+package com.eventguard.compensation.action;
+
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * 补偿动作接口（白名单动作实现此接口）。
+ */
+public interface CompensationAction {
+
+    /** 动作类型，如 REFUND / NOTIFY_DELAY 等 */
+    String actionType();
+
+    /** 默认风险等级 */
+    String defaultRiskLevel();
+
+    /**
+     * 执行补偿动作（MVP：仅记录，不实际触发业务命令；V2 接 Saga 编排）。
+     *
+     * @param aggregateId 聚合根 ID
+     * @param params      动作参数
+     * @return 动作执行结果描述
+     */
+    String execute(UUID aggregateId, Map<String, Object> params);
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/compensation/action/CompensationActionRegistry.java`:
+```java
+package com.eventguard.compensation.action;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 补偿动作注册表：维护 actionType → CompensationAction 映射，提供白名单校验。
+ */
+@Component
+public class CompensationActionRegistry {
+
+    private static final Logger log = LoggerFactory.getLogger(CompensationActionRegistry.class);
+    private final Map<String, CompensationAction> actions = new HashMap<>();
+
+    public CompensationActionRegistry(List<CompensationAction> actionBeans) {
+        for (CompensationAction action : actionBeans) {
+            actions.put(action.actionType(), action);
+            log.info("注册补偿动作：{}（风险：{}）", action.actionType(), action.defaultRiskLevel());
+        }
+    }
+
+    /** 判断 actionType 是否在白名单 */
+    public boolean isSupported(String actionType) {
+        return actions.containsKey(actionType);
+    }
+
+    /** 获取动作实现 */
+    public CompensationAction get(String actionType) {
+        return actions.get(actionType);
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/compensation/action/RefundAction.java`:
+```java
+package com.eventguard.compensation.action;
+
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+import java.util.UUID;
+
+/** 退款补偿动作。 */
+@Component
+public class RefundAction implements CompensationAction {
+
+    @Override
+    public String actionType() { return "REFUND"; }
+
+    @Override
+    public String defaultRiskLevel() { return "MEDIUM"; }
+
+    @Override
+    public String execute(UUID aggregateId, Map<String, Object> params) {
+        Object amount = params.get("amount");
+        return "已发起退款，订单 " + aggregateId + "，金额 " + amount;
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/compensation/action/NotifyDelayAction.java`:
+```java
+package com.eventguard.compensation.action;
+
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+import java.util.UUID;
+
+/** 延迟通知补偿动作。 */
+@Component
+public class NotifyDelayAction implements CompensationAction {
+
+    @Override
+    public String actionType() { return "NOTIFY_DELAY"; }
+
+    @Override
+    public String defaultRiskLevel() { return "LOW"; }
+
+    @Override
+    public String execute(UUID aggregateId, Map<String, Object> params) {
+        return "已发送延迟通知，订单 " + aggregateId;
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/compensation/action/MarkOutOfStockAction.java`:
+```java
+package com.eventguard.compensation.action;
+
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+import java.util.UUID;
+
+/** 标记缺货补偿动作。 */
+@Component
+public class MarkOutOfStockAction implements CompensationAction {
+
+    @Override
+    public String actionType() { return "MARK_OUT_OF_STOCK"; }
+
+    @Override
+    public String defaultRiskLevel() { return "LOW"; }
+
+    @Override
+    public String execute(UUID aggregateId, Map<String, Object> params) {
+        Object sku = params.get("sku");
+        return "已标记 SKU " + sku + " 缺货";
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/compensation/action/FreezeOrderAction.java`:
+```java
+package com.eventguard.compensation.action;
+
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+import java.util.UUID;
+
+/** 冻结订单补偿动作。 */
+@Component
+public class FreezeOrderAction implements CompensationAction {
+
+    @Override
+    public String actionType() { return "FREEZE_ORDER"; }
+
+    @Override
+    public String defaultRiskLevel() { return "HIGH"; }
+
+    @Override
+    public String execute(UUID aggregateId, Map<String, Object> params) {
+        return "已冻结订单 " + aggregateId;
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/compensation/action/BackoffAndStopAction.java`:
+```java
+package com.eventguard.compensation.action;
+
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+import java.util.UUID;
+
+/** 退避停止补偿动作（用于死循环重试场景）。 */
+@Component
+public class BackoffAndStopAction implements CompensationAction {
+
+    @Override
+    public String actionType() { return "BACKOFF_AND_STOP"; }
+
+    @Override
+    public String defaultRiskLevel() { return "LOW"; }
+
+    @Override
+    public String execute(UUID aggregateId, Map<String, Object> params) {
+        return "已停止订单 " + aggregateId + " 的重试";
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/command/handler/CompensationCommandHandler.java`:
+```java
+package com.eventguard.command.handler;
+
+import com.eventguard.common.dto.CommandResult;
+import com.eventguard.compensation.model.CompensationCommand;
+import com.eventguard.event.model.CompensationExecutedEvent;
+import com.eventguard.event.store.EventStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+/**
+ * 补偿命令处理器：接收 CompensationCommand，生成 CompensationExecutedEvent 写入事件存储。
+ *
+ * MVP 简化版：补偿事件作为订单事件流的一部分记录（版本号续接）。
+ */
+@Service
+public class CompensationCommandHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(CompensationCommandHandler.class);
+    private final EventStore eventStore;
+
+    public CompensationCommandHandler(EventStore eventStore) {
+        this.eventStore = eventStore;
+    }
+
+    public CommandResult handle(CompensationCommand cmd) {
+        log.info("[补偿] 执行 {} 于聚合 {}", cmd.actionType(), cmd.aggregateId());
+
+        // MVP：加载聚合根当前版本（简化为查最新版本号 + 1）
+        // 实际生产应通过 AggregateRepository.load 获取版本
+        int currentVersion = loadCurrentVersion(cmd.aggregateId());
+        int newVersion = currentVersion + 1;
+
+        CompensationExecutedEvent event = new CompensationExecutedEvent(
+                cmd.aggregateId(), newVersion, cmd.actionType(), cmd.params(), null);
+
+        eventStore.append(cmd.aggregateId(), List.of(event), currentVersion);
+        return CommandResult.success(newVersion);
+    }
+
+    private int loadCurrentVersion(java.util.UUID aggregateId) {
+        // MVP 简化：通过 EventStore.load 获取事件列表，取最大版本号
+        try {
+            var events = eventStore.load(aggregateId);
+            return events.stream().mapToInt(e -> e.getVersion()).max().orElse(0);
+        } catch (Exception e) {
+            log.warn("加载聚合 {} 当前版本失败，使用 0：{}", aggregateId, e.getMessage());
+            return 0;
+        }
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/compensation/service/CompensationService.java`:
+```java
+package com.eventguard.compensation.service;
+
+import com.eventguard.command.handler.CompensationCommandHandler;
+import com.eventguard.common.dto.CommandResult;
+import com.eventguard.compensation.action.CompensationActionRegistry;
+import com.eventguard.compensation.model.CompensationCommand;
+import com.eventguard.compensation.model.CompensationRequest;
+import com.eventguard.compensation.model.CompensationResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.util.UUID;
+
+/**
+ * 补偿服务：校验白名单 → 转 CompensationCommand → dispatch 到 CompensationCommandHandler。
+ *
+ * 设计文档 7.4 MVP：人工触发版，不引入 Saga 编排。
+ */
+@Service
+public class CompensationService {
+
+    private static final Logger log = LoggerFactory.getLogger(CompensationService.class);
+
+    private final CompensationActionRegistry registry;
+    private final CompensationCommandHandler commandHandler;
+
+    public CompensationService(CompensationActionRegistry registry,
+                               CompensationCommandHandler commandHandler) {
+        this.registry = registry;
+        this.commandHandler = commandHandler;
+    }
+
+    public CompensationResult execute(CompensationRequest request) {
+        String actionType = request.getActionType();
+        UUID aggregateId = request.getAggregateId();
+
+        // 1. 白名单校验
+        if (!registry.isSupported(actionType)) {
+            log.warn("[补偿] 拒绝执行：动作 {} 不在白名单", actionType);
+            return CompensationResult.failure("动作 " + actionType + " 不在白名单");
+        }
+
+        // 2. 转补偿命令并 dispatch
+        CompensationCommand cmd = new CompensationCommand(
+                UUID.randomUUID(), aggregateId, actionType, request.getParams());
+        try {
+            CommandResult result = commandHandler.handle(cmd);
+            if (result.success()) {
+                String detail = registry.get(actionType).execute(aggregateId, request.getParams());
+                log.info("[补偿] 执行成功：{}", detail);
+                return CompensationResult.success(detail + "（事件版本 " + result.version() + "）");
+            } else {
+                return CompensationResult.failure(result.error());
+            }
+        } catch (Exception e) {
+            log.error("[补偿] 执行异常：{}", e.getMessage(), e);
+            return CompensationResult.failure("补偿执行异常：" + e.getMessage());
+        }
+    }
+}
+```
+
+`eventguard-server/src/main/java/com/eventguard/compensation/controller/CompensationController.java`:
+```java
+package com.eventguard.compensation.controller;
+
+import com.eventguard.compensation.model.CompensationRequest;
+import com.eventguard.compensation.model.CompensationResult;
+import com.eventguard.compensation.service.CompensationService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * 补偿执行 REST 接口（POST /compensations）。
+ */
+@RestController
+@RequestMapping("/compensations")
+public class CompensationController {
+
+    private final CompensationService service;
+
+    public CompensationController(CompensationService service) {
+        this.service = service;
+    }
+
+    @PostMapping
+    public ResponseEntity<CompensationResult> execute(@RequestBody CompensationRequest request) {
+        CompensationResult result = service.execute(request);
+        return ResponseEntity.ok(result);
+    }
+}
+```
+
+- [ ] **Step 5: 实现前端 CompensationApi + CompensationExecute 组件**
+
+`eventguard-ui/src/api/compensation.ts`:
+```typescript
+import { http } from './http'
+
+export interface CompensationRequest {
+  actionType: string
+  aggregateId: string
+  params?: Record<string, any>
+}
+
+export interface CompensationResult {
+  success: boolean
+  message: string
+}
+
+export const CompensationApi = {
+  execute(req: CompensationRequest): Promise<CompensationResult> {
+    return http.post<CompensationResult>('/compensations', req).then((r) => r.data)
+  },
+}
+```
+
+`eventguard-ui/src/views/CompensationExecute.vue`:
+```vue
+<template>
+  <div>
+    <el-card>
+      <template #header>补偿执行</template>
+
+      <el-form label-width="120px">
+        <el-form-item label="动作类型">
+          <select
+            v-model="form.actionType"
+            data-testid="action-type"
+            style="padding: 4px 8px; width: 320px"
+          >
+            <option v-for="a in actionTypes" :key="a.value" :value="a.value">
+              {{ a.value }}（{{ a.risk }}）
+            </option>
+          </select>
+        </el-form-item>
+
+        <el-form-item label="聚合根 ID">
+          <el-input
+            v-model="form.aggregateId"
+            data-testid="aggregate-id"
+            placeholder="UUID"
+            style="width: 320px"
+          />
+        </el-form-item>
+
+        <el-form-item label="参数 JSON">
+          <el-input
+            v-model="paramsJson"
+            type="textarea"
+            :rows="4"
+            placeholder='{"amount": 100}'
+            style="width: 480px"
+          />
+        </el-form-item>
+
+        <el-form-item>
+          <el-button
+            type="danger"
+            data-testid="execute-btn"
+            :loading="loading"
+            @click="execute"
+          >
+            执行补偿
+          </el-button>
+        </el-form-item>
+      </el-form>
+
+      <el-alert
+        v-if="result"
+        :type="result.success ? 'success' : 'error'"
+        :title="result.message"
+        :closable="false"
+        style="margin-top: 16px"
+      />
+    </el-card>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+import { CompensationApi, type CompensationResult } from '../api/compensation'
+
+const route = useRoute()
+
+const actionTypes = [
+  { value: 'REFUND', risk: 'MEDIUM' },
+  { value: 'NOTIFY_DELAY', risk: 'LOW' },
+  { value: 'MARK_OUT_OF_STOCK', risk: 'LOW' },
+  { value: 'FREEZE_ORDER', risk: 'HIGH' },
+  { value: 'BACKOFF_AND_STOP', risk: 'LOW' },
+]
+
+const form = ref({
+  actionType: 'REFUND',
+  aggregateId: '',
+})
+const paramsJson = ref('{}')
+const loading = ref(false)
+const result = ref<CompensationResult | null>(null)
+
+onMounted(() => {
+  // 从路由 query 预填（异常看板跳转）
+  const q = route.query
+  if (q.actionType) form.value.actionType = q.actionType as string
+  if (q.anomalyId) form.value.aggregateId = (q.anomalyId as string) || ''
+})
+
+async function execute() {
+  loading.value = true
+  result.value = null
+  try {
+    let params = {}
+    try {
+      params = JSON.parse(paramsJson.value || '{}')
+    } catch {
+      result.value = { success: false, message: '参数 JSON 格式错误' }
+      loading.value = false
+      return
+    }
+    result.value = await CompensationApi.execute({
+      actionType: form.value.actionType,
+      aggregateId: form.value.aggregateId,
+      params,
+    })
+  } catch (e: any) {
+    result.value = { success: false, message: '执行失败：' + (e.message || '未知错误') }
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+```
+
+- [ ] **Step 6: 运行测试，验证通过**
+
+```bash
+# Java
+cd D:/File/Studyproject/EventGuard/eventguard-server
+mvn test -Dtest=CompensationServiceTest
+# 期望：Tests run: 4, Failures: 0, Errors: 0
+
+# 前端
+cd D:/File/Studyproject/EventGuard/eventguard-ui
+npx vitest run src/views/__tests__/CompensationExecute.test.ts
+# 期望：3 passed
+```
+
+- [ ] **Step 7: 端到端验证**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+docker compose up -d postgres kafka debezium eventguard-server
+
+# 触发一个订单事件（提供 orderId）
+ORDER_ID=$(uuidgen | tr 'A-Z' 'a-z')
+curl -X POST http://localhost:8080/orders -H "Content-Type: application/json" \
+  -d "{\"orderId\":\"$ORDER_ID\",\"userId\":\"user-1\",\"totalAmount\":99.00}"
+
+# 执行补偿
+curl -X POST http://localhost:8080/compensations \
+  -H "Content-Type: application/json" \
+  -d "{\"actionType\":\"FREEZE_ORDER\",\"aggregateId\":\"$ORDER_ID\",\"params\":{}}"
+# 期望：{"success":true,"message":"已冻结订单 ...（事件版本 2）"}
+
+# 验证事件表有 CompensationExecutedEvent
+docker compose exec postgres psql -U eventguard -d eventguard -c \
+  "SELECT event_type, event_version FROM domain_events WHERE aggregate_id = '$ORDER_ID' ORDER BY event_version;"
+# 期望：2 条记录，OrderCreatedEvent v1 + CompensationExecutedEvent v2
+
+docker compose down
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git add eventguard-server/src/main/java/com/eventguard/compensation/ \
+        eventguard-server/src/main/java/com/eventguard/event/model/CompensationExecutedEvent.java \
+        eventguard-server/src/main/java/com/eventguard/command/handler/CompensationCommandHandler.java \
+        eventguard-server/src/test/java/com/eventguard/compensation/ \
+        eventguard-ui/src/api/compensation.ts eventguard-ui/src/views/CompensationExecute.vue \
+        eventguard-ui/src/views/__tests__/CompensationExecute.test.ts
+git commit -m "feat(m4.7): 补偿执行按钮（白名单校验 + 补偿命令 + 前端表单）"
+```
+
+---
+
+## M4 完成验收
+
+M4 全部 7 个任务完成后，执行最终验收：
+
+- [ ] **Final: 前端构建**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ui
+npm install
+npm run build
+# 期望：dist/ 生成，无 TS 错误
+
+npx vitest run
+# 期望：所有测试通过（OrderList 3 + AnomalyDashboard 3 + NLQuery 3 + EventTimeline 3 + CompensationExecute 3 = 15 passed）
+```
+
+- [ ] **Final: 后端编译与测试**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-server
+mvn test
+# 期望：所有测试通过（含 M4 新增的 OrderStatsServiceTest 3 + CompensationServiceTest 4）
+```
+
+- [ ] **Final: Python 测试**
+
+```bash
+cd D:/File/Studyproject/EventGuard/eventguard-ai
+python -m pytest tests/ -v
+# 期望：所有测试通过（含 M4 新增的 test_intent_classifier 7 + test_template_executor 4 + test_nl_query_engine 4 = 15 passed）
+```
+
+- [ ] **Final: 完整 Demo 端到端验收**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+docker compose down -v
+docker compose up -d
+# 等待全栈 healthy（约 30s）
+sleep 30
+docker compose ps
+# 期望：postgres、kafka、debezium、eventguard-server、eventguard-ai、eventguard-ui 均 Up
+
+# 1. 健康检查
+curl -s http://localhost:8080/actuator/health | grep -o '"status":"[^"]*"'
+# 期望："UP"
+curl -s http://localhost:8000/health
+# 期望：{"status":"ok"}
+curl -s -o /dev/null -w "%{http_code}" http://localhost:3000
+# 期望：200
+
+# 2. 创建订单
+curl -X POST http://localhost:8080/orders -H "Content-Type: application/json" \
+  -d '{"userId":"user-1","totalAmount":99.00}'
+
+# 3. 查询订单列表
+curl http://localhost:8080/orders?page=0&size=10
+
+# 4. 查询订单统计
+curl "http://localhost:8080/orders/stats?from=2026-07-20T00:00:00Z&to=2026-07-22T00:00:00Z"
+
+# 5. NL 查询
+curl -X POST http://localhost:8000/ai/query \
+  -H "Content-Type: application/json" \
+  -d '{"question":"订单列表里第一个订单当前状态是什么？"}'
+
+# 6. 补偿执行（用上一步返回的 orderId）
+ORDER_ID=$(curl -s http://localhost:8080/orders?page=0&size=1 | python -c "import sys,json;print(json.load(sys.stdin)['orders'][0]['orderId'])")
+curl -X POST http://localhost:8080/compensations \
+  -H "Content-Type: application/json" \
+  -d "{\"actionType\":\"FREEZE_ORDER\",\"aggregateId\":\"$ORDER_ID\",\"params\":{}}"
+
+echo "✓ M4 NL 查询与前端验收通过"
+```
+
+- [ ] **Final: M4 收尾 commit**
+
+```bash
+cd D:/File/Studyproject/EventGuard
+git tag m4-complete
+git log --oneline | head -10
+# 期望：7 个 feat(m4.X) commit
+```
+
+---
+
+## Self-Review
+
+**1. Spec coverage（对照 eventguard-plan.md M4 与设计文档第 7.3.3、7.4 章）**
+- M4.1 意图分类 → Task 1 ✓（`IntentClassifier.classify(question) -> str`，3 类 event_lookup/stats_aggregation/trace_replay，LLM + 关键词兜底）
+- M4.2 模板查询执行器 → Task 2 ✓（`NLQueryEngine.query(question) -> QueryResult`、REST `POST /ai/query`、3 类模板路由、后端 `GET /orders/stats`、`GET /orders/{id}/events`、`GET /orders` 列表，AI 服务不直连 DB）
+- M4.3 订单列表页 → Task 3 ✓（Element Plus Table + 分页 + 状态筛选，调 `GET /orders`）
+- M4.4 异常看板 → Task 4 ✓（WebSocket 连 `/ws/anomalies` 实时告警 + 点击查 `GET /anomalies/{id}/analysis` 根因报告）
+- M4.5 NL 查询框 → Task 5 ✓（输入框 + `POST /ai/query` + 3 类结果展示：event_lookup 描述/stats 表格/trace_replay 事件表）
+- M4.6 事件时间线可视化 → Task 6 ✓（ECharts 时间线，调 `GET /orders/{id}/events`，事件节点显示类型 + 时间 + payload，按 version 排序）
+- M4.7 补偿执行按钮 → Task 7 ✓（后端 `POST /compensations` 白名单校验 5 个动作 REFUND/NOTIFY_DELAY/MARK_OUT_OF_STOCK/FREEZE_ORDER/BACKOFF_AND_STOP + 转补偿命令 + 写 CompensationExecutedEvent，前端表单 + 按钮）
+
+**2. Placeholder scan:** 无 TODO/TBD/"类似 Task N"/"添加适当错误处理"等占位符。所有步骤含完整代码或确切命令。✓
+
+**3. Type consistency:**
+- Python `IntentClassifier.classify(question: str) -> str` 与设计文档 7.3.3、plan.md M4.1 一致 ✓
+- Python `NLQueryEngine.query(question: str) -> QueryResult` 与设计文档 7.3.3、plan.md M4.2 一致 ✓
+- Python `QueryResult` 字段 `intent/data/answer` 在 nl_query_engine.py、query_result.py、main.py、前端 ai.ts 一致 ✓
+- Python 3 类模板方法名 `execute_event_lookup` / `execute_stats_aggregation` / `execute_trace_replay` 在 template_executor.py 与 nl_query_engine.py 一致 ✓
+- Python `BackendClient.get_order` / `get_stats(status, from_, to)` / `get_events` 与 template_executor 调用参数一致 ✓
+- Java `OrderStatsService.getStats(status, from, to).List<OrderStats>` 接口与测试、Controller 一致 ✓
+- Java REST `GET /orders/stats?status=&from=&to=`、`GET /orders?status=&page=&size=`、`GET /orders/{id}/events` 与前端 order.ts 调用一致 ✓
+- Java `CompensationRequest` 字段 `actionType/aggregateId/params` 与 Controller、Service、前端 compensation.ts 一致 ✓
+- Java `CompensationResult` 字段 `success/message` 与 Service、Controller、前端一致 ✓
+- Java 5 个白名单动作 `REFUND/NOTIFY_DELAY/MARK_OUT_OF_STOCK/FREEZE_ORDER/BACKOFF_AND_STOP` 与设计文档 7.4.2、M3.7 Suggestion 白名单、CompensationActionRegistry 注册一致 ✓
+- Java `CompensationCommand implements Command` 与 M2 的 Command 接口（`getCommandId` / `getAggregateId`）一致 ✓
+- Java `CompensationExecutedEvent extends DomainEvent` 与 M2 的 DomainEvent 基类（构造器 `aggregateId, version, metadata`）一致 ✓
+- Java `CompensationCommandHandler.handle(CompensationCommand)` 调 `EventStore.append(aggregateId, events, expectedVersion)` 与 M2 的 EventStore 接口一致 ✓
+- 前端 `AnomalyApi.getAnalysis(anomalyId)` 调 `GET /anomalies/{id}/analysis` 与 M3.7 端点一致 ✓
+- 前端 `useAnomalyWebSocket` 连接 `/ws/anomalies` 与 M3.8 端点一致 ✓
+- Python 复用 M3 的 `app.analyzer.llm_client.LLMClient`（`generate(prompt) -> str`），不重新实现 ✓
+- Python 复用 M3 的 `Anomaly` 模型字段（anomaly_id/rule_id/aggregate_id/level/detected_at/description），前端 anomaly.ts 一致 ✓
+- Java 包 `com.eventguard.*`，Python 模块 `app.*`，前端模块 `src/*` ✓
+- 路径无 `eventguard/` 前缀（直接 `eventguard-server/`、`eventguard-ai/`、`eventguard-ui/`）✓
+- commit message 中文格式 `feat(m4.X): <描述>` ✓
+- 测试框架：Python pytest（Task 1/2）、Java JUnit 5 + Mockito（Task 2/7）、Vue vitest + @vue/test-utils（Task 3/4/5/6/7）✓
+
+**4. MVP 边界确认:**
+- NL 查询用意图分类 + 模板查询，不实现 Text-to-SQL（V2）✓
+- 补偿为人工触发版（前端按钮 → REST → 命令端），不引入 Saga 编排与审批流（V2）✓
+- AI 服务通过 HTTP 调后端 REST，不直连 DB ✓
+- LLM 配置走环境变量，复用 M3 的 LLMClient ✓
