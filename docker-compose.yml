@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=4", "-c", "max_wal_senders=4"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      CLUSTER_ID: mkU4ER3RzSqqe0k1lPlBOQ
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  debezium:
+    image: debezium/server:2.6
+    volumes: ["./debezium/conf:/debezium/conf:ro"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    environment:
+      DEBEZIUM_SOURCE_DATABASE_HOSTNAME: postgres
+      DEBEZIUM_SOURCE_DATABASE_PORT: 5432
+      DEBEZIUM_SOURCE_DATABASE_USER: ${POSTGRES_USER}
+      DEBEZIUM_SOURCE_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      DEBEZIUM_SOURCE_DATABASE_DBNAME: ${POSTGRES_DB}
+
+  eventguard-server:
+    build: ./eventguard-server
+    ports: ["8080:8080"]
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  eventguard-ai:
+    build: ./eventguard-ai
+    ports: ["8000:8000"]
+    env_file: .env
+    depends_on:
+      kafka: { condition: service_healthy }
+
+  eventguard-ui:
+    build: ./eventguard-ui
+    ports: ["3000:80"]
+    depends_on: [eventguard-server]
+
+  pumba:
+    image: gaiaadm/pumba
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    command: --random --interval 60s kill --signal SIGTERM
+    profiles: ["chaos"]
