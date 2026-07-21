@@ -1,0 +1,33 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: eventguard-server
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/eventguard}
+    username: ${DB_USER:eventguard}
+    password: ${DB_PASSWORD:eventguard}
+    driver-class-name: org.postgresql.Driver
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:kafka:9092}
+    consumer:
+      group-id: ${KAFKA_GROUP:debug-consumer}
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/migration/V1__init.sql
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
