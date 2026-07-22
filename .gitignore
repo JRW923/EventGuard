@@ -27,3 +27,6 @@ dist/
 Thumbs.db
 
 .superpowers/
+
+# JVM crash logs
+hs_err_pid*.log
