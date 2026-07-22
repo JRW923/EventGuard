@@ -5,6 +5,7 @@ import com.eventguard.common.dto.CommandResult;
 import com.eventguard.event.model.OrderCreatedEvent;
 import com.eventguard.event.store.EventStore;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -17,6 +18,7 @@ public class OrderCommandHandler {
         this.eventStore = eventStore;
     }
 
+    @Transactional
     public CommandResult handle(CreateOrderCommand cmd) {
         // M1 最小版：新订单 expectedVersion=0，产生 version=1 的事件
         OrderCreatedEvent event = new OrderCreatedEvent(
