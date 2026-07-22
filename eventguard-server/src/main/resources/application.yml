@@ -21,6 +21,10 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/migration/V1__init.sql
 
 management:
   endpoints:
