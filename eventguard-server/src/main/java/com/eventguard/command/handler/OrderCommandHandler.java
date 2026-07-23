@@ -80,7 +80,7 @@ public class OrderCommandHandler {
     }
 
     /**
-     * 通用执行模板：幂等检查 + 事务内加载/处理/保存 + 命令日志记录。
+     * 通用执行模板：幂等检查 + 事务内加载/处理/保存事件 + 写命令日志（同事务，保证原子性）。
      */
     private CommandResult execute(Command cmd, Consumer<OrderAggregate> action) {
         // 1. 幂等检查（事务外）
@@ -88,16 +88,15 @@ public class OrderCommandHandler {
         if (existing.isPresent()) {
             return existing.get();
         }
-        // 2. 事务内执行（含重试）
-        CommandResult result = retryTemplate.executeWithRetry(() -> transactionTemplate.execute((TransactionCallback<CommandResult>) status -> {
+        // 2. 事务内执行（含重试）：加载/处理/保存事件 + 写命令日志（同事务，保证原子性）
+        return retryTemplate.executeWithRetry(() -> transactionTemplate.execute((TransactionCallback<CommandResult>) status -> {
             OrderAggregate order = aggregateRepository.load(cmd.getAggregateId());
             action.accept(order);
             aggregateRepository.save(order);
-            return CommandResult.success(order.getVersion());
+            CommandResult result = CommandResult.success(order.getVersion());
+            commandLogRepository.save(cmd.getCommandId(), cmd.getAggregateId(),
+                    cmd.getClass().getSimpleName(), result);
+            return result;
         }));
-        // 3. 写命令日志（同事务已提交，单独写也允许；若需严格同事务可移入上面 lambda）
-        commandLogRepository.save(cmd.getCommandId(), cmd.getAggregateId(),
-                cmd.getClass().getSimpleName(), result);
-        return result;
     }
 }

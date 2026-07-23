@@ -36,7 +36,8 @@ class OrderViewProjectionTest {
         OrderCreatedEvent e = new OrderCreatedEvent(orderId, 1, "user-1", new BigDecimal("99.00"), null);
         projection.handle(e);
         verify(jdbc).update(
-                eq("INSERT INTO order_view (order_id, status, total_amount, version, updated_at) VALUES (?, ?, ?, ?, now())"),
+                eq("INSERT INTO order_view (order_id, status, total_amount, version, updated_at) VALUES (?, ?, ?, ?, now()) " +
+                   "ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status, total_amount = EXCLUDED.total_amount, version = EXCLUDED.version, updated_at = now()"),
                 eq(orderId), eq("PENDING_PAYMENT"), eq(new BigDecimal("99.00")), eq(1));
     }
 

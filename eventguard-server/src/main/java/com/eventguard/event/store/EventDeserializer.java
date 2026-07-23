@@ -50,11 +50,19 @@ public class EventDeserializer {
                         new BigDecimal(p.get("refundAmount").asText()));
                 default -> throw new IllegalStateException("未知事件类型: " + eventType);
             };
+        } catch (IllegalStateException e) {
+            throw e;  // 保留 "未知事件类型" 等业务异常的原消息
         } catch (Exception e) {
             throw new IllegalStateException("反序列化事件失败: " + eventType, e);
         }
     }
 
+    /**
+     * 从 Kafka JSON 反序列化事件。
+     * <p>假设 Debezium 已通过 ExtractNewRecordState SMT 将消息展平为扁平字段
+     * (event_id/aggregate_id/event_type/event_version/created_at/metadata/payload)。
+     * 若直接消费 Debezium 原始 envelope（含 before/after），需先在 Debezium connector 配置 SMT，或在此处解析 envelope。
+     */
     public DomainEvent deserializeFromKafka(String json) {
         try {
             JsonNode root = objectMapper.readTree(json);

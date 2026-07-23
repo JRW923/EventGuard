@@ -59,7 +59,8 @@ public class OrderViewProjection implements Projection {
     public void handle(DomainEvent event) {
         if (event instanceof OrderCreatedEvent e) {
             jdbc.update(
-                    "INSERT INTO order_view (order_id, status, total_amount, version, updated_at) VALUES (?, ?, ?, ?, now())",
+                    "INSERT INTO order_view (order_id, status, total_amount, version, updated_at) VALUES (?, ?, ?, ?, now()) " +
+                    "ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status, total_amount = EXCLUDED.total_amount, version = EXCLUDED.version, updated_at = now()",
                     e.getAggregateId(), "PENDING_PAYMENT", e.getTotalAmount(), e.getVersion());
         } else if (event instanceof PaymentCompletedEvent e) {
             jdbc.update(
