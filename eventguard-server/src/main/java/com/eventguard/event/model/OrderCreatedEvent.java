@@ -1,7 +1,7 @@
 package com.eventguard.event.model;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -15,13 +15,17 @@ public class OrderCreatedEvent extends DomainEvent {
         this.totalAmount = totalAmount;
     }
 
+    // 重建构造器
+    public OrderCreatedEvent(UUID eventId, UUID aggregateId, int version, Instant occurredAt,
+                             Map<String, String> metadata, String userId, BigDecimal totalAmount) {
+        super(eventId, aggregateId, "OrderCreatedEvent", version, occurredAt, metadata);
+        this.userId = userId;
+        this.totalAmount = totalAmount;
+    }
+
     @Override
     public Object getPayload() {
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("orderId", getAggregateId());
-        payload.put("userId", userId);
-        payload.put("totalAmount", totalAmount);
-        return payload;
+        return Map.of("orderId", getAggregateId(), "userId", userId, "totalAmount", totalAmount);
     }
 
     public String getUserId() { return userId; }
