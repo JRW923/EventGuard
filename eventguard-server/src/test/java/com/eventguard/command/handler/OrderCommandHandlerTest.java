@@ -1,54 +1,95 @@
 package com.eventguard.command.handler;
 
+import com.eventguard.command.aggregate.AggregateRepository;
+import com.eventguard.command.aggregate.OrderAggregate;
+import com.eventguard.command.aggregate.OrderStatus;
 import com.eventguard.command.command.CreateOrderCommand;
+import com.eventguard.command.command.PayOrderCommand;
 import com.eventguard.common.dto.CommandResult;
-import com.eventguard.event.model.DomainEvent;
-import com.eventguard.event.model.OrderCreatedEvent;
-import com.eventguard.event.store.EventStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
-import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class OrderCommandHandlerTest {
 
-    @Mock
-    EventStore eventStore;
+    @Mock AggregateRepository aggregateRepository;
+    @Mock CommandLogRepository commandLogRepository;
+    @Mock CommandRetryTemplate retryTemplate;
+    @Mock PlatformTransactionManager transactionManager;
 
-    @InjectMocks
     OrderCommandHandler handler;
 
-    @Test
-    void createOrder_should_append_order_created_event_with_version_1() {
-        // given
-        UUID orderId = UUID.randomUUID();
-        CreateOrderCommand cmd = new CreateOrderCommand(
-                UUID.randomUUID(), orderId, "user-1", new BigDecimal("99.00"));
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        // handler 内部 new TransactionTemplate(transactionManager)；
+        // mock 的 transactionManager 默认 getTransaction→null、commit/rollback→no-op，
+        // 因此 TransactionTemplate.execute 会直接执行 callback，无需额外 stub。
+        handler = new OrderCommandHandler(aggregateRepository, commandLogRepository, retryTemplate, transactionManager);
+    }
 
-        // when
+    @Test
+    void createOrder_should_return_success_and_save_command_log() {
+        UUID orderId = UUID.randomUUID();
+        when(aggregateRepository.load(orderId)).thenReturn(new OrderAggregate());
+        when(retryTemplate.executeWithRetry(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Supplier<CommandResult> s = inv.getArgument(0);
+            return s.get();
+        });
+
+        CreateOrderCommand cmd = new CreateOrderCommand(UUID.randomUUID(), orderId, "u1", new BigDecimal("99"));
         CommandResult result = handler.handle(cmd);
 
-        // then
         assertThat(result.success()).isTrue();
-        assertThat(result.version()).isEqualTo(1);
+        verify(commandLogRepository).save(eq(cmd.getCommandId()), eq(orderId), eq("CreateOrderCommand"), any());
+    }
 
-        // 验证 append 被调用，expectedVersion=0（新订单），事件为 OrderCreatedEvent
-        verify(eventStore).append(eq(orderId), argThat(events -> {
-            DomainEvent e = events.get(0);
-            return e instanceof OrderCreatedEvent
-                    && e.getAggregateId().equals(orderId)
-                    && e.getVersion() == 1;
-        }), eq(0));
+    @Test
+    void duplicate_commandId_should_return_previous_result() {
+        UUID commandId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        CommandResult previous = CommandResult.success(1);
+        when(commandLogRepository.loadResult(commandId)).thenReturn(Optional.of(previous));
+
+        CreateOrderCommand cmd = new CreateOrderCommand(commandId, orderId, "u1", new BigDecimal("99"));
+        CommandResult result = handler.handle(cmd);
+
+        assertThat(result).isEqualTo(previous);
+        verify(aggregateRepository, never()).load(any());
+        verify(aggregateRepository, never()).save(any());
+    }
+
+    @Test
+    void payOrder_should_succeed_when_status_is_pending_payment() {
+        UUID orderId = UUID.randomUUID();
+        OrderAggregate agg = new OrderAggregate();
+        agg.handle(new CreateOrderCommand(UUID.randomUUID(), orderId, "u1", new BigDecimal("99")));
+        agg.flushPendingEvents();
+        when(aggregateRepository.load(orderId)).thenReturn(agg);
+        when(retryTemplate.executeWithRetry(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Supplier<CommandResult> s = inv.getArgument(0);
+            return s.get();
+        });
+        when(commandLogRepository.loadResult(any())).thenReturn(Optional.empty());
+
+        PayOrderCommand cmd = new PayOrderCommand(UUID.randomUUID(), orderId, "pay-1");
+        CommandResult result = handler.handle(cmd);
+
+        assertThat(result.success()).isTrue();
+        assertThat(agg.getStatus()).isEqualTo(OrderStatus.PAID);
     }
 }
