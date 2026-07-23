@@ -1,0 +1,83 @@
+package com.eventguard.query.service;
+
+import com.eventguard.common.exception.ProjectionLagException;
+import com.eventguard.query.model.OrderView;
+import com.eventguard.query.repository.OrderViewRepository;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class OrderQueryServiceTest {
+
+    @Mock OrderViewRepository orderViewRepository;
+    OrderQueryService service;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        // 手动构造：@InjectMocks 无法注入 @Value 的 long 基本类型（会得 0），导致 readAfterWrite 立即超时
+        service = new OrderQueryService(orderViewRepository, 2000, 50);
+    }
+
+    @Test
+    void readAfterWrite_should_return_when_version_meets() {
+        UUID orderId = UUID.randomUUID();
+        OrderView v = new OrderView();
+        v.setOrderId(orderId);
+        v.setVersion(5);
+        when(orderViewRepository.findById(orderId)).thenReturn(Optional.of(v));
+
+        OrderView result = service.readAfterWrite(orderId, 5);
+
+        assertThat(result.getVersion()).isEqualTo(5);
+    }
+
+    @Test
+    void readAfterWrite_should_return_when_version_exceeds() {
+        UUID orderId = UUID.randomUUID();
+        OrderView v = new OrderView();
+        v.setOrderId(orderId);
+        v.setVersion(10);
+        when(orderViewRepository.findById(orderId)).thenReturn(Optional.of(v));
+
+        OrderView result = service.readAfterWrite(orderId, 5);
+
+        assertThat(result.getVersion()).isEqualTo(10);
+    }
+
+    @Test
+    void readAfterWrite_should_throw_when_timeout() {
+        UUID orderId = UUID.randomUUID();
+        OrderView v = new OrderView();
+        v.setOrderId(orderId);
+        v.setVersion(1);
+        when(orderViewRepository.findById(any())).thenReturn(Optional.of(v));
+
+        OrderQueryService fastService = new OrderQueryService(orderViewRepository, 200, 10);
+
+        long start = System.currentTimeMillis();
+        assertThatThrownBy(() -> fastService.readAfterWrite(orderId, 99))
+                .isInstanceOf(ProjectionLagException.class);
+        long elapsed = System.currentTimeMillis() - start;
+        assertThat(elapsed).isGreaterThanOrEqualTo(180);
+    }
+
+    @Test
+    void readAfterWrite_should_throw_when_order_view_missing() {
+        UUID orderId = UUID.randomUUID();
+        when(orderViewRepository.findById(any())).thenReturn(Optional.empty());
+
+        OrderQueryService fastService = new OrderQueryService(orderViewRepository, 200, 10);
+        assertThatThrownBy(() -> fastService.readAfterWrite(orderId, 1))
+                .isInstanceOf(ProjectionLagException.class);
+    }
+}
