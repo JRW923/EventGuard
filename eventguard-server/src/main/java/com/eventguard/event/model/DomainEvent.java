@@ -12,13 +12,20 @@ public abstract class DomainEvent {
     private final Instant occurredAt;
     private final Map<String, String> metadata;
 
+    // 新事件用：自动生成 eventId 与 occurredAt
     protected DomainEvent(UUID aggregateId, int version, Map<String, String> metadata) {
-        this.eventId = UUID.randomUUID();
+        this(UUID.randomUUID(), aggregateId, null, version, Instant.now(), metadata);
+    }
+
+    // 重建事件用：所有字段都指定（从 DB / Kafka 还原）
+    protected DomainEvent(UUID eventId, UUID aggregateId, String eventType, int version,
+                          Instant occurredAt, Map<String, String> metadata) {
+        this.eventId = eventId;
         this.aggregateId = aggregateId;
-        this.eventType = getClass().getSimpleName();
+        this.eventType = eventType != null ? eventType : getClass().getSimpleName();
         this.version = version;
-        this.occurredAt = Instant.now();
-        this.metadata = metadata == null ? Map.of() : metadata;
+        this.occurredAt = occurredAt;
+        this.metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
     }
 
     public UUID getEventId() { return eventId; }
