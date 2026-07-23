@@ -1,5 +1,7 @@
 package com.eventguard.query.projection;
 
+import com.eventguard.common.idempotent.IdempotentConsumer;
+import com.eventguard.event.model.DomainEvent;
 import com.eventguard.event.model.*;
 import com.eventguard.event.store.EventDeserializer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -13,19 +15,23 @@ import java.sql.Timestamp;
 
 /**
  * 读模型投影器：消费 Kafka domain-events topic，将事件投影到 order_view 表。
- * 设计文档 7.2.1。
+ * 幂等保证：通过 idempotent_consumers 表去重（设计文档 7.2.5）。
  */
 @Component
 public class OrderViewProjection implements Projection {
 
     private static final Logger log = LoggerFactory.getLogger(OrderViewProjection.class);
+    private static final String CONSUMER_GROUP = "order-view";
 
     private final JdbcTemplate jdbc;
     private final EventDeserializer deserializer;
+    private final IdempotentConsumer idempotentConsumer;
 
-    public OrderViewProjection(JdbcTemplate jdbc, EventDeserializer deserializer) {
+    public OrderViewProjection(JdbcTemplate jdbc, EventDeserializer deserializer,
+                               IdempotentConsumer idempotentConsumer) {
         this.jdbc = jdbc;
         this.deserializer = deserializer;
+        this.idempotentConsumer = idempotentConsumer;
     }
 
     @KafkaListener(topics = "domain-events", groupId = "order-view-projection")
@@ -37,15 +43,18 @@ public class OrderViewProjection implements Projection {
             log.error("[投影] 反序列化失败，offset={}", record.offset(), e);
             return;
         }
+        if (idempotentConsumer.isProcessed(CONSUMER_GROUP, event.getEventId())) {
+            log.debug("[投影] 事件已处理，跳过 eventId={}", event.getEventId());
+            return;
+        }
         try {
             handle(event);
+            idempotentConsumer.markProcessed(CONSUMER_GROUP, event.getEventId());
         } catch (Exception e) {
             log.error("[投影] 处理事件失败 eventId={}", event.getEventId(), e);
         }
     }
 
-    // 注：原计划使用 switch pattern matching（JEP 406, Java 17 PREVIEW，Java 21 才定型）。
-    // 项目 pom 未启用 --enable-preview，编译会失败。改为 if-else instanceof（Java 16+ 正式语法）。
     @Override
     public void handle(DomainEvent event) {
         if (event instanceof OrderCreatedEvent e) {
