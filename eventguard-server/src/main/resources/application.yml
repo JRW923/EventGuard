@@ -24,7 +24,9 @@ spring:
   sql:
     init:
       mode: always
-      schema-locations: classpath:db/migration/V1__init.sql
+      schema-locations:
+        - classpath:db/migration/V1__init.sql
+        - classpath:db/migration/V2__full_schema.sql
 
 management:
   endpoints:
