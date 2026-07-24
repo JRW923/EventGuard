@@ -20,7 +20,6 @@ import random
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
 
 # 正常订单事件流
 NORMAL_FLOW = [
