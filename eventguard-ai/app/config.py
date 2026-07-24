@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     llm_model: str = "qwen2.5:7b"
     model_dir: str = "models"
     server_base_url: str = "http://eventguard-server:8080"
+    api_key: str = "changeme"
 
     class Config:
         env_prefix = "EG_"
