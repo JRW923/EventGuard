@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -35,14 +36,29 @@ public class OrderStatsService {
                 rs.getLong("order_count"),
                 rs.getBigDecimal("total_amount"));
 
-        if (status == null || status.isBlank()) {
-            String sql = "SELECT status, count(*) AS order_count, COALESCE(sum(total_amount), 0) AS total_amount " +
-                    "FROM order_view WHERE updated_at >= ? AND updated_at <= ? GROUP BY status";
-            return jdbc.query(sql, mapper, from, to);
-        } else {
-            String sql = "SELECT status, count(*) AS order_count, COALESCE(sum(total_amount), 0) AS total_amount " +
-                    "FROM order_view WHERE status = ? AND updated_at >= ? AND updated_at <= ? GROUP BY status";
-            return jdbc.query(sql, mapper, status, from, to);
+        StringBuilder sql = new StringBuilder(
+                "SELECT status, count(*) AS order_count, COALESCE(sum(total_amount), 0) AS total_amount " +
+                        "FROM order_view");
+        List<Object> args = new ArrayList<>();
+
+        boolean hasWhere = false;
+        if (status != null && !status.isBlank()) {
+            sql.append(hasWhere ? " AND" : " WHERE").append(" status = ?");
+            args.add(status);
+            hasWhere = true;
         }
+        if (from != null) {
+            sql.append(hasWhere ? " AND" : " WHERE").append(" updated_at >= ?");
+            args.add(from);
+            hasWhere = true;
+        }
+        if (to != null) {
+            sql.append(hasWhere ? " AND" : " WHERE").append(" updated_at <= ?");
+            args.add(to);
+            hasWhere = true;
+        }
+
+        sql.append(" GROUP BY status");
+        return jdbc.query(sql.toString(), mapper, args.toArray());
     }
 }
