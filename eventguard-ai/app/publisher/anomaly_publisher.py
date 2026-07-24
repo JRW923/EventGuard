@@ -29,6 +29,7 @@ class AnomalyPublisher:
         return self._producer
 
     def publish(self, anomaly: Anomaly) -> None:
+        # ponytail: 同步 flush 每条约 5s 阻塞,无重试,broker 不可达即抛;升级路径=异步发送+确认回调
         """发布异常到 Kafka"""
         producer = self._get_producer()
         producer.send(

@@ -6,6 +6,7 @@ from typing import Optional
 from app.model.anomaly import Anomaly
 
 
+# ponytail: 纯内存存储,进程重启即丢全量异常(无持久化);上限=单进程内存,升级路径=PostgreSQL/Redis 持久化
 class AnomalyStore:
     """线程安全的内存异常存储"""
 

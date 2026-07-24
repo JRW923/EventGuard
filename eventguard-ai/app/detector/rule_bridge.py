@@ -1,5 +1,6 @@
 """规则引擎 HTTP 桥接：调用 Java 侧 POST /anomaly/rules/evaluate"""
 
+import json
 import logging
 from typing import Optional
 
@@ -21,15 +22,16 @@ class RuleBridge:
         """调用规则引擎，命中返回 AnomalyResult，未命中返回 None"""
         request_body = self._build_request(event)
         try:
+            # ponytail: 单条同步阻塞硬超时=2.0s；规则引擎慢即整条事件检测被卡住，升级路径=异步/批量调用+熔断
             with httpx.Client(timeout=2.0) as client:
                 resp = client.post(self.url, json=request_body)
                 resp.raise_for_status()
                 data = resp.json()
-        except httpx.HTTPError as e:
-            logger.warning("规则引擎调用失败: %s", e)
+        except (httpx.HTTPError, ValueError) as e:  # ValueError 覆盖 200 但 body 非合法 JSON（JSONDecodeError）
+            logger.warning("规则引擎调用失败,降级跳过: %s", e)
             return None
 
-        if data is None:
+        if not data:  # None 与空 dict {} 都按未命中，避免空对象构造假阳性高优告警
             return None
 
         return AnomalyResult(

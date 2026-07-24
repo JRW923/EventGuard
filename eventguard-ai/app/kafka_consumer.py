@@ -107,7 +107,10 @@ class DetectionHandler:
         if result.is_anomaly:
             anomaly = self._build_anomaly(event, result)
             anomaly_store.save(anomaly)
-            self.publisher.publish(anomaly)
+            try:
+                self.publisher.publish(anomaly)
+            except Exception as e:  # ponytail: broker 不可达时丢告警但 store 已留痕;上限=无重试/无死信,升级路径=异步发送+失败回调
+                logger.error("发布异常失败(已存内存 store): %s", e)
 
         # 2. 流程级检测（M3.6 接入）
         if self.process_level_detector is not None and self.event_window is not None:
@@ -127,7 +130,7 @@ class DetectionHandler:
 
         return Anomaly(
             anomaly_id=str(uuid.uuid4()),
-            rule_id=result.rule_id or "IF",
+            rule_id=result.rule_id if result.rule_id is not None else result.source,
             aggregate_id=agg_id,
             event_type=event_type,
             level=level_map.get(result.level, "WARN"),
