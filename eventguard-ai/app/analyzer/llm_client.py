@@ -23,7 +23,7 @@ class LLMClient:
         self.api_key = api_key or settings.llm_api_key
         self.model = model or settings.llm_model
 
-    def generate(self, prompt: str) -> str:
+    async def generate(self, prompt: str) -> str:
         """调用 LLM 生成文本"""
         url = f"{self.base_url}/chat/completions"
         headers = {
@@ -40,8 +40,8 @@ class LLMClient:
         }
 
         try:
-            with httpx.Client(timeout=30.0) as client:  # ponytail: LLM 调用 30s 硬超时,无重试;升级路径=退避重试/超时可配
-                resp = client.post(url, headers=headers, json=body)
+            async with httpx.AsyncClient(timeout=30.0) as client:  # ponytail: 同 MVP 超时 30s 无重试
+                resp = await client.post(url, headers=headers, json=body)
                 resp.raise_for_status()
                 data = resp.json()
                 return data["choices"][0]["message"]["content"]

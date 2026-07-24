@@ -36,10 +36,10 @@ async def verify_api_key(x_api_key: str = Header(None)):
 
 
 @app.post("/ai/query", response_model=QueryResult)
-def ai_query(req: NLQueryRequest, _: bool = Depends(verify_api_key)):
+async def ai_query(req: NLQueryRequest, _: bool = Depends(verify_api_key)):
     """自然语言查询：意图分类 + 模板查询 + LLM 润色。"""
     engine = _get_nl_query_engine()
-    return engine.query(req.question)
+    return await engine.query(req.question)
 
 
 @app.get("/health")
@@ -48,14 +48,14 @@ def health():
 
 
 @app.get("/anomalies/{anomaly_id}/analysis")
-def get_analysis(anomaly_id: str, _: bool = Depends(verify_api_key)):
+async def get_analysis(anomaly_id: str, _: bool = Depends(verify_api_key)):
     """根因分析：通过 anomaly_id 查找异常并生成分析报告"""
     anomaly = anomaly_store.get(anomaly_id)
     if anomaly is None:
         raise HTTPException(status_code=404, detail=f"异常 {anomaly_id} 不存在")
 
     try:
-        report = _analyzer.analyze(anomaly)
+        report = await _analyzer.analyze(anomaly)
     except LLMResponseError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except httpx.HTTPError as e:

@@ -30,7 +30,7 @@ class RootCauseAnalyzer:
         self.llm_client = llm_client or LLMClient()
         self.event_store_client = event_store_client or EventStoreClient()
 
-    def analyze(self, anomaly: Anomaly) -> AnalysisReport:
+    async def analyze(self, anomaly: Anomaly) -> AnalysisReport:
         """
         分析异常根因。
 
@@ -57,7 +57,7 @@ class RootCauseAnalyzer:
 
         # 4. LLM 生成
         try:
-            raw_response = self.llm_client.generate(prompt)
+            raw_response = await self.llm_client.generate(prompt)
         except Exception as e:  # 网络故障 + 响应结构异常统一归一口径
             logger.error("LLM 调用/响应异常: %s", e)
             raise LLMResponseError(f"LLM 调用或响应异常: {e}") from e

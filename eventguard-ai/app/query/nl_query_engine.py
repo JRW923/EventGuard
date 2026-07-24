@@ -28,44 +28,44 @@ class NLQueryEngine:
         self.template_executor = template_executor or TemplateExecutor()
         self.llm_client = llm_client or LLMClient()
 
-    def query(self, question: str) -> QueryResult:
+    async def query(self, question: str) -> QueryResult:
         """处理用户问题，返回 QueryResult。"""
         # 1. 意图分类
-        intent = self.intent_classifier.classify(question)
+        intent = await self.intent_classifier.classify(question)
         logger.info("NL 查询意图：%s（问题：%s）", intent, question)
 
         # 2. 模板路由（缺订单号/未知意图时返回友好结果而非 500）
         try:
-            data = self._route_template(intent, question)
+            data = await self._route_template(intent, question)
         except ValueError as e:
             # ponytail: MVP 不接 Text-to-SQL，无法从问题提取订单号时直接告知用户，避免裸异常 500
             logger.warning("NL 路由失败：%s", e)
             return QueryResult(intent=intent, data=None, answer=str(e))
 
         # 3. LLM 润色回答
-        answer = self._generate_answer(question, intent, data)
+        answer = await self._generate_answer(question, intent, data)
 
         return QueryResult(intent=intent, data=data, answer=answer)
 
-    def _route_template(self, intent: str, question: str):
+    async def _route_template(self, intent: str, question: str):
         """根据意图路由到对应模板。"""
         if intent == "event_lookup":
-            return self.template_executor.execute_event_lookup(question)
+            return await self.template_executor.execute_event_lookup(question)
         elif intent == "stats_aggregation":
-            return self.template_executor.execute_stats_aggregation(question)
+            return await self.template_executor.execute_stats_aggregation(question)
         elif intent == "trace_replay":
-            return self.template_executor.execute_trace_replay(question)
+            return await self.template_executor.execute_trace_replay(question)
         else:
             raise ValueError(f"未知意图：{intent}")
 
-    def _generate_answer(self, question: str, intent: str, data) -> str:
+    async def _generate_answer(self, question: str, intent: str, data) -> str:
         """LLM 润色回答，失败时返回数据摘要。"""
         try:
             result_str = json.dumps(data, ensure_ascii=False, default=str)
             prompt = NL_ANSWER_SYSTEM_PROMPT + "\n" + NL_ANSWER_USER_TEMPLATE.format(
                 question=question, intent=intent, result=result_str
             )
-            return self.llm_client.generate(prompt).strip()
+            return (await self.llm_client.generate(prompt)).strip()
         except Exception as e:
             logger.warning("LLM 润色失败，返回数据摘要：%s", e)
             return self._fallback_answer(intent, data)

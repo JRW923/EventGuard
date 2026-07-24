@@ -20,16 +20,16 @@ class BackendClient:
             or getattr(settings, "backend_base_url", None)
             or getattr(settings, "server_base_url", "http://eventguard-server:8080")
         )
-        self.client = httpx.Client(timeout=10.0)
 
-    def get_order(self, order_id: str) -> dict:
+    async def get_order(self, order_id: str) -> dict:
         """GET /orders/{id} — 查询订单基本信息。"""
         url = f"{self.base_url}/orders/{order_id}"
-        resp = self.client.get(url)
-        resp.raise_for_status()
-        return resp.json()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.json()
 
-    def get_stats(self, status: Optional[str], from_: Optional[str], to: Optional[str]) -> list:
+    async def get_stats(self, status: Optional[str], from_: Optional[str], to: Optional[str]) -> list:
         """GET /orders/stats?status=&from=&to= — 统计聚合。"""
         params = {}
         if status:
@@ -39,13 +39,15 @@ class BackendClient:
         if to:
             params["to"] = to
         url = f"{self.base_url}/orders/stats"
-        resp = self.client.get(url, params=params)
-        resp.raise_for_status()
-        return resp.json()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            return resp.json()
 
-    def get_events(self, order_id: str) -> list:
+    async def get_events(self, order_id: str) -> list:
         """GET /orders/{id}/events — 事件回放。"""
         url = f"{self.base_url}/orders/{order_id}/events"
-        resp = self.client.get(url)
-        resp.raise_for_status()
-        return resp.json()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.json()

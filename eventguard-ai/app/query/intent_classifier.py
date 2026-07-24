@@ -29,7 +29,7 @@ class IntentClassifier:
     def __init__(self, llm_client: Optional[LLMClient] = None):
         self.llm_client = llm_client or LLMClient()
 
-    def classify(self, question: str) -> str:
+    async def classify(self, question: str) -> str:
         """对用户问题分类，返回 3 类意图之一。
 
         Args:
@@ -39,7 +39,7 @@ class IntentClassifier:
             意图标签：event_lookup / stats_aggregation / trace_replay
         """
         # 1. LLM 分类
-        intent = self._classify_by_llm(question)
+        intent = await self._classify_by_llm(question)
         if intent is not None:
             return intent
 
@@ -48,11 +48,11 @@ class IntentClassifier:
         logger.info("LLM 分类失败，关键词兜底：%s -> %s", question, fallback)
         return fallback
 
-    def _classify_by_llm(self, question: str) -> Optional[str]:
+    async def _classify_by_llm(self, question: str) -> Optional[str]:
         """调用 LLM 分类，返回合法意图或 None。"""
         try:
             prompt = INTENT_SYSTEM_PROMPT + "\n" + INTENT_USER_TEMPLATE.format(question=question)
-            raw = self.llm_client.generate(prompt)
+            raw = await self.llm_client.generate(prompt)
             label = raw.strip().lower()
             # 兼容 LLM 可能返回带标点或多余文字
             for intent in self.VALID_INTENTS:

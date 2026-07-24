@@ -49,21 +49,21 @@ class TemplateExecutor:
     def __init__(self, backend_client: Optional[BackendClient] = None):
         self.backend_client = backend_client or BackendClient()
 
-    def execute_event_lookup(self, question: str) -> dict:
+    async def execute_event_lookup(self, question: str) -> dict:
         """event_lookup 模板：提取 order_id → GET /orders/{id}。"""
         order_id = self._extract_order_id(question)
-        return self.backend_client.get_order(order_id)
+        return await self.backend_client.get_order(order_id)
 
-    def execute_stats_aggregation(self, question: str) -> list:
+    async def execute_stats_aggregation(self, question: str) -> list:
         """stats_aggregation 模板：提取 status + 时间窗 → GET /orders/stats。"""
         status = self._extract_status(question)
         from_, to = self._extract_time_window(question)
-        return self.backend_client.get_stats(status, from_, to)
+        return await self.backend_client.get_stats(status, from_, to)
 
-    def execute_trace_replay(self, question: str) -> list:
+    async def execute_trace_replay(self, question: str) -> list:
         """trace_replay 模板：提取 order_id → GET /orders/{id}/events。"""
         order_id = self._extract_order_id(question)
-        return self.backend_client.get_events(order_id)
+        return await self.backend_client.get_events(order_id)
 
     def _extract_order_id(self, question: str) -> str:
         """从问题中提取 UUID 格式的 order_id。"""

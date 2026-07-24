@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -58,7 +58,8 @@ def test_prompt_builder_includes_anomaly_and_action_catalog():
     assert "BACKOFF_AND_STOP" in prompt
 
 
-def test_root_cause_analyzer_returns_valid_report():
+@pytest.mark.asyncio
+async def test_root_cause_analyzer_returns_valid_report():
     """RootCauseAnalyzer.analyze 返回合法 AnalysisReport"""
     from app.analyzer.root_cause import RootCauseAnalyzer
     from app.model.anomaly import Anomaly
@@ -91,7 +92,7 @@ def test_root_cause_analyzer_returns_valid_report():
         ],
     })
 
-    mock_llm = MagicMock()
+    mock_llm = AsyncMock()
     mock_llm.generate.return_value = llm_response
 
     mock_event_client = MagicMock()
@@ -101,7 +102,7 @@ def test_root_cause_analyzer_returns_valid_report():
     ]
 
     analyzer = RootCauseAnalyzer(llm_client=mock_llm, event_store_client=mock_event_client)
-    report = analyzer.analyze(anomaly)
+    report = await analyzer.analyze(anomaly)
 
     assert isinstance(report, AnalysisReport)
     assert report.anomaly_id == "a-1"
@@ -110,7 +111,8 @@ def test_root_cause_analyzer_returns_valid_report():
     assert report.suggestions[0].action in ["MARK_OUT_OF_STOCK", "NOTIFY_DELAY"]
 
 
-def test_root_cause_analyzer_raises_on_invalid_suggestion():
+@pytest.mark.asyncio
+async def test_root_cause_analyzer_raises_on_invalid_suggestion():
     """LLM 返回非法建议动作时抛异常"""
     from app.analyzer.root_cause import RootCauseAnalyzer, LLMResponseError
     from app.model.anomaly import Anomaly
@@ -136,7 +138,7 @@ def test_root_cause_analyzer_raises_on_invalid_suggestion():
         ],
     })
 
-    mock_llm = MagicMock()
+    mock_llm = AsyncMock()
     mock_llm.generate.return_value = llm_response
     mock_event_client = MagicMock()
     mock_event_client.load_events.return_value = []
@@ -144,4 +146,4 @@ def test_root_cause_analyzer_raises_on_invalid_suggestion():
     analyzer = RootCauseAnalyzer(llm_client=mock_llm, event_store_client=mock_event_client)
 
     with pytest.raises(LLMResponseError):
-        analyzer.analyze(anomaly)
+        await analyzer.analyze(anomaly)
