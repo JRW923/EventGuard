@@ -25,6 +25,7 @@ public class CompensationController {
     @PostMapping
     public ResponseEntity<CompensationResult> execute(@RequestBody CompensationRequest request) {
         CompensationResult result = service.execute(request);
-        return ResponseEntity.ok(result);
+        // ponytail: 计划 verify 清单要求 unknown action 返回 400；白名单拒绝属失败，统一按成功/失败映射 200/400
+        return result.isSuccess() ? ResponseEntity.ok(result) : ResponseEntity.badRequest().body(result);
     }
 }
