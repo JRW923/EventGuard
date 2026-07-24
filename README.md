@@ -50,7 +50,7 @@ docker compose up -d --build
 | 模块 | 命令 | 说明 |
 | --- | --- | --- |
 | `eventguard-ai` | `cd eventguard-ai && python -m pytest` | AI 检测 / NL 查询单测 |
-| `eventguard-server` | `cd eventguard-server && mvn test` | 4 个 Testcontainers 集成测试默认跳过 |
+| `eventguard-server` | `cd eventguard-server && mvn test` | 2 个 Testcontainers 集成测试类默认跳过（需本地 Docker 资源） |
 | `eventguard-ui` | `cd eventguard-ui && npm run test` | Vue 组件 / 视图单测（vitest） |
 
 ## 演示脚本（最短路径）
