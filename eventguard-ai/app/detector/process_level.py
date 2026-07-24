@@ -46,7 +46,11 @@ DEAD_LOOP_THRESHOLD = 5
 
 
 class ProcessLevelRuleDetector:
-    """MVP 流程级检测：基于规则，无需训练"""
+    """MVP 流程级检测：基于规则，无需训练
+
+    ponytail: 每个新事件都重跑整窗、无去重，同一 P001/P002/P003 会随窗口推进被重复 save+publish；
+    窗口假设 Kafka 按 event_version 顺序投递（乱序会误判迁移）。升级路径=状态快照/幂等去重。
+    """
 
     def detect(self, event_sequence: list[dict], now: Optional[datetime] = None) -> list[Anomaly]:
         """
@@ -74,9 +78,12 @@ class ProcessLevelRuleDetector:
     def _check_illegal_transition(self, sequence: list[dict]) -> list[Anomaly]:
         """P001：状态机非法迁移检测"""
         anomalies = []
-        current_state = "INIT"
-
-        for event in sequence:
+        if not sequence:
+            return anomalies
+        # 滑动窗口不一定含 OrderCreatedEvent；以首事件结果状态为初值，从第二个事件起校验，避免对首事件误报
+        # ponytail: 窗口边界之前的非法迁移不可见(窗口外)，属已知上限
+        current_state = EVENT_TO_STATE.get(sequence[0].get("event_type", ""), "INIT")
+        for event in sequence[1:]:
             event_type = event.get("event_type", "")
             legal_next = LEGAL_TRANSITIONS.get(current_state, set())
             if event_type not in legal_next:

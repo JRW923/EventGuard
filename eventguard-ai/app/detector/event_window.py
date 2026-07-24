@@ -5,7 +5,11 @@ from typing import Optional
 
 
 class EventWindow:
-    """每个 aggregate_id 维护一个最近 window_size 事件的 deque"""
+    """每个 aggregate_id 维护一个最近 window_size 事件的 deque
+
+    ponytail: 内存滑动窗口只增不减、不落盘，aggregate 数无上限(defaultdict 永不清理)；
+    升级路径=LRU/滑动过期或落 Redis。
+    """
 
     def __init__(self, window_size: int = 20):
         self.window_size = window_size

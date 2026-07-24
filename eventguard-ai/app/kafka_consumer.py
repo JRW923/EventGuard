@@ -99,6 +99,7 @@ class DetectionHandler:
         self.event_level_service = event_level_service
         self.publisher = publisher
         # M3.6 注入流程级检测；未注入时 handle() 自动跳过流程级检测
+        # 运行时注入由 main.py 启动装配(后续 Task)，此处仅暴露注入点；未注入时流程级检测自动跳过
         self.process_level_detector = process_level_detector
         self.event_window = event_window
 
@@ -122,7 +123,10 @@ class DetectionHandler:
             process_anomalies = self.process_level_detector.detect(sequence)
             for pa in process_anomalies:
                 anomaly_store.save(pa)
-                self.publisher.publish(pa)
+                try:
+                    self.publisher.publish(pa)
+                except Exception as e:  # ponytail: broker 不可达时丢告警但 store 已留痕;升级路径=异步发送+失败回调
+                    logger.error("发布流程级异常失败(已存内存 store): %s", e)
 
     def _build_anomaly(self, event: dict, result: AnomalyResult) -> Anomaly:
         """从检测结果构建 Anomaly 模型"""

@@ -40,11 +40,12 @@ def test_detection_handler_wires_process_level_detection():
             event_window=event_window,
         )
 
-        base_ts = datetime(2026, 7, 21, 10, 0, 0, tzinfo=timezone.utc)
+        # 时间戳贴近 now，间隔仅几秒：使得 P002(停滞>24h) 不触发，精准隔离 P001
+        base_ts = datetime.now(timezone.utc)
         # 非法迁移：OrderCreatedEvent → ShippedEvent（跳过 PAID/CONFIRMED）
         events = [
             _make_event("OrderCreatedEvent", "agg-1", 1, base_ts.isoformat()),
-            _make_event("ShippedEvent", "agg-1", 2, (base_ts + timedelta(minutes=1)).isoformat()),
+            _make_event("ShippedEvent", "agg-1", 2, (base_ts + timedelta(seconds=5)).isoformat()),
         ]
         for ev in events:
             handler.handle(ev)
@@ -55,8 +56,8 @@ def test_detection_handler_wires_process_level_detection():
         published = [call.args[0] for call in publisher.publish.call_args_list]
         assert all(isinstance(a, Anomaly) for a in published)
         process_anoms = [a for a in published if a.source == "PROCESS"]
-        # 接线生效：至少产出一个 PROCESS 告警（此处为非法迁移 P001）
-        assert len(process_anoms) >= 1
-        assert "P001_ILLEGAL_TRANSITION" in [a.rule_id for a in process_anoms]
+        # 接线生效且精准隔离：产出的 PROCESS 告警就是 P001_ILLEGAL_TRANSITION（无顺带 P002）
+        assert len(process_anoms) == 1, f"期望恰好 1 个 PROCESS 告警, 实际 {len(process_anoms)}: {[a.rule_id for a in process_anoms]}"
+        assert process_anoms[0].rule_id == "P001_ILLEGAL_TRANSITION"
     finally:
         anomaly_store.clear()
