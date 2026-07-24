@@ -62,7 +62,7 @@
           <el-table-column prop="createdAt" label="发生时间" />
         </el-table>
 
-        <!-- 兜底：JSON 展示 -->
+        <!-- 兜底：JSON 展示（ponytail: data 为 any，格式随后端意图演进，暂用原始 JSON 回退） -->
         <pre v-else style="background: #f5f5f5; padding: 12px">{{ JSON.stringify(result.data, null, 2) }}</pre>
       </div>
     </el-card>
