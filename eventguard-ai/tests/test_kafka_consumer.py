@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock
 
 from app.kafka_consumer import EventKafkaConsumer
@@ -14,9 +15,13 @@ def test_consume_loop_calls_handler_for_each_message():
     )
 
     fake_msg_1 = MagicMock()
-    fake_msg_1.value = {"event_type": "OrderCreatedEvent", "aggregate_id": "agg-1"}
+    fake_msg_1.value = json.dumps(
+        {"event_type": "OrderCreatedEvent", "aggregate_id": "agg-1"}
+    ).encode("utf-8")
     fake_msg_2 = MagicMock()
-    fake_msg_2.value = {"event_type": "PaymentCompletedEvent", "aggregate_id": "agg-1"}
+    fake_msg_2.value = json.dumps(
+        {"event_type": "PaymentCompletedEvent", "aggregate_id": "agg-1"}
+    ).encode("utf-8")
 
     mock_kafka = MagicMock()
     call_count = [0]
@@ -50,9 +55,9 @@ def test_consume_loop_continues_after_handler_exception():
     )
 
     fake_msg_1 = MagicMock()
-    fake_msg_1.value = {"event_type": "OrderCreatedEvent"}
+    fake_msg_1.value = json.dumps({"event_type": "OrderCreatedEvent"}).encode("utf-8")
     fake_msg_2 = MagicMock()
-    fake_msg_2.value = {"event_type": "PaymentCompletedEvent"}
+    fake_msg_2.value = json.dumps({"event_type": "PaymentCompletedEvent"}).encode("utf-8")
 
     mock_kafka = MagicMock()
     call_count = [0]

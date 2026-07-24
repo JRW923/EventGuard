@@ -38,7 +38,6 @@ class EventKafkaConsumer:
             group_id=self.group_id,
             auto_offset_reset="earliest",
             enable_auto_commit=True,
-            value_deserializer=lambda v: json.loads(v.decode("utf-8")),
             key_deserializer=lambda k: k.decode("utf-8") if k else None,
         )
         self._running = True
@@ -54,7 +53,13 @@ class EventKafkaConsumer:
                 for msgs in records.values():
                     for msg in msgs:
                         try:
-                            self.handler(msg.value)
+                            # 逐条反序列化，畸形消息跳过而非中断循环（ponytail: 信任边界，外部 Kafka 消息不可信；单条毒消息被跳过，升级路径：死信 topic 持久化毒消息）
+                            value = msg.value
+                            if isinstance(value, (bytes, bytearray)):
+                                value = json.loads(value.decode("utf-8"))
+                            elif isinstance(value, str):
+                                value = json.loads(value)
+                            self.handler(value)
                         except Exception as e:
                             logger.exception("handler error: %s", e)
         except Exception as e:
