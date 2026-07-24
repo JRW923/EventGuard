@@ -24,7 +24,7 @@ class AnomalyWebSocketHandlerTest {
         handler.afterConnectionEstablished(session2);
 
         AnomalyAlert alert = new AnomalyAlert(
-                "a-1", "R001", UUID.randomUUID(), "OrderCreatedEvent",
+                "a-1", "R001", UUID.randomUUID().toString(), "OrderCreatedEvent",
                 "WARN", "RULE", "HIGH", "2026-07-21T10:00:00Z",
                 "金额偏离", java.util.Map.of()
         );
@@ -47,7 +47,7 @@ class AnomalyWebSocketHandlerTest {
         handler.afterConnectionEstablished(closed);
 
         AnomalyAlert alert = new AnomalyAlert(
-                "a-1", "R001", UUID.randomUUID(), "OrderCreatedEvent",
+                "a-1", "R001", UUID.randomUUID().toString(), "OrderCreatedEvent",
                 "WARN", "RULE", "HIGH", "2026-07-21T10:00:00Z",
                 "金额偏离", java.util.Map.of()
         );
@@ -67,12 +67,37 @@ class AnomalyWebSocketHandlerTest {
         handler.afterConnectionClosed(session, null);
 
         AnomalyAlert alert = new AnomalyAlert(
-                "a-1", "R001", UUID.randomUUID(), "OrderCreatedEvent",
+                "a-1", "R001", UUID.randomUUID().toString(), "OrderCreatedEvent",
                 "WARN", "RULE", "HIGH", "2026-07-21T10:00:00Z",
                 "金额偏离", java.util.Map.of()
         );
         handler.broadcast(alert);
 
         verify(session, never()).sendMessage(any());
+    }
+
+    @Test
+    void broadcast_should_continue_other_sessions_when_one_send_fails() throws Exception {
+        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler();
+
+        WebSocketSession ok = mock(WebSocketSession.class);
+        WebSocketSession fail = mock(WebSocketSession.class);
+        when(ok.isOpen()).thenReturn(true);
+        when(fail.isOpen()).thenReturn(true);
+        doThrow(new java.io.IOException("send failed")).when(fail).sendMessage(any(TextMessage.class));
+
+        handler.afterConnectionEstablished(ok);
+        handler.afterConnectionEstablished(fail);
+
+        AnomalyAlert alert = new AnomalyAlert(
+                "a-1", "R001", UUID.randomUUID().toString(), "OrderCreatedEvent",
+                "WARN", "RULE", "HIGH", "2026-07-21T10:00:00Z",
+                "金额偏离", java.util.Map.of()
+        );
+        handler.broadcast(alert);
+
+        // 单会话发送失败不影响其余会话
+        verify(ok).sendMessage(any(TextMessage.class));
+        verify(fail).sendMessage(any(TextMessage.class));
     }
 }

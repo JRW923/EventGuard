@@ -17,6 +17,7 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
+        # ponytail: 当前生产者为可信内部 Python 服务；若将来接外部 topic 有 Jackson 多态反序列化风险，应收紧为具体包名
         spring.json.trusted.packages: "*"
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer

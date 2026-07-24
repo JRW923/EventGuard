@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Map;
-import java.util.UUID;
 
 /** 从 Kafka anomaly-alerts topic 接收的异常告警 */
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -17,7 +16,7 @@ public class AnomalyAlert {
     private String ruleId;
 
     @JsonProperty("aggregate_id")
-    private UUID aggregateId;
+    private String aggregateId;  // 用 String 而非 UUID：避免非 UUID 字符串导致反序列化阶段静默丢消息
 
     @JsonProperty("event_type")
     private String eventType;
@@ -43,7 +42,7 @@ public class AnomalyAlert {
     // Jackson 需要无参构造器
     public AnomalyAlert() {}
 
-    public AnomalyAlert(String anomalyId, String ruleId, UUID aggregateId, String eventType,
+    public AnomalyAlert(String anomalyId, String ruleId, String aggregateId, String eventType,
                         String level, String source, String priority, String detectedAt,
                         String description, Map<String, Object> details) {
         this.anomalyId = anomalyId;
@@ -60,7 +59,7 @@ public class AnomalyAlert {
 
     public String getAnomalyId() { return anomalyId; }
     public String getRuleId() { return ruleId; }
-    public UUID getAggregateId() { return aggregateId; }
+    public String getAggregateId() { return aggregateId; }
     public String getEventType() { return eventType; }
     public String getLevel() { return level; }
     public String getSource() { return source; }
@@ -71,7 +70,7 @@ public class AnomalyAlert {
 
     public void setAnomalyId(String anomalyId) { this.anomalyId = anomalyId; }
     public void setRuleId(String ruleId) { this.ruleId = ruleId; }
-    public void setAggregateId(UUID aggregateId) { this.aggregateId = aggregateId; }
+    public void setAggregateId(String aggregateId) { this.aggregateId = aggregateId; }
     public void setEventType(String eventType) { this.eventType = eventType; }
     public void setLevel(String level) { this.level = level; }
     public void setSource(String source) { this.source = source; }

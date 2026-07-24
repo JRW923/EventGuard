@@ -18,7 +18,7 @@ class AnomalyAlertConsumerTest {
         AnomalyAlertConsumer consumer = new AnomalyAlertConsumer(handler);
 
         AnomalyAlert alert = new AnomalyAlert(
-                "a-1", "R001", UUID.randomUUID(), "OrderCreatedEvent",
+                "a-1", "R001", UUID.randomUUID().toString(), "OrderCreatedEvent",
                 "WARN", "RULE", "HIGH", "2026-07-21T10:00:00Z",
                 "金额偏离", java.util.Map.of()
         );
@@ -35,7 +35,7 @@ class AnomalyAlertConsumerTest {
         AnomalyAlertConsumer consumer = new AnomalyAlertConsumer(handler);
 
         AnomalyAlert alert = new AnomalyAlert(
-                "a-2", "IF", UUID.randomUUID(), "OrderCreatedEvent",
+                "a-2", "IF", UUID.randomUUID().toString(), "OrderCreatedEvent",
                 "WARN", "IF", "LOW", "2026-07-21T10:00:00Z",
                 "IF anomaly", java.util.Map.of()
         );

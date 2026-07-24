@@ -21,6 +21,7 @@ public class AnomalyWebSocketHandler extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(AnomalyWebSocketHandler.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
+    // ponytail: 会话仅在 afterConnectionClosed 移除，无心跳/空闲剔除；isOpen() 检查防止向死会话发送
     private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
 
     @Override
@@ -45,6 +46,7 @@ public class AnomalyWebSocketHandler extends TextWebSocketHandler {
                     try {
                         session.sendMessage(message);
                     } catch (IOException e) {
+                        // ponytail: 单会话发送失败仅 warn 并继续其余会话，是有意设计（一会话失败不中断其余）
                         log.warn("WebSocket 发送失败 session={}: {}", session.getId(), e.getMessage());
                     }
                 }

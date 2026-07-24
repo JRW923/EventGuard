@@ -18,6 +18,7 @@ public class AnomalyWebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        // ponytail: setAllowedOrigins("*") 仅限 MVP；生产需改为具体前端域名或 allowedOriginPatterns
         registry.addHandler(handler, "/ws/anomalies").setAllowedOrigins("*");
     }
 }
