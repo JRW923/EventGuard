@@ -29,6 +29,9 @@ def train_isolation_forest(
     # 按 created_at 排序确保时间窗口正确
     events.sort(key=lambda e: e.get("created_at", ""))
 
+    if not events:
+        raise ValueError(f"训练数据为空: {normal_data_path}")
+
     # 提取特征
     features_list = []
     for event in events:

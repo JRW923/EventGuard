@@ -29,13 +29,19 @@ class EventLevelDetector:
             self.scaler = scaler
         else:
             base = Path(__file__).parent.parent.parent
-            self.model = joblib.load(model_path or str(base / "models" / "isolation_forest.pkl"))
-            self.scaler = joblib.load(scaler_path or str(base / "models" / "scaler.pkl"))
+            try:
+                self.model = joblib.load(model_path or str(base / "models" / "isolation_forest.pkl"))
+                self.scaler = joblib.load(scaler_path or str(base / "models" / "scaler.pkl"))
+            except FileNotFoundError as e:
+                raise FileNotFoundError(
+                    f"未找到模型文件: {e.filename}。请先运行: python -m training.train_isolation"
+                ) from e
         self.feature_extractor = feature_extractor or FeatureExtractor()
 
     def detect(self, event: dict) -> AnomalyResult:
         """检测单事件是否异常"""
         features = self.feature_extractor.extract(event)
+        self.feature_extractor.update(event)  # 推进特征提取器状态，避免推理特征塌缩成常量
         X = np.array([features])
         X_scaled = self.scaler.transform(X)
 
@@ -47,6 +53,6 @@ class EventLevelDetector:
             is_anomaly=is_anomaly,
             score=float(score),
             source="IF",
-            level="LOW" if is_anomaly else "LOW",
+            level="HIGH" if is_anomaly else "LOW",
             description=f"Isolation Forest score={score:.4f}" if is_anomaly else "",
         )

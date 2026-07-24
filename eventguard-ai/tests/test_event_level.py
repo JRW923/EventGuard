@@ -1,7 +1,3 @@
-import json
-from unittest.mock import patch
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -45,6 +41,9 @@ def test_event_level_detector_returns_anomaly_result():
         def extract(self, event):
             return [1.0, 0.5, 3.0, 0.2]
 
+        def update(self, event):
+            pass
+
     detector = EventLevelDetector(
         model=MockModel(),
         scaler=MockScaler(),
@@ -64,6 +63,7 @@ def test_event_level_detector_returns_anomaly_result():
     assert result.is_anomaly is True
     assert result.score > 0
     assert result.source == "IF"
+    assert result.level == "HIGH"  # 锁定 M1 修复：异常应返回 HIGH
 
 
 def test_event_level_detector_returns_normal_for_typical_event():
@@ -86,6 +86,9 @@ def test_event_level_detector_returns_normal_for_typical_event():
         def extract(self, event):
             return [0.1, 30.0, 1.0, 0.9]
 
+        def update(self, event):
+            pass
+
     detector = EventLevelDetector(
         model=MockModel(),
         scaler=MockScaler(),
@@ -102,3 +105,38 @@ def test_event_level_detector_returns_normal_for_typical_event():
     result = detector.detect(event)
 
     assert result.is_anomaly is False
+
+
+def test_feature_extractor_extract_boundary_cases():
+    """FeatureExtractor.extract 对缺字段 / 非法时间 / 首事件 都应返回 4 维 float 不崩"""
+    from app.detector.feature_extractor import FeatureExtractor
+
+    extractor = FeatureExtractor()
+
+    edge_events = [
+        # 缺 userId
+        {"event_type": "OrderCreatedEvent", "aggregate_id": "agg-b1",
+         "payload": {"totalAmount": 150.0}, "created_at": "2026-07-21T10:00:00Z"},
+        # 缺 totalAmount
+        {"event_type": "OrderCreatedEvent", "aggregate_id": "agg-b2",
+         "payload": {}, "metadata": {"userId": "user-b"}, "created_at": "2026-07-21T10:00:00Z"},
+        # 非法 created_at
+        {"event_type": "OrderCreatedEvent", "aggregate_id": "agg-b3",
+         "payload": {"totalAmount": 150.0}, "metadata": {"userId": "user-b"}, "created_at": "not-a-time"},
+        # 完全空事件
+        {},
+    ]
+
+    for event in edge_events:
+        features = extractor.extract(event)
+        assert len(features) == 4
+        assert all(isinstance(f, float) for f in features)
+
+    # 首事件状态转移概率应为 1.0 (INIT -> OrderCreatedEvent)
+    first_event = {
+        "event_type": "OrderCreatedEvent", "aggregate_id": "agg-first",
+        "payload": {"totalAmount": 150.0}, "metadata": {"userId": "user-first"},
+        "created_at": "2026-07-21T10:00:00Z",
+    }
+    feats = extractor.extract(first_event)
+    assert feats[3] == 1.0

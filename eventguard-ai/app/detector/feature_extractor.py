@@ -8,8 +8,8 @@
 """
 
 import math
-from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
+from collections import defaultdict
+from datetime import datetime, timedelta
 from typing import Optional
 
 
@@ -45,6 +45,9 @@ class FeatureExtractor:
     }
 
     def __init__(self):
+        # ponytail: 用户金额/下单时间列表只追加不淘汰，长进程内存只增不减；
+        # 状态为进程内内存、重启即丢（非持久化）。
+        # 升级路径：滑动窗口 / LRU 淘汰，或落 Redis / DB 持久化。
         # 用户历史金额统计
         self._user_amounts: dict[str, list[float]] = defaultdict(list)
         # 用户最近下单时间
