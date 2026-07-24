@@ -3,5 +3,18 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
-  server: { host: true, port: 3000 }
+  server: {
+    host: true,
+    port: 3000,
+    proxy: {
+      '/orders': 'http://localhost:8080',
+      '/anomalies': 'http://localhost:8000',
+      '/ai': 'http://localhost:8000',
+      '/compensations': 'http://localhost:8080',
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
+    },
+  },
 })
