@@ -1,0 +1,2 @@
+eventguard-ai/data/*.jsonl filter=lfs diff=lfs merge=lfs -text
+eventguard-ai/models/isolation_forest.pkl filter=lfs diff=lfs merge=lfs -text
