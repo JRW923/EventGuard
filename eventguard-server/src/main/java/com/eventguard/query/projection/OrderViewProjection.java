@@ -1,7 +1,6 @@
 package com.eventguard.query.projection;
 
 import com.eventguard.common.idempotent.IdempotentConsumer;
-import com.eventguard.event.model.DomainEvent;
 import com.eventguard.event.model.*;
 import com.eventguard.event.store.EventDeserializer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -10,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
 
@@ -34,7 +34,10 @@ public class OrderViewProjection implements Projection {
         this.idempotentConsumer = idempotentConsumer;
     }
 
+    // ponytail: 仅 JDBC 事务（spring-jdbc PlatformTransactionManager），未引入 KafkaTransactionManager，
+    // 故 Kafka 偏移提交独立于 DB 事务；at-least-once 由 idempotent_consumers 表保证，重投幂等。
     @KafkaListener(topics = "domain-events", groupId = "order-view-projection")
+    @Transactional
     public void on(ConsumerRecord<String, String> record) {
         DomainEvent event;
         try {

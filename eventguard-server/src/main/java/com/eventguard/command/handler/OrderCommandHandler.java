@@ -11,7 +11,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Optional;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 /**
  * 订单命令处理器：所有订单命令统一走「幂等检查 → 事务内加载+处理+保存 → 写命令日志」。

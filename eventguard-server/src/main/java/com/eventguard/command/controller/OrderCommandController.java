@@ -19,10 +19,27 @@ public class OrderCommandController {
         this.handler = handler;
     }
 
+    /**
+     * 从 X-Command-Id 头解析客户端幂等键；缺失或非法时回退服务端生成。
+     * 同一客户端键可让超时重试命中命令日志缓存，避免重复处理。
+     */
+    private UUID commandId(String header) {
+        if (header != null && !header.isBlank()) {
+            try {
+                return UUID.fromString(header.trim());
+            } catch (IllegalArgumentException ignored) {
+                // 非法 UUID 回退到服务端生成
+            }
+        }
+        return UUID.randomUUID();
+    }
+
     @PostMapping
-    public ResponseEntity<CommandResult> createOrder(@RequestBody CreateOrderRequest req) {
+    public ResponseEntity<CommandResult> createOrder(
+            @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader,
+            @RequestBody CreateOrderRequest req) {
         CreateOrderCommand cmd = new CreateOrderCommand(
-                UUID.randomUUID(),
+                commandId(commandIdHeader),
                 req.orderId() != null ? req.orderId() : UUID.randomUUID(),
                 req.userId(),
                 req.totalAmount()
@@ -31,63 +48,79 @@ public class OrderCommandController {
     }
 
     @PostMapping("/{orderId}/pay")
-    public ResponseEntity<CommandResult> pay(@PathVariable UUID orderId, @RequestBody PayRequest req) {
+    public ResponseEntity<CommandResult> pay(@PathVariable UUID orderId,
+            @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader,
+            @RequestBody PayRequest req) {
         return ResponseEntity.ok(handler.handle(
-                new PayOrderCommand(UUID.randomUUID(), orderId, req.paymentId())));
+                new PayOrderCommand(commandId(commandIdHeader), orderId, req.paymentId())));
     }
 
     @PostMapping("/{orderId}/fail-payment")
-    public ResponseEntity<CommandResult> failPayment(@PathVariable UUID orderId, @RequestBody FailPaymentRequest req) {
+    public ResponseEntity<CommandResult> failPayment(@PathVariable UUID orderId,
+            @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader,
+            @RequestBody FailPaymentRequest req) {
         return ResponseEntity.ok(handler.handle(
-                new FailPaymentCommand(UUID.randomUUID(), orderId, req.reason())));
+                new FailPaymentCommand(commandId(commandIdHeader), orderId, req.reason())));
     }
 
     @PostMapping("/{orderId}/retry-payment")
-    public ResponseEntity<CommandResult> retryPayment(@PathVariable UUID orderId) {
+    public ResponseEntity<CommandResult> retryPayment(@PathVariable UUID orderId,
+            @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader) {
         return ResponseEntity.ok(handler.handle(
-                new RetryPaymentCommand(UUID.randomUUID(), orderId)));
+                new RetryPaymentCommand(commandId(commandIdHeader), orderId)));
     }
 
     @PostMapping("/{orderId}/reserve-inventory")
-    public ResponseEntity<CommandResult> reserveInventory(@PathVariable UUID orderId, @RequestBody ReserveInventoryRequest req) {
+    public ResponseEntity<CommandResult> reserveInventory(@PathVariable UUID orderId,
+            @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader,
+            @RequestBody ReserveInventoryRequest req) {
         return ResponseEntity.ok(handler.handle(
-                new ReserveInventoryCommand(UUID.randomUUID(), orderId, req.skuId(), req.quantity())));
+                new ReserveInventoryCommand(commandId(commandIdHeader), orderId, req.skuId(), req.quantity())));
     }
 
     @PostMapping("/{orderId}/confirm")
-    public ResponseEntity<CommandResult> confirm(@PathVariable UUID orderId) {
+    public ResponseEntity<CommandResult> confirm(@PathVariable UUID orderId,
+            @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader) {
         return ResponseEntity.ok(handler.handle(
-                new ConfirmOrderCommand(UUID.randomUUID(), orderId)));
+                new ConfirmOrderCommand(commandId(commandIdHeader), orderId)));
     }
 
     @PostMapping("/{orderId}/ship")
-    public ResponseEntity<CommandResult> ship(@PathVariable UUID orderId, @RequestBody ShipRequest req) {
+    public ResponseEntity<CommandResult> ship(@PathVariable UUID orderId,
+            @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader,
+            @RequestBody ShipRequest req) {
         return ResponseEntity.ok(handler.handle(
-                new ShipOrderCommand(UUID.randomUUID(), orderId, req.trackingNo())));
+                new ShipOrderCommand(commandId(commandIdHeader), orderId, req.trackingNo())));
     }
 
     @PostMapping("/{orderId}/deliver")
-    public ResponseEntity<CommandResult> deliver(@PathVariable UUID orderId) {
+    public ResponseEntity<CommandResult> deliver(@PathVariable UUID orderId,
+            @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader) {
         return ResponseEntity.ok(handler.handle(
-                new DeliverOrderCommand(UUID.randomUUID(), orderId)));
+                new DeliverOrderCommand(commandId(commandIdHeader), orderId)));
     }
 
     @PostMapping("/{orderId}/close")
-    public ResponseEntity<CommandResult> close(@PathVariable UUID orderId) {
+    public ResponseEntity<CommandResult> close(@PathVariable UUID orderId,
+            @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader) {
         return ResponseEntity.ok(handler.handle(
-                new CloseOrderCommand(UUID.randomUUID(), orderId)));
+                new CloseOrderCommand(commandId(commandIdHeader), orderId)));
     }
 
     @PostMapping("/{orderId}/cancel")
-    public ResponseEntity<CommandResult> cancel(@PathVariable UUID orderId, @RequestBody CancelRequest req) {
+    public ResponseEntity<CommandResult> cancel(@PathVariable UUID orderId,
+            @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader,
+            @RequestBody CancelRequest req) {
         return ResponseEntity.ok(handler.handle(
-                new CancelOrderCommand(UUID.randomUUID(), orderId, req.reason())));
+                new CancelOrderCommand(commandId(commandIdHeader), orderId, req.reason())));
     }
 
     @PostMapping("/{orderId}/refund")
-    public ResponseEntity<CommandResult> refund(@PathVariable UUID orderId, @RequestBody RefundRequest req) {
+    public ResponseEntity<CommandResult> refund(@PathVariable UUID orderId,
+            @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader,
+            @RequestBody RefundRequest req) {
         return ResponseEntity.ok(handler.handle(
-                new RefundOrderCommand(UUID.randomUUID(), orderId, req.refundAmount())));
+                new RefundOrderCommand(commandId(commandIdHeader), orderId, req.refundAmount())));
     }
 
     // —— 请求 DTO ——
