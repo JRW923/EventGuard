@@ -214,3 +214,60 @@ git add docs/verification-log.md
 git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时区核对）"
 ```
 - 实际结果（PENDING）：commit=________________
+
+---
+
+## 6. M5.8 收尾——全量测试结论
+
+> 本机（开发机）无 docker daemon，M5.2/M5.3 的「全栈冒烟 / 端到端」步骤仍为 `PENDING`，需云服务器回填。本节覆盖 Definition of Done 中的「三套单元测试全绿」一项，于本机独立运行（三套测试均不依赖 Docker）。
+
+### 6.1 三套单元测试实际运行结果
+
+**① Python（eventguard-ai，`python -m pytest -v`）**
+
+- 汇总行：`47 passed, 219 warnings in 2.94s`
+- 结论：✅ 全绿（0 failures / 0 errors）。warning 均为 kafka/pydantic 弃用告警，不影响结果。
+
+**② Java（eventguard-server，`mvn test`）**
+
+- 汇总行：`Tests run: 76, Failures: 0, Errors: 0, Skipped: 4` + `BUILD SUCCESS`
+- 跳过的 4 个为 `IdempotencyTest`(2) 与 `OrderConsistencyTest`(2)：均标注 `@EnabledIfSystemProperty(named = "eventguard.run.integration", matches = "true")` + `@Testcontainers(disabledWithoutDocker = true)`，本机无 Docker 默认跳过，符合预期。
+- 结论：✅ 全绿（BUILD SUCCESS，单元/组件测试 0 失败 0 错误）。
+
+**③ 前端（eventguard-ui，`npm run test` = `vitest run`）**
+
+- 汇总行：`Test Files  5 passed (5)` / `Tests  16 passed (16)`，Duration 8.41s
+- 输出中 `injection "Symbol(router)" not found` 为组件测试未挂载 router 的 Vue warn，非断言失败。
+- 结论：✅ 全绿（0 failures / 0 errors）。
+
+**总体**：三套单元测试均 ✅ 全绿，无 NEEDS_CONTEXT。
+
+### 6.2 M5 已处理清单（Task 1–7 落地，对应 commit 与测试已绿）
+
+| 项 | 任务 | 关键 commit |
+|----|------|-------------|
+| nginx 反向代理（生产 UI 镜像转发 API/WS 到后端） | M5.1 | `e833f73` |
+| `ObjectMapper` 复用（OrderViewRepository 类级复用，消除重复构造） | M5.4 | `4ed67fa` |
+| `EventItem` 类型收敛（前端 events 去 `any` 漂移） | M5.5 | `2f5bb4a` |
+| `EventTimeline` 空列表守卫（空列表不渲染空表格 + 移除 LegendComponent + tooltip 空守卫） | M5.6 | `15b709d` |
+| `.env.example` 补全 AI 变量 | M5.7 | `ec58fa4` |
+| `README` 补全项目说明/演示脚本 + 修正 Testcontainers 集成测试数量为 2 个 | M5.7 | `ec58fa4`、`76b2e68` |
+
+> 上述全部改动已随 M5.1–M5.7 提交至分支 `feat/m5-verification-polish`；本节的单元测试全绿即为这些打磨项未引入回归的证据。
+
+### 6.3 未处理但已知的 MVP 上限（V2 范围，已在 AGENTS/简报中明确不做）
+
+- **无端点鉴权**：MVP 定位内部 admin 工具，Spring Security / 网关鉴权留 V2。
+- **AI 同步阻塞**：AI 服务 `httpx` 同步调用 LLM，未异步化（V2 用 `httpx.AsyncClient`）。
+- **补偿 handler 非 Spring Bean**：补偿 handler 以 `new` 实例化，未托管为 Spring Bean（V2 接管）。
+- **时区**：代码层 Python 以 UTC `isoformat()` 发送、`order_view.updated_at` 同为 UTC，推断无 ±1 天偏移；但 M5.3 §5.6 的运行时时区核对步骤仍为 `PENDING`（需云服务器全栈回填），本机无法实测部署态一致性，建议云服务器回填时一并确认。
+
+### 6.4 验证门禁命中情况（对照 DoD）
+
+- [x] 三套单元测试全绿（pytest / mvn test / npm run test）—— 本节已验证
+- [x] Task 4/5/6 打磨项落地且对应测试绿（EventItem/EventTimeline/ObjectMapper 改动均在全绿套件内）
+- [x] README + `.env.example` 齐全（M5.7）
+- [x] 已知 MVP 上限已文档化（§6.3），无遗留 Critical/Important 缺陷
+- [ ] 全栈 `docker compose up -d --build` 冒烟 + 端到端（M5.2/M5.3）—— `PENDING` 云服务器回填，不在本机范围
+
+> 结论：M5 单元测试维度全部完成且全绿；M5.2/M5.3 部署态验证待云服务器回填，属既定分工（本机无 Docker），不构成本任务阻塞项。
