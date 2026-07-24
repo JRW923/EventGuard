@@ -20,6 +20,14 @@ describe('EventTimeline', () => {
     expect(wrapper.find('[data-testid="timeline-empty"]').exists()).toBe(true)
   })
 
+  it('empty events renders only el-empty, no table', async () => {
+    const wrapper = mount(EventTimeline, { props: { events: [] } })
+    expect(wrapper.find('[data-testid="timeline-empty"]').exists()).toBe(true)
+    // ponytail: jsdom 下 Element Plus 不会给 <el-table> 加 .el-table 类（类在 layout 后注入），
+    // 故用标签选择器检测真实渲染节点
+    expect(wrapper.find('el-table').exists()).toBe(false)
+  })
+
   it('传入事件列表时构建 ECharts option', () => {
     const events = [
       { eventId: 'e1', aggregateId: 'a1', eventType: 'OrderCreatedEvent', version: 1, createdAt: '2026-07-21T10:00:00Z', payload: { amount: 99 } },

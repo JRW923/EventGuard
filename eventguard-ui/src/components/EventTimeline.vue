@@ -3,24 +3,24 @@
     <div v-if="events.length === 0" data-testid="timeline-empty">
       <el-empty description="暂无事件" />
     </div>
-    <v-chart
-      v-else
-      class="chart"
-      :option="chartOption"
-      autoresize
-      style="height: 400px"
-    />
-
-    <el-table :data="sortedEvents" border size="small" style="margin-top: 16px">
-      <el-table-column prop="version" label="版本" width="80" />
-      <el-table-column prop="eventType" label="事件类型" width="220" />
-      <el-table-column prop="createdAt" label="发生时间" width="220" />
-      <el-table-column label="Payload">
-        <template #default="scope">
-          <pre v-if="scope && scope.row" style="margin: 0; font-size: 12px">{{ JSON.stringify(scope.row.payload, null, 2) }}</pre>
-        </template>
-      </el-table-column>
-    </el-table>
+    <template v-else>
+      <v-chart
+        class="chart"
+        :option="chartOption"
+        autoresize
+        style="height: 400px"
+      />
+      <el-table :data="sortedEvents" border size="small" style="margin-top: 16px">
+        <el-table-column prop="version" label="版本" width="80" />
+        <el-table-column prop="eventType" label="事件类型" width="220" />
+        <el-table-column prop="createdAt" label="发生时间" width="220" />
+        <el-table-column label="Payload">
+          <template #default="scope">
+            <pre v-if="scope && scope.row" style="margin: 0; font-size: 12px">{{ JSON.stringify(scope.row.payload, null, 2) }}</pre>
+          </template>
+        </el-table-column>
+      </el-table>
+    </template>
   </div>
 </template>
 
@@ -30,10 +30,10 @@ import VChart from 'vue-echarts'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { GridComponent, TooltipComponent } from 'echarts/components'
 import { EventItem } from '@/types/event'
 
-use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
+use([CanvasRenderer, LineChart, GridComponent, TooltipComponent])
 
 const props = defineProps<{ events: EventItem[] }>()
 
@@ -52,8 +52,11 @@ const chartOption = computed(() => {
     tooltip: {
       trigger: 'axis',
       formatter: (params: any) => {
+        // ponytail: 无数据点时 params 为空数组，直接 params[0] 会抛错；加空守卫返回空串
+        if (!params || !params.length) return ''
         const idx = params[0].dataIndex
         const ev = sorted[idx]
+        if (!ev) return ''
         return `${ev.eventType}<br/>版本：${ev.version}<br/>时间：${ev.createdAt}<br/>payload：${JSON.stringify(ev.payload)}`
       },
     },
