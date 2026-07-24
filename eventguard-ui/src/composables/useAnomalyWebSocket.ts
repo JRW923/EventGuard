@@ -14,11 +14,13 @@ export function useAnomalyWebSocket(url?: string): {
   const connected = ref(false)
   let ws: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let disposed = false
 
   // 默认连接同源 /ws/anomalies（vite proxy 转发到后端 8080）
   const wsUrl = url || `ws://${window.location.host}/ws/anomalies`
 
   function connect() {
+    if (disposed) return
     try {
       ws = new WebSocket(wsUrl)
       ws.onopen = () => { connected.value = true }
@@ -47,7 +49,7 @@ export function useAnomalyWebSocket(url?: string): {
   }
 
   function scheduleReconnect() {
-    if (reconnectTimer) return
+    if (disposed || reconnectTimer) return
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
       connect()
@@ -59,11 +61,14 @@ export function useAnomalyWebSocket(url?: string): {
   })
 
   onUnmounted(() => {
+    disposed = true
     if (reconnectTimer) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null
     }
     if (ws) {
+      // ponytail: 置空 onclose 防止 close 触发 scheduleReconnect 在卸载后新建定时器
+      ws.onclose = null
       ws.close()
       ws = null
     }
