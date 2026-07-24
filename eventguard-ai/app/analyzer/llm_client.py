@@ -1,6 +1,5 @@
 """LLM 客户端：调用 Ollama 或 OpenAI-compatible API"""
 
-import json
 import logging
 from typing import Optional
 
@@ -41,7 +40,7 @@ class LLMClient:
         }
 
         try:
-            with httpx.Client(timeout=30.0) as client:
+            with httpx.Client(timeout=30.0) as client:  # ponytail: LLM 调用 30s 硬超时,无重试;升级路径=退避重试/超时可配
                 resp = client.post(url, headers=headers, json=body)
                 resp.raise_for_status()
                 data = resp.json()

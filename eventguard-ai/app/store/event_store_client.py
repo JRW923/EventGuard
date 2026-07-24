@@ -23,7 +23,8 @@ class EventStoreClient:
             with httpx.Client(timeout=5.0) as client:
                 resp = client.get(url)
                 resp.raise_for_status()
-                return resp.json()
+                data = resp.json()
+                return data if isinstance(data, list) else data.get("events", [])
         except httpx.HTTPError as e:
             logger.warning("加载事件历史失败 agg_id=%s: %s", aggregate_id, e)
-            return []
+            return []  # ponytail: 事件加载失败静默降级为 [],分析将在无事件上下文下进行;升级路径=返回 None 由上层决定降级策略
