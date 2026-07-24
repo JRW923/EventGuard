@@ -6,6 +6,7 @@ import com.eventguard.event.model.CompensationExecutedEvent;
 import com.eventguard.event.store.EventStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.UUID;
@@ -17,6 +18,7 @@ import java.util.UUID;
  * ponytail: 聚合当前版本通过 EventStore.load 取最大版本号近似（O(n) 扫描），生产应走 AggregateRepository.load；
  * 补偿为人工触发、低频，简化可接受。
  */
+@Component
 public class CompensationCommandHandler {
 
     private static final Logger log = LoggerFactory.getLogger(CompensationCommandHandler.class);

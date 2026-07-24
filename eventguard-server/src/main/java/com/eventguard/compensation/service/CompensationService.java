@@ -6,7 +6,6 @@ import com.eventguard.compensation.action.CompensationActionRegistry;
 import com.eventguard.compensation.model.CompensationCommand;
 import com.eventguard.compensation.model.CompensationRequest;
 import com.eventguard.compensation.model.CompensationResult;
-import com.eventguard.event.store.EventStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -17,8 +16,8 @@ import java.util.UUID;
  * 补偿服务：校验白名单 → 转 CompensationCommand → dispatch 到 CompensationCommandHandler。
  *
  * 设计文档 7.4 MVP：人工触发版，不引入 Saga 编排。
- * ponytail: CompensationCommandHandler 在此以传入的 EventStore 构造（同一实例），便于单元测试直接对
- * EventStore mock 断言 append；生产环境该 EventStore 为真实 JDBC 实现。补偿为人工触发，不接真实支付网关。
+ * ponytail: CompensationCommandHandler 现为 Spring @Component（构造注入 EventStore），此处注入复用，
+ * 不再每次 new；测试改为对 commandHandler mock 断言 handle。补偿为人工触发，不接真实支付网关。
  */
 @Service
 public class CompensationService {
@@ -26,11 +25,11 @@ public class CompensationService {
     private static final Logger log = LoggerFactory.getLogger(CompensationService.class);
 
     private final CompensationActionRegistry registry;
-    private final EventStore eventStore;
+    private final CompensationCommandHandler commandHandler;
 
-    public CompensationService(CompensationActionRegistry registry, EventStore eventStore) {
+    public CompensationService(CompensationActionRegistry registry, CompensationCommandHandler commandHandler) {
         this.registry = registry;
-        this.eventStore = eventStore;
+        this.commandHandler = commandHandler;
     }
 
     public CompensationResult execute(CompensationRequest request) {
@@ -53,7 +52,6 @@ public class CompensationService {
         CompensationCommand cmd = new CompensationCommand(
                 UUID.randomUUID(), aggregateId, actionType, request.getParams());
         try {
-            CompensationCommandHandler commandHandler = new CompensationCommandHandler(eventStore);
             CommandResult result = commandHandler.handle(cmd);
             if (result.success()) {
                 // MVP：动作 execute 仅生成人工可读的执行描述，不触发真实业务副作用（见 ponytail 注释）
