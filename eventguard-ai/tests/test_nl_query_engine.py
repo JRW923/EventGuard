@@ -2,7 +2,7 @@
 
 mock IntentClassifier + TemplateExecutor + LLMClient，验证路由与回答生成。
 """
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
