@@ -37,6 +37,12 @@ public class CompensationService {
         String actionType = request.getActionType();
         UUID aggregateId = request.getAggregateId();
 
+        // 0. 信任边界：aggregateId 必填，缺失直接失败（否则 null 会流入 EventStore.append）
+        if (aggregateId == null) {
+            log.warn("[补偿] 拒绝执行：aggregateId 为空");
+            return CompensationResult.failure("aggregateId 必填");
+        }
+
         // 1. 白名单校验
         if (!registry.isSupported(actionType)) {
             log.warn("[补偿] 拒绝执行：动作 {} 不在白名单", actionType);

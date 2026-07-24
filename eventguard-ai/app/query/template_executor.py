@@ -89,14 +89,17 @@ class TemplateExecutor:
         return None
 
     def _extract_time_window(self, question: str) -> tuple:
-        """从问题中提取时间窗，返回 (from_iso, to_iso)。"""
+        """从问题中提取时间窗，返回 (from_iso, to_iso)。
+        ponytail: 以"今天零点"为锚点，昨天/前天窗口严格落在 [当天00:00, 今天00:00) 半开区间，
+        避免把今天数据计入历史日（原实现 to=now 会多计入今天）。
+        """
         now = datetime.now(timezone.utc)
+        anchor = now.replace(hour=0, minute=0, second=0, microsecond=0)
         for kw, delta_days in self.TIME_KEYWORDS.items():
             if kw in question:
-                start = now + timedelta(days=delta_days)
-                start = start.replace(hour=0, minute=0, second=0, microsecond=0)
-                return start.isoformat(), now.isoformat()
+                start = anchor + timedelta(days=delta_days)
+                end = anchor if delta_days != 0 else now
+                return start.isoformat(), end.isoformat()
         # 默认：最近 7 天
-        start = now + timedelta(days=-7)
-        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = anchor + timedelta(days=-7)
         return start.isoformat(), now.isoformat()

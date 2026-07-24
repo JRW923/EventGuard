@@ -34,8 +34,13 @@ class NLQueryEngine:
         intent = self.intent_classifier.classify(question)
         logger.info("NL 查询意图：%s（问题：%s）", intent, question)
 
-        # 2. 模板路由
-        data = self._route_template(intent, question)
+        # 2. 模板路由（缺订单号/未知意图时返回友好结果而非 500）
+        try:
+            data = self._route_template(intent, question)
+        except ValueError as e:
+            # ponytail: MVP 不接 Text-to-SQL，无法从问题提取订单号时直接告知用户，避免裸异常 500
+            logger.warning("NL 路由失败：%s", e)
+            return QueryResult(intent=intent, data=None, answer=str(e))
 
         # 3. LLM 润色回答
         answer = self._generate_answer(question, intent, data)

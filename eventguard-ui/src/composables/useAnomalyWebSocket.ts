@@ -17,7 +17,9 @@ export function useAnomalyWebSocket(url?: string): {
   let disposed = false
 
   // 默认连接同源 /ws/anomalies（vite proxy 转发到后端 8080）
-  const wsUrl = url || `ws://${window.location.host}/ws/anomalies`
+  // ponytail: 按页面协议推导 ws/wss，否则 https 部署会因 mixed-content 拒绝连接
+  const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const wsUrl = url || `${wsProto}://${window.location.host}/ws/anomalies`
 
   function connect() {
     if (disposed) return
