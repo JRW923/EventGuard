@@ -9,6 +9,11 @@ export const http = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+const apiKey = import.meta.env.VITE_API_KEY
+if (apiKey) {
+  http.defaults.headers.common['X-API-Key'] = apiKey
+}
+
 http.interceptors.response.use(
   (resp) => resp,
   (error) => {

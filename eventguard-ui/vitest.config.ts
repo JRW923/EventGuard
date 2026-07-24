@@ -12,5 +12,8 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: false,
+    env: {
+      VITE_API_KEY: 'changeme',
+    },
   },
 })
