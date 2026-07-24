@@ -93,12 +93,14 @@ class DetectionHandler:
         self,
         event_level_service: EventLevelService,
         publisher: AnomalyPublisher,
+        process_level_detector=None,
+        event_window=None,
     ):
         self.event_level_service = event_level_service
         self.publisher = publisher
-        # process_level_detector 在 M3.6 注入
-        self.process_level_detector = None
-        self.event_window = None
+        # M3.6 注入流程级检测；未注入时 handle() 自动跳过流程级检测
+        self.process_level_detector = process_level_detector
+        self.event_window = event_window
 
     def handle(self, event: dict) -> None:
         """处理单条事件：事件级检测 + 流程级检测"""
