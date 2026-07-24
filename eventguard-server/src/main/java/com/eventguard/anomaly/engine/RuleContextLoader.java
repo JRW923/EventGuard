@@ -9,7 +9,6 @@ import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 加载规则上下文：从 domain_events 与 order_view 表查询聚合数据。
@@ -32,7 +31,7 @@ public class RuleContextLoader {
                 .recentPaymentCompletions(loadRecentPaymentCompletions(event.getAggregateId().toString()))
                 .previousState(loadPreviousState(event.getAggregateId().toString()))
                 .recentCreateOrders(loadRecentCreateOrders(userId))
-                .actualStock(1000) // MVP 默认库存
+                .actualStock(1000) // ponytail: MVP 硬编码库存;升级路径:从 order_view 读真实库存,否则 R005 在生产中几乎不触发
                 .build();
     }
 
@@ -54,7 +53,7 @@ public class RuleContextLoader {
     private BigDecimal loadUserStdAmount(String userId) {
         // MVP 简化：返回均值的 10% 作为标准差估计
         BigDecimal mean = loadUserMeanAmount(userId);
-        if (mean.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ONE;
+        if (mean.compareTo(BigDecimal.ZERO) == 0) return null;
         return mean.multiply(new BigDecimal("0.1"));
     }
 
