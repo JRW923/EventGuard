@@ -57,3 +57,36 @@ class EventLevelDetector:
             level="LOW",
             description=f"Isolation Forest score={score:.4f}" if is_anomaly else "",
         )
+
+
+# ======== M3.5 追加：事件级检测协同服务 ========
+
+from app.detector.rule_bridge import RuleBridge
+
+
+class EventLevelService:
+    """事件级检测协同服务：规则引擎（高优先级）→ Isolation Forest（低优先级）"""
+
+    def __init__(
+        self,
+        rule_bridge: Optional[RuleBridge] = None,
+        if_detector: Optional[EventLevelDetector] = None,
+    ):
+        self.rule_bridge = rule_bridge or RuleBridge()
+        self.if_detector = if_detector or EventLevelDetector()
+
+    def detect(self, event: dict) -> AnomalyResult:
+        """
+        协同检测流程：
+        1. 先调规则引擎 HTTP → 命中则返回高优先级告警
+        2. 未命中 → 调 Isolation Forest → 异常则返回低优先级告警
+        3. 都未命中 → 返回正常
+        """
+        # 1. 规则引擎
+        rule_result = self.rule_bridge.evaluate(event)
+        if rule_result is not None and rule_result.is_anomaly:
+            return rule_result
+
+        # 2. Isolation Forest
+        if_result = self.if_detector.detect(event)
+        return if_result

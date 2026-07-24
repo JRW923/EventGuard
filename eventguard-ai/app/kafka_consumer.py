@@ -73,3 +73,67 @@ class EventKafkaConsumer:
         if self._consumer:
             self._consumer.close()
         logger.info("Kafka consumer stopped")
+
+
+# ======== M3.5 追加：事件级 + 流程级检测处理器 ========
+
+import uuid
+from datetime import datetime, timezone
+
+from app.detector.event_level import EventLevelService
+from app.model.anomaly import Anomaly, AnomalyResult
+from app.publisher.anomaly_publisher import AnomalyPublisher
+from app.store.anomaly_store import anomaly_store
+
+
+class DetectionHandler:
+    """Kafka 事件处理：事件级 + 流程级检测 → 发布异常"""
+
+    def __init__(
+        self,
+        event_level_service: EventLevelService,
+        publisher: AnomalyPublisher,
+    ):
+        self.event_level_service = event_level_service
+        self.publisher = publisher
+        # process_level_detector 在 M3.6 注入
+        self.process_level_detector = None
+        self.event_window = None
+
+    def handle(self, event: dict) -> None:
+        """处理单条事件：事件级检测 + 流程级检测"""
+        # 1. 事件级检测
+        result = self.event_level_service.detect(event)
+        if result.is_anomaly:
+            anomaly = self._build_anomaly(event, result)
+            anomaly_store.save(anomaly)
+            self.publisher.publish(anomaly)
+
+        # 2. 流程级检测（M3.6 接入）
+        if self.process_level_detector is not None and self.event_window is not None:
+            agg_id = event.get("aggregate_id", "")
+            self.event_window.add(event)
+            sequence = self.event_window.get(agg_id)
+            process_anomalies = self.process_level_detector.detect(sequence)
+            for pa in process_anomalies:
+                anomaly_store.save(pa)
+                self.publisher.publish(pa)
+
+    def _build_anomaly(self, event: dict, result: AnomalyResult) -> Anomaly:
+        """从检测结果构建 Anomaly 模型"""
+        event_type = event.get("event_type", "Unknown")
+        agg_id = event.get("aggregate_id", str(uuid.uuid4()))
+        level_map = {"HIGH": "ERROR", "LOW": "WARN"}
+
+        return Anomaly(
+            anomaly_id=str(uuid.uuid4()),
+            rule_id=result.rule_id or "IF",
+            aggregate_id=agg_id,
+            event_type=event_type,
+            level=level_map.get(result.level, "WARN"),
+            source=result.source,
+            priority=result.level,
+            detected_at=datetime.now(timezone.utc).isoformat(),
+            description=result.description or f"{result.source} 检出异常",
+            details={"score": result.score} if result.source == "IF" else {},
+        )
