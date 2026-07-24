@@ -6,6 +6,7 @@ import com.eventguard.query.repository.OrderViewRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -48,5 +49,13 @@ public class OrderQueryService {
 
     public Optional<OrderView> findById(UUID orderId) {
         return orderViewRepository.findById(orderId);
+    }
+
+    public com.eventguard.query.model.OrderListResponse listOrders(String status, int page, int size) {
+        return orderViewRepository.list(status, page, size);
+    }
+
+    public List<com.eventguard.query.model.EventDto> getEvents(java.util.UUID orderId) {
+        return orderViewRepository.findEventsByAggregateId(orderId);
     }
 }

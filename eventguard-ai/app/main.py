@@ -1,13 +1,38 @@
 import httpx
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 from app.analyzer.root_cause import RootCauseAnalyzer, LLMResponseError
 from app.config import settings
+from app.query.nl_query_engine import NLQueryEngine
+from app.query.query_result import QueryResult
 from app.store.anomaly_store import anomaly_store
 
 app = FastAPI(title=settings.app_name)
 
 _analyzer = RootCauseAnalyzer()
+
+
+class NLQueryRequest(BaseModel):
+    question: str
+
+
+# 单例引擎（首次调用时初始化）
+_nl_query_engine = None
+
+
+def _get_nl_query_engine() -> NLQueryEngine:
+    global _nl_query_engine
+    if _nl_query_engine is None:
+        _nl_query_engine = NLQueryEngine()
+    return _nl_query_engine
+
+
+@app.post("/ai/query", response_model=QueryResult)
+def ai_query(req: NLQueryRequest):
+    """自然语言查询：意图分类 + 模板查询 + LLM 润色。"""
+    engine = _get_nl_query_engine()
+    return engine.query(req.question)
 
 
 @app.get("/health")

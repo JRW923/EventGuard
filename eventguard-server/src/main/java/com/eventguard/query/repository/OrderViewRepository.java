@@ -40,4 +40,56 @@ public class OrderViewRepository {
                 mapper, orderId);
         return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
     }
+
+    public com.eventguard.query.model.OrderListResponse list(String status, int page, int size) {
+        int offset = page * size;
+        RowMapper<com.eventguard.query.model.OrderListItem> mapper = (rs, rowNum) -> {
+            com.eventguard.query.model.OrderListItem item = new com.eventguard.query.model.OrderListItem();
+            item.setOrderId(rs.getObject("order_id", java.util.UUID.class));
+            item.setStatus(rs.getString("status"));
+            item.setTotalAmount(rs.getBigDecimal("total_amount"));
+            item.setVersion(rs.getInt("version"));
+            item.setUpdatedAt(rs.getObject("updated_at", java.time.Instant.class));
+            return item;
+        };
+
+        List<com.eventguard.query.model.OrderListItem> orders;
+        long total;
+        if (status == null || status.isBlank()) {
+            orders = jdbc.query(
+                    "SELECT order_id, status, total_amount, version, updated_at " +
+                            "FROM order_view ORDER BY updated_at DESC NULLS LAST LIMIT ? OFFSET ?",
+                    mapper, size, offset);
+            Long cnt = jdbc.queryForObject("SELECT count(*) FROM order_view", Long.class);
+            total = cnt == null ? 0 : cnt;
+        } else {
+            orders = jdbc.query(
+                    "SELECT order_id, status, total_amount, version, updated_at " +
+                            "FROM order_view WHERE status = ? ORDER BY updated_at DESC NULLS LAST LIMIT ? OFFSET ?",
+                    mapper, status, size, offset);
+            Long cnt = jdbc.queryForObject(
+                    "SELECT count(*) FROM order_view WHERE status = ?", Long.class, status);
+            total = cnt == null ? 0 : cnt;
+        }
+        return new com.eventguard.query.model.OrderListResponse(orders, total, page, size);
+    }
+
+    public List<com.eventguard.query.model.EventDto> findEventsByAggregateId(java.util.UUID aggregateId) {
+        RowMapper<com.eventguard.query.model.EventDto> mapper = (rs, rowNum) -> {
+            com.eventguard.query.model.EventDto dto = new com.eventguard.query.model.EventDto();
+            dto.setEventId(rs.getObject("event_id", java.util.UUID.class));
+            dto.setAggregateId(rs.getObject("aggregate_id", java.util.UUID.class));
+            dto.setEventType(rs.getString("event_type"));
+            dto.setVersion(rs.getInt("event_version"));
+            com.fasterxml.jackson.databind.JsonNode node = rs.getObject("payload", com.fasterxml.jackson.databind.JsonNode.class);
+            dto.setPayload(node != null ? new com.fasterxml.jackson.databind.ObjectMapper().convertValue(
+                    node, new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {}) : null);
+            dto.setCreatedAt(rs.getObject("created_at", java.time.Instant.class));
+            return dto;
+        };
+        return jdbc.query(
+                "SELECT event_id, aggregate_id, event_type, event_version, payload, created_at " +
+                        "FROM domain_events WHERE aggregate_id = ? ORDER BY event_version",
+                mapper, aggregateId);
+    }
 }

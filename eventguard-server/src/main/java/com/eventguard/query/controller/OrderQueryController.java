@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -32,5 +33,18 @@ public class OrderQueryController {
         return queryService.findById(orderId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping
+    public com.eventguard.query.model.OrderListResponse listOrders(
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return queryService.listOrders(status, page, size);
+    }
+
+    @GetMapping("/{orderId}/events")
+    public List<com.eventguard.query.model.EventDto> getEvents(@PathVariable java.util.UUID orderId) {
+        return queryService.getEvents(orderId);
     }
 }
