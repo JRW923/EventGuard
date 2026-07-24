@@ -1,6 +1,6 @@
 FROM node:20-alpine AS build
 WORKDIR /app
-ARG VITE_API_KEY=changeme
+ARG VITE_API_KEY=changeme  # ponytail: 构建期占位，生产须传真实密钥（与 EG_API_KEY 一致）
 ENV VITE_API_KEY=$VITE_API_KEY
 COPY package.json package-lock.json* ./
 RUN npm install
