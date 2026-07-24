@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     llm_model: str = "qwen2.5:7b"
     model_dir: str = "models"
     server_base_url: str = "http://eventguard-server:8080"
-    api_key: str = "changeme"
+    api_key: str = "changeme"  # ponytail: 明文单 key 占位，无轮换/多 key；生产须以 EG_API_KEY 注入强随机，否则形同无鉴权
 
     class Config:
         env_prefix = "EG_"
