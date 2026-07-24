@@ -22,11 +22,12 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import EventTimeline from '../components/EventTimeline.vue'
 import { OrderApi } from '../api/order'
+import { EventItem } from '@/types/event'
 
 const route = useRoute()
 const orderId = route.params.id as string
 
-const events = ref<any[]>([])
+const events = ref<EventItem[]>([])
 const loading = ref(false)
 const error = ref('')
 

@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect, vi } from 'vitest'
 import EventTimeline from '../EventTimeline.vue'
+import { EventItem } from '@/types/event'
 
 // mock vue-echarts 避免实际渲染 canvas
 vi.mock('vue-echarts', () => ({

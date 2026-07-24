@@ -31,17 +31,9 @@ import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { EventItem } from '@/types/event'
 
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent])
-
-interface EventItem {
-  eventId: string
-  aggregateId: string
-  eventType: string
-  version: number
-  createdAt: string
-  payload: Record<string, any>
-}
 
 const props = defineProps<{ events: EventItem[] }>()
 

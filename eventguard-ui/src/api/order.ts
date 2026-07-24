@@ -1,4 +1,5 @@
 import { http } from './http'
+import { EventItem } from '@/types/event'
 
 export interface OrderListItem {
   orderId: string
@@ -26,8 +27,8 @@ export const OrderApi = {
     return http.get<OrderListItem>(`/orders/${orderId}`).then((r) => r.data)
   },
 
-  getEvents(orderId: string): Promise<any[]> {
-    return http.get<any[]>(`/orders/${orderId}/events`).then((r) => r.data)
+  getEvents(orderId: string): Promise<EventItem[]> {
+    return http.get<EventItem[]>(`/orders/${orderId}/events`).then((r) => r.data)
   },
 
   getStats(status: string | null, from: string | null, to: string | null): Promise<any[]> {
