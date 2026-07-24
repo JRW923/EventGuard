@@ -15,6 +15,10 @@ public class OrderViewRepository {
 
     private final JdbcTemplate jdbc;
 
+    // ponytail: 复用同一 ObjectMapper，避免 RowMapper 每次 mapRow 新建对象
+    private static final com.fasterxml.jackson.databind.ObjectMapper EVENT_MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
     public OrderViewRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
@@ -82,7 +86,7 @@ public class OrderViewRepository {
             dto.setEventType(rs.getString("event_type"));
             dto.setVersion(rs.getInt("event_version"));
             com.fasterxml.jackson.databind.JsonNode node = rs.getObject("payload", com.fasterxml.jackson.databind.JsonNode.class);
-            dto.setPayload(node != null ? new com.fasterxml.jackson.databind.ObjectMapper().convertValue(
+            dto.setPayload(node != null ? EVENT_MAPPER.convertValue(
                     node, new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {}) : null);
             dto.setCreatedAt(rs.getObject("created_at", java.time.Instant.class));
             return dto;
