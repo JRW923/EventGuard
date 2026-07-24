@@ -49,10 +49,11 @@ class EventLevelDetector:
         score = -self.model.score_samples(X_scaled)[0]  # 越大越异常
 
         is_anomaly = (pred == -1)
+        # IF 异常按架构设计为低优先级；最终告警优先级由 EventLevelService 按 source 决定
         return AnomalyResult(
             is_anomaly=is_anomaly,
             score=float(score),
             source="IF",
-            level="HIGH" if is_anomaly else "LOW",
+            level="LOW",
             description=f"Isolation Forest score={score:.4f}" if is_anomaly else "",
         )

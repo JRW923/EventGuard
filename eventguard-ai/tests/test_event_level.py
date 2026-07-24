@@ -63,7 +63,7 @@ def test_event_level_detector_returns_anomaly_result():
     assert result.is_anomaly is True
     assert result.score > 0
     assert result.source == "IF"
-    assert result.level == "HIGH"  # 锁定 M1 修复：异常应返回 HIGH
+    assert result.level == "LOW"  # IF 异常按架构为低优先级；EventLevelService 再按 source 定最终优先级
 
 
 def test_event_level_detector_returns_normal_for_typical_event():
