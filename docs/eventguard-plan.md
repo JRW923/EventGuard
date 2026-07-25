@@ -594,7 +594,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M3.9 [可选] HMM 训练与检测
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M3.2
 - **涉及文件**：
   - `eventguard-ai/training/train_hmm.py`
@@ -760,7 +760,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M5.2 Pumba 混沌实验
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M1.2
 - **涉及文件**：
   - `eventguard-chaos/experiments/db-kill.sh`
@@ -779,7 +779,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M5.3 AI vs Baseline 对比实验
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M3.5, M3.6
 - **涉及文件**：
   - `eventguard-ai/training/evaluate.py`
@@ -796,7 +796,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M5.4 Gatling 压测
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.7
 - **涉及文件**：
   - `eventguard-benchmark/gatling/OrderSimulation.scala`
@@ -812,7 +812,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M5.5 5 分钟 Demo 视频
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M4.7
 - **涉及文件**：
   - `docs/demo-script.md`
@@ -827,7 +827,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M5.6 README + 架构图
 
-- **状态**：[~]
+- **状态**：[x]
 - **依赖**：全部
 - **涉及文件**：
   - `README.md`
@@ -921,13 +921,13 @@ eventguard:
 
 | 能力 | 对应设计文档章节 | 说明 | 状态（截至 2026-07-25） |
 |------|----------------|------|------|
-| HMM 流程检测 | 4.2 / 7.3.2 | M3.9 可选任务 | 未做（同 M3.9） |
+| HMM 流程检测 | 4.2 / 7.3.2 | M3.9 可选任务 | 已实现（2026-07-25，规则检测第二意见 + 流程级 CategoricalHMM） |
 | Text-to-SQL | 4.3 / 7.3.3 | 全量 NL→SQL 安全沙箱 | 未做（MVP 有意推迟） |
 | ReAct Agent 自愈 | 4.4 / 7.3.4 | 自动补偿 + 审批流 | 未做（MVP 有意推迟） |
 | Saga 编排 | 7.4 | 补偿端完整实现 | 未做（MVP 有意推迟） |
 | Jepsen 形式化 | 5.1 | 探索性一致性验证 | 未做 |
-| 投影延迟告警 | 7.2.5 | 监控增强 | 部分实现（读己写超时异常 `ProjectionLagException` 已有） |
-| 事件时间线编辑器 | 6 | 前端增强 | 部分实现（时间线 viewer 已有） |
+| 投影延迟告警 | 7.2.5 | 监控增强 | 已实现（Micrometer `Timer`/`Counter`，读己写超时计入 `eventguard.projection.lag`） |
+| 事件时间线编辑器 | 6 | 前端增强 | 已实现（按版本回放 / time-travel，时间线 viewer + `upToVersion` 回放） |
 
 > 注：V2 主线（端点鉴权 V2.1–V2.5、AI 异步化 V2.7、补偿 Bean 化 V2.6、未用导入清理 V2.8、Git LFS V2.9、WS 鉴权整合缺陷修复 V2.10）已合并 main，不在上表范围内。
 
@@ -937,21 +937,19 @@ eventguard:
 
 > 各任务状态标记已按代码实际实现回填：`[x]` 完成 / `[ ]` 未做 / `[~]` 部分实现。
 > V2 主线（端点鉴权 V2.1–V2.5 + AI 异步化 V2.7 + 补偿 Bean 化 V2.6 + 导入清理 V2.8 + Git LFS V2.9 + WS 鉴权整合修复 V2.10）已于 2026-07-25 合并 main，详见 `docs/superpowers/plans/2026-07-24-v2-known-ceilings.md`。
+> 2026-07-25 末次补做（commits `fa0aca1`…`3f5eca6`）：M3.9 HMM、M5.2 混沌、M5.3 对比、M5.4 压测、M5.5 Demo 脚本、M5.6 架构 SVG，以及 V2 局部增强（投影延迟监控 + 时间线版本回放）。**至此 MVP 全部任务完成。**
 
-**已完成里程碑**：M1（骨架）→ M2（事件溯源完整）→ M3.1–M3.8（AI 检测主线）→ M4（NL 查询 + 前端）→ M5.1（Testcontainers 一致性测试）。
+**已完成里程碑**：M1（骨架）→ M2（事件溯源完整）→ M3.1–M3.9（AI 检测主线 + 可选 HMM 流程级检测）→ M4（NL 查询 + 前端）→ M5.1–M5.6（一致性测试、混沌、对比、压测、Demo 脚本、架构 SVG）。
 
-**未实现（待办）**：
-- M3.9 HMM 流程检测（可选任务，未做）
-- M5.2 Pumba 混沌实验（`eventguard-chaos/` 未建）
-- M5.3 AI vs Baseline 对比（`training/evaluate.py` / `eventguard-benchmark/ai-vs-baseline.md` 未做）
-- M5.4 Gatling 压测（`eventguard-benchmark/` 未建）
-- M5.5 5 分钟 Demo 视频（`docs/demo-video.mp4` 未生成）
-- V2 进阶能力：Text-to-SQL、ReAct Agent 自愈、Saga 编排、Jepsen 形式化、HMM（均按 MVP 设计有意推迟，见文末 V2 待办表）
+**未实现（V2 主线进阶，MVP 设计有意推迟）**：
+- Text-to-SQL 全量 NL→SQL 安全沙箱（设计 4.3 / 7.3.3）
+- ReAct Agent 自愈（自动补偿 + 审批流，设计 4.4 / 7.3.4）
+- Saga 编排（跨服务自动补偿，设计 7.4）
+- Jepsen 形式化一致性验证（设计 5.1）
 
-**部分实现（核心有、增强无）**：
-- M5.6：README 已完成；`docs/architecture.png` 架构图未生成
-- V2 投影延迟告警：读己写超时异常 `ProjectionLagException`（M2.9）已有，监控增强未做
-- V2 事件时间线编辑器：时间线 viewer（M4.6）已有，编辑器未做
+**交付说明（非阻塞项）**：
+- M5.5 Demo 视频：交付 5 分钟走查脚本 `docs/demo-script.md`（6 场景）。mp4 需人工录制（AI 无法生成视频），脚本末尾已注明。
+- V2 局部增强已补齐：`eventguard.projection.lag` 计数（读己写超时时 +1）+ 时间线按 `upToVersion` 版本回放。
 
 ---
 

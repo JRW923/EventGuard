@@ -114,10 +114,12 @@ curl -s -X POST http://localhost:8080/compensations -H "Content-Type: applicatio
 
 **Roadmap（V2）**
 
-> 状态：端点鉴权、AI 异步化已于 2026-07-25 合并 main（V2.1–V2.7）；Saga 编排、真实支付网关尚未开始。
+> 状态：端点鉴权、AI 异步化已于 2026-07-25 合并 main（V2.1–V2.7）；V2 局部增强（投影延迟监控 + 时间线版本回放）已补齐；Saga 编排、真实支付网关尚未开始。
 
 - [x] 端点鉴权：V2.1–V2.5 已加 API Key 校验（REST `X-API-Key` + WS `?api_key=`，共用 `ApiKeyValidator`），收敛未受保护的 REST 与 WS。
 - [x] AI 异步化：V2.7 已将检测 / 根因 / 查询全链路 `httpx.Client` → `httpx.AsyncClient` 异步化，解耦事件循环阻塞。
 - [ ] Saga 补偿编排：跨服务自动补偿与回滚，替代当前人工触发。
 - [ ] 真实支付网关：补偿动作对接真实支付 / 库存 / 通知外部系统。
-- 其余进阶能力（Text-to-SQL、ReAct Agent、HMM、Jepsen 等）见 `docs/eventguard-plan.md` 文末「V2 待办」，均未做。
+- HMM 流程级检测已实现（M3.9，规则检测第二意见 + `CategoricalHMM`），见 `docs/eventguard-plan.md`。
+- 其余进阶能力（Text-to-SQL、ReAct Agent、Saga 编排、Jepsen 等）见 `docs/eventguard-plan.md` 文末「V2 待办」，均未做。
+- MVP 验证交付物已齐（`eventguard-chaos/` 混沌脚本、`eventguard-benchmark/` Gatling 压测与 AI-vs-Baseline 对比、`docs/demo-script.md` 走查脚本、`docs/architecture.svg` 架构图）；Demo 视频 mp4 需人工录制。
