@@ -81,6 +81,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app.detector.event_level import EventLevelService
+from app.detector.process_level_hmm import run_process_detectors
 from app.model.anomaly import Anomaly, AnomalyResult
 from app.publisher.anomaly_publisher import AnomalyPublisher
 from app.store.anomaly_store import anomaly_store
@@ -94,6 +95,7 @@ class DetectionHandler:
         event_level_service: EventLevelService,
         publisher: AnomalyPublisher,
         process_level_detector=None,
+        hmm_detector=None,
         event_window=None,
     ):
         self.event_level_service = event_level_service
@@ -101,6 +103,8 @@ class DetectionHandler:
         # M3.6 注入流程级检测；未注入时 handle() 自动跳过流程级检测
         # 运行时注入由 main.py 启动装配(后续 Task)，此处仅暴露注入点；未注入时流程级检测自动跳过
         self.process_level_detector = process_level_detector
+        # M3.9 HMM 流程检测作为规则检测之后的第二道流程级检测（可选注入）
+        self.hmm_detector = hmm_detector
         self.event_window = event_window
 
     def handle(self, event: dict) -> None:
@@ -120,7 +124,10 @@ class DetectionHandler:
             agg_id = event.get("aggregate_id", "")
             self.event_window.add(event)
             sequence = self.event_window.get(agg_id)
-            process_anomalies = self.process_level_detector.detect(sequence)
+            # 先规则检测，再 HMM 检测（第二意见），合并结果
+            process_anomalies = run_process_detectors(
+                sequence, self.process_level_detector, self.hmm_detector
+            )
             for pa in process_anomalies:
                 anomaly_store.save(pa)
                 try:

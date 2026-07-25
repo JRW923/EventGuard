@@ -1,0 +1,14 @@
+{
+  "OrderCreatedEvent": 0,
+  "PaymentCompletedEvent": 1,
+  "InventoryReservedEvent": 2,
+  "OrderConfirmedEvent": 3,
+  "ShippedEvent": 4,
+  "DeliveredEvent": 5,
+  "OrderClosedEvent": 6,
+  "PaymentFailedEvent": 7,
+  "PaymentRetriedEvent": 8,
+  "OrderCancelledEvent": 9,
+  "OrderRefundRequestedEvent": 10,
+  "OrderRefundedEvent": 11
+}
