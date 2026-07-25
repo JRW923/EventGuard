@@ -107,11 +107,15 @@ curl -s -X POST http://localhost:8080/compensations -H "Content-Type: applicatio
 - LLM 根因为可选增强：无 Ollama 时走关键词 / 数据摘要兜底，不调用大模型。
 - 补偿为**人工触发**：`CompensationsController` 走白名单（REFUND / NOTIFY_DELAY / MARK_OUT_OF_STOCK / FREEZE_ORDER / BACKOFF_AND_STOP），动作 `execute` 仅产出人工可读描述，**不接真实支付 / 通知网关**，无 Saga 编排或审批流。
 - 端到端测试默认跳过 Testcontainers 集成测试（需本地 Docker 资源），单元 / 组件测试覆盖命令、查询、AI、前端视图。
-- 服务**端点无鉴权**，定位为本地演示 / 面试项目，未做认证授权。
+- 端点鉴权（V2 已加 API Key）：REST 走 `X-API-Key` 头、WebSocket 走 `?api_key=` 查询参数，共用 `ApiKeyValidator`，默认密钥 `changeme`（生产须改）；但仍是单一静态密钥，**无用户级认证 / 授权**。
+- AI 调用（V2 已异步化）：检测 / 根因 / NL 查询全链路 `httpx.AsyncClient`，不再阻塞事件循环。
 
 **Roadmap（V2）**
 
-- Saga 补偿编排：跨服务自动补偿与回滚，替代当前人工触发。
-- 端点鉴权：引入认证 / 授权，收敛未受保护的 REST 与 WS。
-- AI 异步化：检测与根因分析异步流水线，解耦 Kafka 消费与推理延迟。
-- 真实支付网关：补偿动作对接真实支付 / 库存 / 通知外部系统。
+> 状态：端点鉴权、AI 异步化已于 2026-07-25 合并 main（V2.1–V2.7）；Saga 编排、真实支付网关尚未开始。
+
+- [x] 端点鉴权：V2.1–V2.5 已加 API Key 校验（REST `X-API-Key` + WS `?api_key=`，共用 `ApiKeyValidator`），收敛未受保护的 REST 与 WS。
+- [x] AI 异步化：V2.7 已将检测 / 根因 / 查询全链路 `httpx.Client` → `httpx.AsyncClient` 异步化，解耦事件循环阻塞。
+- [ ] Saga 补偿编排：跨服务自动补偿与回滚，替代当前人工触发。
+- [ ] 真实支付网关：补偿动作对接真实支付 / 库存 / 通知外部系统。
+- 其余进阶能力（Text-to-SQL、ReAct Agent、HMM、Jepsen 等）见 `docs/eventguard-plan.md` 文末「V2 待办」，均未做。

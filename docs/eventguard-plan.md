@@ -58,7 +58,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M1.1 项目脚手架
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：—
 - **涉及文件**：
   - `pom.xml`（父 POM）
@@ -82,7 +82,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M1.2 docker-compose 编排
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M1.1
 - **涉及文件**：
   - `docker-compose.yml`
@@ -104,7 +104,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M1.3 事件表 + 命令日志表 DDL（最小版）
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M1.2
 - **涉及文件**：
   - `eventguard-server/src/main/resources/db/migration/V1__init.sql`
@@ -120,7 +120,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M1.4 最小命令端
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M1.3
 - **涉及文件**：
   - `eventguard-server/.../command/controller/OrderCommandController.java`
@@ -149,7 +149,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M1.5 Debezium 配置
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M1.3
 - **涉及文件**：
   - `debezium/conf/application.properties`
@@ -167,7 +167,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M1.6 Kafka echo consumer 验证
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M1.4, M1.5
 - **涉及文件**：
   - `eventguard-server/.../event/DebugEventConsumer.java`（临时，验证后可删）
@@ -189,7 +189,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M2.1 完整 DDL
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M1.3
 - **涉及文件**：
   - `eventguard-server/src/main/resources/db/migration/V2__full_schema.sql`
@@ -205,7 +205,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M2.2 聚合根基类 + 领域事件基类
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.1
 - **涉及文件**：
   - `eventguard-server/.../event/model/DomainEvent.java`
@@ -230,7 +230,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M2.3 OrderAggregate 状态机
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.2
 - **涉及文件**：
   - `eventguard-server/.../command/aggregate/OrderAggregate.java`
@@ -255,7 +255,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M2.4 EventStore + SnapshotStore 实现
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.2
 - **涉及文件**：
   - `eventguard-server/.../event/store/EventStore.java`
@@ -288,7 +288,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M2.5 乐观并发控制 + 重试
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.4
 - **涉及文件**：
   - `eventguard-server/.../command/handler/CommandRetryTemplate.java`
@@ -304,7 +304,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M2.6 幂等命令处理
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.4
 - **涉及文件**：
   - `eventguard-server/.../command/handler/CommandLog.java`（实体）
@@ -329,7 +329,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M2.7 OrderViewProjection 读模型投影器
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.1, M1.5
 - **涉及文件**：
   - `eventguard-server/.../query/projection/Projection.java`
@@ -354,7 +354,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M2.8 幂等消费
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.7
 - **涉及文件**：
   - `eventguard-server/.../common/idempotent/IdempotentConsumer.java`
@@ -375,7 +375,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M2.9 读己写一致性
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.7
 - **涉及文件**：
   - `eventguard-server/.../query/service/OrderQueryService.java`
@@ -394,7 +394,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M2.10 Testcontainers 并发测试套件
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.5, M2.6
 - **涉及文件**：
   - `eventguard-server/src/test/java/.../OrderConsistencyTest.java`
@@ -420,7 +420,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M3.1 Python AI 服务骨架
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M1.5
 - **涉及文件**：
   - `eventguard-ai/app/main.py`
@@ -442,7 +442,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M3.2 合成数据生成
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M3.1
 - **涉及文件**：
   - `eventguard-ai/training/generate_data.py`
@@ -459,7 +459,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M3.3 Java 规则引擎
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.7
 - **涉及文件**：
   - `eventguard-server/.../anomaly/rule/EventRule.java`
@@ -490,7 +490,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M3.4 Isolation Forest 训练 + 持久化
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M3.2
 - **涉及文件**：
   - `eventguard-ai/training/train_isolation.py`
@@ -514,7 +514,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M3.5 事件级检测服务（规则 + ML 协同）
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M3.3, M3.4
 - **涉及文件**：
   - `eventguard-ai/app/detector/event_level.py`（整合）
@@ -532,7 +532,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M3.6 流程级规则检测
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.7
 - **涉及文件**：
   - `eventguard-ai/app/detector/process_level.py`
@@ -552,7 +552,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M3.7 根因分析
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M3.5
 - **涉及文件**：
   - `eventguard-ai/app/analyzer/root_cause.py`
@@ -579,7 +579,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M3.8 异常告警 WebSocket 推送
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M3.5
 - **涉及文件**：
   - `eventguard-server/.../common/websocket/AnomalyWebSocketHandler.java`
@@ -616,7 +616,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M4.1 意图分类
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M3.1
 - **涉及文件**：
   - `eventguard-ai/app/query/intent_classifier.py`
@@ -634,7 +634,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M4.2 模板查询执行器
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M4.1
 - **涉及文件**：
   - `eventguard-ai/app/query/template_executor.py`
@@ -656,7 +656,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M4.3 订单列表页
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.7
 - **涉及文件**：
   - `eventguard-ui/src/views/OrderList.vue`
@@ -671,7 +671,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M4.4 异常看板
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M3.8
 - **涉及文件**：
   - `eventguard-ui/src/views/AnomalyDashboard.vue`
@@ -687,7 +687,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M4.5 NL 查询框
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M4.2
 - **涉及文件**：
   - `eventguard-ui/src/views/NLQuery.vue`
@@ -701,7 +701,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M4.6 事件时间线可视化
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.7
 - **涉及文件**：
   - `eventguard-ui/src/views/OrderTimeline.vue`
@@ -716,7 +716,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M4.7 补偿执行按钮
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.7
 - **涉及文件**：
   - `eventguard-ui/src/views/CompensationExecute.vue`
@@ -744,7 +744,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M5.1 Testcontainers 一致性套件完善
 
-- **状态**：[ ]
+- **状态**：[x]
 - **依赖**：M2.10
 - **涉及文件**：
   - `eventguard-server/src/test/java/.../consistency/*.java`
@@ -827,7 +827,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 
 ### M5.6 README + 架构图
 
-- **状态**：[ ]
+- **状态**：[~]
 - **依赖**：全部
 - **涉及文件**：
   - `README.md`
@@ -919,15 +919,39 @@ eventguard:
 
 ## 7. V2 待办（不在本计划内）
 
-| 能力 | 对应设计文档章节 | 说明 |
-|------|----------------|------|
-| HMM 流程检测 | 4.2 / 7.3.2 | M3.9 可选任务 |
-| Text-to-SQL | 4.3 / 7.3.3 | 全量 NL→SQL 安全沙箱 |
-| ReAct Agent 自愈 | 4.4 / 7.3.4 | 自动补偿 + 审批流 |
-| Saga 编排 | 7.4 | 补偿端完整实现 |
-| Jepsen 形式化 | 5.1 | 探索性一致性验证 |
-| 投影延迟告警 | 7.2.5 | 监控增强 |
-| 事件时间线编辑器 | 6 | 前端增强 |
+| 能力 | 对应设计文档章节 | 说明 | 状态（截至 2026-07-25） |
+|------|----------------|------|------|
+| HMM 流程检测 | 4.2 / 7.3.2 | M3.9 可选任务 | 未做（同 M3.9） |
+| Text-to-SQL | 4.3 / 7.3.3 | 全量 NL→SQL 安全沙箱 | 未做（MVP 有意推迟） |
+| ReAct Agent 自愈 | 4.4 / 7.3.4 | 自动补偿 + 审批流 | 未做（MVP 有意推迟） |
+| Saga 编排 | 7.4 | 补偿端完整实现 | 未做（MVP 有意推迟） |
+| Jepsen 形式化 | 5.1 | 探索性一致性验证 | 未做 |
+| 投影延迟告警 | 7.2.5 | 监控增强 | 部分实现（读己写超时异常 `ProjectionLagException` 已有） |
+| 事件时间线编辑器 | 6 | 前端增强 | 部分实现（时间线 viewer 已有） |
+
+> 注：V2 主线（端点鉴权 V2.1–V2.5、AI 异步化 V2.7、补偿 Bean 化 V2.6、未用导入清理 V2.8、Git LFS V2.9、WS 鉴权整合缺陷修复 V2.10）已合并 main，不在上表范围内。
+
+---
+
+## 8. 实现状态总览（截至 2026-07-25）
+
+> 各任务状态标记已按代码实际实现回填：`[x]` 完成 / `[ ]` 未做 / `[~]` 部分实现。
+> V2 主线（端点鉴权 V2.1–V2.5 + AI 异步化 V2.7 + 补偿 Bean 化 V2.6 + 导入清理 V2.8 + Git LFS V2.9 + WS 鉴权整合修复 V2.10）已于 2026-07-25 合并 main，详见 `docs/superpowers/plans/2026-07-24-v2-known-ceilings.md`。
+
+**已完成里程碑**：M1（骨架）→ M2（事件溯源完整）→ M3.1–M3.8（AI 检测主线）→ M4（NL 查询 + 前端）→ M5.1（Testcontainers 一致性测试）。
+
+**未实现（待办）**：
+- M3.9 HMM 流程检测（可选任务，未做）
+- M5.2 Pumba 混沌实验（`eventguard-chaos/` 未建）
+- M5.3 AI vs Baseline 对比（`training/evaluate.py` / `eventguard-benchmark/ai-vs-baseline.md` 未做）
+- M5.4 Gatling 压测（`eventguard-benchmark/` 未建）
+- M5.5 5 分钟 Demo 视频（`docs/demo-video.mp4` 未生成）
+- V2 进阶能力：Text-to-SQL、ReAct Agent 自愈、Saga 编排、Jepsen 形式化、HMM（均按 MVP 设计有意推迟，见文末 V2 待办表）
+
+**部分实现（核心有、增强无）**：
+- M5.6：README 已完成；`docs/architecture.png` 架构图未生成
+- V2 投影延迟告警：读己写超时异常 `ProjectionLagException`（M2.9）已有，监控增强未做
+- V2 事件时间线编辑器：时间线 viewer（M4.6）已有，编辑器未做
 
 ---
 
