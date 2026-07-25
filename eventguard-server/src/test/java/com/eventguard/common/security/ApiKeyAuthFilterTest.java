@@ -52,4 +52,19 @@ class ApiKeyAuthFilterTest {
         assertThat(res.getStatus()).isEqualTo(200);
         assertThat(chain.getRequest()).isNotNull();
     }
+
+    @Test
+    void wsEndpoint_passesThroughWithoutHeader() throws Exception {
+        // 浏览器 WS 无法带自定义头，密钥走 ?api_key= 由 HandshakeInterceptor 校验，
+        // 故全局 Filter 必须放行 /ws 升级请求，否则握手拦截器永远不可达。
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/ws/anomalies?api_key=secret-key");
+        req.setServletPath("/ws/anomalies");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(req, res, chain);
+
+        assertThat(res.getStatus()).isEqualTo(200);
+        assertThat(chain.getRequest()).isNotNull();
+    }
 }

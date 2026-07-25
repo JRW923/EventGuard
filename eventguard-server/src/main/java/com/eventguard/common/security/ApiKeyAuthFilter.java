@@ -10,7 +10,8 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
-/** 校验入站请求的 X-API-Key 头；缺失/不匹配返回 401。 */
+/** 校验入站请求的 X-API-Key 头；缺失/不匹配返回 401。WS 升级请求（/ws/**）放行，
+ *  交由 ApiKeyHandshakeInterceptor 按 ?api_key= 查询参数鉴权（浏览器 WS 无法带自定义头）。 */
 @Component
 @Order(1)
 public class ApiKeyAuthFilter implements Filter {
@@ -28,7 +29,8 @@ public class ApiKeyAuthFilter implements Filter {
         HttpServletRequest req = (HttpServletRequest) request;
         HttpServletResponse res = (HttpServletResponse) response;
         String path = req.getServletPath();
-        if (path.startsWith("/actuator") || path.equals("/health")) {
+        // ponytail: /ws 放行给握手拦截器查 api_key；/health、/actuator 为运维端点免鉴权
+        if (path.startsWith("/actuator") || path.equals("/health") || path.startsWith("/ws")) {
             chain.doFilter(request, response);
             return;
         }
