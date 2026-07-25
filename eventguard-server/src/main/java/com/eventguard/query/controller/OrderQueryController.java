@@ -44,7 +44,8 @@ public class OrderQueryController {
     }
 
     @GetMapping("/{orderId}/events")
-    public List<com.eventguard.query.model.EventDto> getEvents(@PathVariable java.util.UUID orderId) {
-        return queryService.getEvents(orderId);
+    public List<com.eventguard.query.model.EventDto> getEvents(@PathVariable java.util.UUID orderId,
+                                                               @RequestParam(required = false) Integer upToVersion) {
+        return queryService.getEvents(orderId, upToVersion);
     }
 }

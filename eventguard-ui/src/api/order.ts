@@ -27,8 +27,10 @@ export const OrderApi = {
     return http.get<OrderListItem>(`/orders/${orderId}`).then((r) => r.data)
   },
 
-  getEvents(orderId: string): Promise<EventItem[]> {
-    return http.get<EventItem[]>(`/orders/${orderId}/events`).then((r) => r.data)
+  getEvents(orderId: string, upToVersion?: number): Promise<EventItem[]> {
+    const params: Record<string, number> = {}
+    if (upToVersion != null) params.upToVersion = upToVersion
+    return http.get<EventItem[]>(`/orders/${orderId}/events`, { params }).then((r) => r.data)
   },
 
   getStats(status: string | null, from: string | null, to: string | null): Promise<any[]> {

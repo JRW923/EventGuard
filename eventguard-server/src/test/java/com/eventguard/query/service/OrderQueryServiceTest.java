@@ -1,13 +1,16 @@
 package com.eventguard.query.service;
 
 import com.eventguard.common.exception.ProjectionLagException;
+import com.eventguard.query.model.EventDto;
 import com.eventguard.query.model.OrderView;
 import com.eventguard.query.repository.OrderViewRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -79,5 +82,43 @@ class OrderQueryServiceTest {
         OrderQueryService fastService = new OrderQueryService(orderViewRepository, 200, 10);
         assertThatThrownBy(() -> fastService.readAfterWrite(orderId, 1))
                 .isInstanceOf(ProjectionLagException.class);
+    }
+
+    @Test
+    void getEvents_should_filter_by_upToVersion() {
+        UUID orderId = UUID.randomUUID();
+        when(orderViewRepository.findEventsByAggregateId(orderId)).thenReturn(List.of(
+                eventAt(1), eventAt(2), eventAt(3), eventAt(4)));
+
+        List<EventDto> all = service.getEvents(orderId);
+        assertThat(all).hasSize(4);
+
+        List<EventDto> replay = service.getEvents(orderId, 2);
+        assertThat(replay).hasSize(2);
+        assertThat(replay).allMatch(e -> e.getVersion() <= 2);
+    }
+
+    @Test
+    void readAfterWrite_should_increment_lag_counter_on_timeout() {
+        UUID orderId = UUID.randomUUID();
+        OrderView v = new OrderView();
+        v.setOrderId(orderId);
+        v.setVersion(1);
+        when(orderViewRepository.findById(any())).thenReturn(Optional.of(v));
+
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        OrderQueryService fastService = new OrderQueryService(orderViewRepository, 200, 10, registry);
+
+        assertThatThrownBy(() -> fastService.readAfterWrite(orderId, 99))
+                .isInstanceOf(ProjectionLagException.class);
+
+        assertThat(registry.counter("eventguard.projection.lag", "result", "timeout").count())
+                .isEqualTo(1.0);
+    }
+
+    private static EventDto eventAt(int version) {
+        EventDto e = new EventDto();
+        e.setVersion(version);
+        return e;
     }
 }

@@ -10,6 +10,20 @@
         </div>
       </template>
 
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px">
+        <span>按版本回放：</span>
+        <el-input-number
+          v-model="upToVersion"
+          :min="1"
+          :max="fullMaxVersion || 100000"
+          size="small"
+          controls-position="right"
+          placeholder="全部版本"
+        />
+        <el-button size="small" type="primary" @click="loadEvents">回放</el-button>
+        <el-button size="small" @click="resetReplay">重置</el-button>
+      </div>
+
       <EventTimeline :events="events" v-loading="loading" />
 
       <el-alert v-if="error" type="error" :title="error" :closable="false" style="margin-top: 16px" />
@@ -30,18 +44,29 @@ const orderId = route.params.id as string
 const events = ref<EventItem[]>([])
 const loading = ref(false)
 const error = ref('')
+// ponytail: 时间线"编辑器"最小可用形态=按版本回放（时间旅行）；完整"状态在版本N"重建为升级路径
+const upToVersion = ref<number | undefined>(undefined)
+const fullMaxVersion = ref<number>(0)
 
 async function loadEvents() {
   loading.value = true
   error.value = ''
   try {
-    events.value = await OrderApi.getEvents(orderId)
+    events.value = await OrderApi.getEvents(orderId, upToVersion.value)
+    if (upToVersion.value == null && events.value.length) {
+      fullMaxVersion.value = Math.max(...events.value.map((e) => e.version))
+    }
   } catch (e: any) {
     error.value = '加载失败：' + (e.message || '未知错误')
     events.value = []
   } finally {
     loading.value = false
   }
+}
+
+function resetReplay() {
+  upToVersion.value = undefined
+  loadEvents()
 }
 
 onMounted(loadEvents)
