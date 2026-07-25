@@ -1,125 +1,60 @@
 # EventGuard
 
-电商订单的**事件溯源（Event Sourcing）+ AI 异常检测 + 自然语言查询**管理台。
-一条订单从创建到关闭的每一步都作为不可变事件写入事件库，由查询侧投影出可读视图；
-Python AI 服务在事件流上做异常检测（规则 + IsolationForest + LLM 根因），
-并提供用中文提问、自动执行查询的 NL 接口；Vue3 管理台聚合订单列表、异常看板、
-NL 查询、事件时间线与补偿执行。
+面向电商订单的**事件溯源 + 智能异常检测 + 中文自然语言查询**管理台。
 
-> 技术栈：PostgreSQL + Debezium CDC → Kafka → Spring Boot（命令侧 / 查询侧）+ Python（FastAPI，AI）→ Vue3（管理前端），全部由 `docker-compose` 编排。
+订单从创建到关闭的每一步都作为不可变事件留存，可随时回放任意历史时刻的状态；
+系统在这些事件上自动识别异常订单，并用中文问答的方式帮你查订单、看统计、追轨迹。
 
-## 架构（文字版）
+整套服务用一条命令起在本地，开箱即可演示。
+
+## 架构概览
 
 ```
-                ┌──────────── 写命令 ────────────┐
-   Vue3 管理台  │  Spring Boot 命令侧            │  事件溯源写入
-   (localhost:3000) ── REST ──▶ OrderCommandController ──▶ EventStore(Postgres)
-        │  │                                                          │ CDC
-        │  │  读查询                                                  ▼
-        │  └──▶ OrderQueryController ──▶ order_view 投影 ◀── Debezium ─┘
-        │                                                              │ Kafka
-        │                                               异常检测 ◀─────┘
-        │                                          ┌──────────────────────────┐
-        └── NL 查询 / 根因 ──▶ FastAPI AI(8000) ──▶│ 规则 + IsolationForest   │
-                                                  │ + LLM 根因(可降级)        │
-                                                  └──────────────────────────┘
-   异常告警经 WebSocket(ws://host/ws/anomalies) 推送给前端异常看板
+    Vue3 管理台 (localhost:3000)
+        │  ├─ 写命令 ─▶ 命令侧：订单事件写入事件库（PostgreSQL）
+        │  ├─ 读查询 ─▶ 查询侧：事件投影为可读视图（订单列表 / 时间线 / 统计）
+        │  └─ 中文提问 ─▶ AI 服务：异常检测 + 自然语言查询 + 根因分析
+        │
+   事件库变更经 CDC 流入 Kafka ──▶ AI 服务实时消费并检测异常
+   异常告警经 WebSocket 实时推送到前端异常看板
 ```
 
-- **PostgreSQL + Debezium**：开启逻辑复制，订单事件表变更经 CDC 流入 Kafka（`pgdata` 持久化于卷）。
-- **Kafka**：事件总线；AI 服务消费事件流做实时检测。
-- **Spring Boot（命令侧）**：接收写命令、追加事件（`EventStore.append`，版本续接），保证溯源一致性。
-- **Spring Boot（查询侧）**：消费事件投影出 `order_view`，提供列表/时间线/统计读接口。
-- **Python AI 服务（FastAPI）**：异常检测（规则引擎 + 无监督 IsolationForest + LLM 根因）；NL 查询（意图分类 + 模板执行后端接口）。无 Ollama 时 LLM 走兜底，不阻断演示。
-- **Vue3 管理前端**：订单列表、异常看板（WebSocket）、NL 查询、事件时间线、补偿执行。
+核心链路：**订单事件 → 事件库（PostgreSQL）→ CDC（Debezium）→ Kafka → AI 检测 / 查询投影 → 前端看板**。
+更完整的拓扑见 [`docs/architecture.svg`](docs/architecture.svg)。
 
-> 架构图（CQRS / 事件溯源拓扑，文本 SVG，可版本化）：[`docs/architecture.svg`](docs/architecture.svg)
-
-## 一键部署
+## 快速开始
 
 ```bash
-cp .env.example .env          # .env 已被 gitignore，请勿提交
+cp .env.example .env
 docker compose up -d --build
 ```
 
-启动后访问 **http://localhost:3000**。
+启动后打开 **http://localhost:3000** 即可使用管理台。
 
-服务端口：UI `3000`、Java `8080`、AI `8000`、Postgres `5432`、Kafka `9092`。
-可选混沌测试：`docker compose --profile chaos up -d`（pumba 每 60s 随机杀容器，验证韧性）。
+- 想看系统韧性？`docker compose --profile chaos up -d` 会定期随机杀掉容器，验证故障下仍能恢复。
 
-## 各模块测试
+## 体验流程
 
-| 模块 | 命令 | 说明 |
-| --- | --- | --- |
-| `eventguard-ai` | `cd eventguard-ai && python -m pytest` | AI 检测 / NL 查询单测 |
-| `eventguard-server` | `cd eventguard-server && mvn test` | 2 个 Testcontainers 集成测试类默认跳过（需本地 Docker 资源） |
-| `eventguard-ui` | `cd eventguard-ui && npm run test` | Vue 组件 / 视图单测（vitest） |
+服务起来后，在前端管理台按下面路径走一遍即可看到核心能力：
 
-## 演示脚本（最短路径）
+1. **订单列表**：查看与筛选订单，观察一笔订单从创建到关闭的状态变化。
+2. **自然语言查询**：在查询框输入中文，例如"最近 7 天有多少订单""订单 X 经历了哪些状态变更"，系统返回对应结果。
+3. **异常看板**：异常订单经 WebSocket 实时推送到看板；点开任意告警可看根因分析。
+4. **补偿执行**：对异常订单选择动作（退款 / 通知 / 冻结等）并确认，动作仅生成人工可读的处理说明。
 
-> 需先 `docker compose up -d --build` 且服务健康。下面用 curl 跑通「建订单 → 驱动生命周期 → NL 查询 → 看异常看板 → 触发补偿」。
+> 更完整的逐场景走查见 [`docs/demo-script.md`](docs/demo-script.md)。
 
-```bash
-# 1) 建订单，拿到 orderId
-OID=$(curl -s -X POST http://localhost:8080/orders -H "Content-Type: application/json" \
-  -d '{"userId":"u-demo","totalAmount":199.0}' \
-  | python -c "import sys,json;print(json.load(sys.stdin)['orderId'])")
-echo "orderId=$OID"
+## 已知限制
 
-# 2) 驱动生命周期：支付 → 发货 → 送达 → 关闭
-curl -s -X POST http://localhost:8080/orders/$OID/pay   -H "Content-Type: application/json" -d '{"paymentId":"p1"}' >/dev/null
-curl -s -X POST http://localhost:8080/orders/$OID/ship  >/dev/null
-curl -s -X POST http://localhost:8080/orders/$OID/deliver >/dev/null
-curl -s -X POST http://localhost:8080/orders/$OID/close >/dev/null
+- **补偿为人工触发**：不对接真实支付、库存或通知系统，也无自动编排，动作只产出处理说明。
+- **异常无历史列表**：告警仅实时推送，暂无按历史检索的接口。
+- **鉴权较弱**：使用单一静态 API Key（默认 `changeme`，部署前请修改），无用户级账号体系。
+- **大模型根因为可选**：未配置本地模型时自动降级为关键词 / 数据摘要，不影响主流程。
 
-# 3) NL 查询（三类意图：订单查询 / 统计聚合 / 轨迹回放）
-curl -s -X POST http://localhost:8000/ai/query -H "Content-Type: application/json" \
-  -d "{\"question\":\"订单 $OID 当前状态是什么\"}" ; echo
-curl -s -X POST http://localhost:8000/ai/query -H "Content-Type: application/json" \
-  -d '{"question":"最近7天有多少订单"}' ; echo
-curl -s -X POST http://localhost:8000/ai/query -H "Content-Type: application/json" \
-  -d "{\"question\":\"订单 $OID 经历了哪些状态变更\"}" ; echo
+## 后续计划
 
-# 4) 看异常看板
-#    - 先看板需要异常数据：向 Kafka 发合成异常序列（含 normal + anomaly）
-cd eventguard-ai && python training/generate_data.py && cd ..
-#    - 浏览器打开 http://localhost:3000 的「异常看板」，经 WebSocket 实时收到告警；
-#      或 CLI 抓一个 anomaly_id 后取根因分析：
-AID=$(python - <<'PY'
-import json, websocket
-ws = websocket.create_connection("ws://localhost:8080/ws/anomalies")
-msg = json.loads(ws.recv()); ws.close()
-print(msg.get("anomaly_id") or msg.get("anomalyId") or "")
-PY
-)
-[ -n "$AID" ] && curl -s "http://localhost:8000/anomalies/$AID/analysis" ; echo
+- 自动补偿编排（Saga），替代当前人工触发。
+- 对接真实支付 / 库存 / 通知网关。
+- 更丰富的自然语言能力与一致性验证。
 
-# 5) 触发补偿（白名单动作 REFUND；非法动作返回 400）
-curl -s -X POST http://localhost:8080/compensations -H "Content-Type: application/json" \
-  -d "{\"actionType\":\"REFUND\",\"aggregateId\":\"$OID\"}" ; echo
-```
-
-对应前端操作：订单列表查看/筛选 → NL 查询框输入中文 → 异常看板查看告警并点开根因 → 补偿执行页选动作类型并确认。
-
-## 已知限制 / Roadmap
-
-**MVP 上限（当前）**
-
-- AI 服务**无** `GET /anomalies` 列表接口：异常仅经 WebSocket 推送给前端，根因分析走 `GET /anomalies/{id}/analysis`（`ponytail:` 已知上限，暂无历史告警列表存储）。
-- LLM 根因为可选增强：无 Ollama 时走关键词 / 数据摘要兜底，不调用大模型。
-- 补偿为**人工触发**：`CompensationsController` 走白名单（REFUND / NOTIFY_DELAY / MARK_OUT_OF_STOCK / FREEZE_ORDER / BACKOFF_AND_STOP），动作 `execute` 仅产出人工可读描述，**不接真实支付 / 通知网关**，无 Saga 编排或审批流。
-- 端到端测试默认跳过 Testcontainers 集成测试（需本地 Docker 资源），单元 / 组件测试覆盖命令、查询、AI、前端视图。
-- 端点鉴权（V2 已加 API Key）：REST 走 `X-API-Key` 头、WebSocket 走 `?api_key=` 查询参数，共用 `ApiKeyValidator`，默认密钥 `changeme`（生产须改）；但仍是单一静态密钥，**无用户级认证 / 授权**。
-- AI 调用（V2 已异步化）：检测 / 根因 / NL 查询全链路 `httpx.AsyncClient`，不再阻塞事件循环。
-
-**Roadmap（V2）**
-
-> 状态：端点鉴权、AI 异步化已于 2026-07-25 合并 main（V2.1–V2.7）；V2 局部增强（投影延迟监控 + 时间线版本回放）已补齐；Saga 编排、真实支付网关尚未开始。
-
-- [x] 端点鉴权：V2.1–V2.5 已加 API Key 校验（REST `X-API-Key` + WS `?api_key=`，共用 `ApiKeyValidator`），收敛未受保护的 REST 与 WS。
-- [x] AI 异步化：V2.7 已将检测 / 根因 / 查询全链路 `httpx.Client` → `httpx.AsyncClient` 异步化，解耦事件循环阻塞。
-- [ ] Saga 补偿编排：跨服务自动补偿与回滚，替代当前人工触发。
-- [ ] 真实支付网关：补偿动作对接真实支付 / 库存 / 通知外部系统。
-- HMM 流程级检测已实现（M3.9，规则检测第二意见 + `CategoricalHMM`），见 `docs/eventguard-plan.md`。
-- 其余进阶能力（Text-to-SQL、ReAct Agent、Saga 编排、Jepsen 等）见 `docs/eventguard-plan.md` 文末「V2 待办」，均未做。
-- MVP 验证交付物已齐（`eventguard-chaos/` 混沌脚本、`eventguard-benchmark/` Gatling 压测与 AI-vs-Baseline 对比、`docs/demo-script.md` 走查脚本、`docs/architecture.svg` 架构图）；Demo 视频 mp4 需人工录制。
+详细设计与未做项见 [`docs/eventguard-plan.md`](docs/eventguard-plan.md)。
