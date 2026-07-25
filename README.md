@@ -33,6 +33,8 @@ NL 查询、事件时间线与补偿执行。
 - **Python AI 服务（FastAPI）**：异常检测（规则引擎 + 无监督 IsolationForest + LLM 根因）；NL 查询（意图分类 + 模板执行后端接口）。无 Ollama 时 LLM 走兜底，不阻断演示。
 - **Vue3 管理前端**：订单列表、异常看板（WebSocket）、NL 查询、事件时间线、补偿执行。
 
+> 架构图（CQRS / 事件溯源拓扑，文本 SVG，可版本化）：[`docs/architecture.svg`](docs/architecture.svg)
+
 ## 一键部署
 
 ```bash
