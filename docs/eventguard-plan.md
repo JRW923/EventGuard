@@ -77,8 +77,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   4. Vue3 + Vite + Element Plus 起步
   5. 各模块加健康检查端点（`/actuator/health`、`/health`、前端首页）
 - **验收点**：
-  - [ ] 三个子项目能独立启动
-  - [ ] 健康检查端点返回 200
+  - [x] 三个子项目能独立启动
+  - [x] 健康检查端点返回 200
 
 ### M1.2 docker-compose 编排
 
@@ -98,9 +98,9 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   4. `depends_on` 与健康检查（PG `pg_isready`、Kafka `kafka-topics --bootstrap-server`）
   5. Pumba 服务用 `profiles: ["chaos"]` 按需启动
 - **验收点**：
-  - [ ] `docker compose up` 全栈启动无报错
-  - [ ] 各服务健康检查通过
-  - [ ] `docker compose --profile chaos up pumba` 能起 Pumba
+  - [x] `docker compose up` 全栈启动无报错
+  - [x] 各服务健康检查通过
+  - [x] `docker compose --profile chaos up pumba` 能起 Pumba
 
 ### M1.3 事件表 + 命令日志表 DDL（最小版）
 
@@ -115,8 +115,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   3. 索引：`idx_events_agg_id` on `(aggregate_id, event_version)`
   4. 启动时自动执行（`spring.sql.init.mode=always` 或 Flyway）
 - **验收点**：
-  - [ ] 启动后表存在
-  - [ ] 唯一约束生效（重复插入报错）
+  - [x] 启动后表存在
+  - [x] 唯一约束生效（重复插入报错）
 
 ### M1.4 最小命令端
 
@@ -144,8 +144,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   3. `OrderCommandHandler.handle(CreateOrderCommand)`：生成 `OrderCreatedEvent` → append
   4. REST 接口 `POST /orders`
 - **验收点**：
-  - [ ] `curl -X POST /orders -d '{...}'` 返回 200
-  - [ ] PG `domain_events` 表有一条 `OrderCreatedEvent` 记录
+  - [x] `curl -X POST /orders -d '{...}'` 返回 200
+  - [x] PG `domain_events` 表有一条 `OrderCreatedEvent` 记录
 
 ### M1.5 Debezium 配置
 
@@ -162,8 +162,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   4. `message.key columns=aggregate_id`
   5. PG 开启逻辑复制（`wal_level=logical`、创建 replication slot 与 publication）
 - **验收点**：
-  - [ ] Debezium 启动无报错
-  - [ ] 插入 `domain_events` 后，Kafka `domain-events` topic 有消息
+  - [x] Debezium 启动无报错
+  - [x] 插入 `domain_events` 后，Kafka `domain-events` topic 有消息
 
 ### M1.6 Kafka echo consumer 验证
 
@@ -177,8 +177,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. 调用 `POST /orders` 触发事件
   3. 观察 consumer 日志是否收到事件
 - **验收点**：
-  - [ ] 完整链路：`POST /orders` → PG 事件表 → Debezium CDC → Kafka → consumer 收到
-  - [ ] payload 是纯净的 `OrderCreatedEvent` JSON（无 Debezium 包装）
+  - [x] 完整链路：`POST /orders` → PG 事件表 → Debezium CDC → Kafka → consumer 收到
+  - [x] payload 是纯净的 `OrderCreatedEvent` JSON（无 Debezium 包装）
 
 ---
 
@@ -200,8 +200,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   3. 补充 `order_view` 读模型表
   4. 补充索引与外键约束
 - **验收点**：
-  - [ ] 所有表创建成功
-  - [ ] 幂等消费表复合主键生效
+  - [x] 所有表创建成功
+  - [x] 幂等消费表复合主键生效
 
 ### M2.2 聚合根基类 + 领域事件基类
 
@@ -225,8 +225,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. 实现 `AggregateRoot`（`pendingEvents` 列表、`raise` 方法、`version` 管理）
   3. 抽象 `apply` 方法由子类实现
 - **验收点**：
-  - [ ] `raise` 后 `pendingEvents` 含该事件
-  - [ ] `flushPendingEvents` 清空列表并返回
+  - [x] `raise` 后 `pendingEvents` 含该事件
+  - [x] `flushPendingEvents` 清空列表并返回
 
 ### M2.3 OrderAggregate 状态机
 
@@ -249,9 +249,9 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   4. `apply` 方法更新 `status`
   5. `PaymentRetried` 重试计数，超 3 次转 `OrderCancelled`
 - **验收点**：
-  - [ ] 合法迁移正常产生事件
-  - [ ] 非法迁移（如 `PENDING_PAYMENT`→`SHIPPED`）抛异常
-  - [ ] 支付重试超 3 次自动取消
+  - [x] 合法迁移正常产生事件
+  - [x] 非法迁移（如 `PENDING_PAYMENT`→`SHIPPED`）抛异常
+  - [x] 支付重试超 3 次自动取消
 
 ### M2.4 EventStore + SnapshotStore 实现
 
@@ -282,9 +282,9 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   4. `AggregateRepository.load`：快照+增量事件重建聚合根
   5. `append` 后若 `version % 100 == 0` 存快照
 - **验收点**：
-  - [ ] `expectedVersion` 不符时抛 `OptimisticConcurrencyException`
-  - [ ] `load` 能从快照+增量事件正确重建
-  - [ ] 第 100 个事件后自动存快照
+  - [x] `expectedVersion` 不符时抛 `OptimisticConcurrencyException`
+  - [x] `load` 能从快照+增量事件正确重建
+  - [x] 第 100 个事件后自动存快照
 
 ### M2.5 乐观并发控制 + 重试
 
@@ -299,8 +299,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. `CommandRetryTemplate`：捕获该异常，重试最多 3 次（重新加载聚合根 → 重放命令 → 再 append）
   3. 重试间隔 10ms 线性退避
 - **验收点**：
-  - [ ] 并发冲突时自动重试
-  - [ ] 3 次仍失败抛异常
+  - [x] 并发冲突时自动重试
+  - [x] 3 次仍失败抛异常
 
 ### M2.6 幂等命令处理
 
@@ -324,8 +324,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. 各 handler 在事务内先查 `command_log`，已存在则返回
   3. 命令处理成功后写 `command_log`（同事务）
 - **验收点**：
-  - [ ] 同一 `commandId` 重复提交只执行一次
-  - [ ] 返回首次结果
+  - [x] 同一 `commandId` 重复提交只执行一次
+  - [x] 返回首次结果
 
 ### M2.7 OrderViewProjection 读模型投影器
 
@@ -349,8 +349,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   3. `switch event` 类型 → INSERT/UPDATE `order_view`
   4. `OrderViewRepository` 查询接口
 - **验收点**：
-  - [ ] 下单后 `order_view` 有记录
-  - [ ] 支付后 `order_view.status` 更新为 `PAID`
+  - [x] 下单后 `order_view` 有记录
+  - [x] 支付后 `order_view.status` 更新为 `PAID`
 
 ### M2.8 幂等消费
 
@@ -371,7 +371,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. `OrderViewProjection.on` 开头检查幂等
   3. 处理后 `markProcessed`
 - **验收点**：
-  - [ ] 重复消费同一条事件，`order_view` 不变
+  - [x] 重复消费同一条事件，`order_view` 不变
 
 ### M2.9 读己写一致性
 
@@ -389,8 +389,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. `readAfterWrite`：轮询 `order_view`，`version >= expectedVersion` 即返回，超 2s 抛 `ProjectionLagException`
   3. 查询 REST 接口支持带 `expectedVersion` 参数
 - **验收点**：
-  - [ ] 写后立即查能读到
-  - [ ] 超时抛异常
+  - [x] 写后立即查能读到
+  - [x] 超时抛异常
 
 ### M2.10 Testcontainers 并发测试套件
 
@@ -407,9 +407,9 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   4. 幂等测试：重复提交同 `commandId`，断言只执行一次
   5. 事件不丢失测试：kill PG 重启后事件数一致
 - **验收点**：
-  - [ ] 并发测试通过
-  - [ ] 幂等测试通过
-  - [ ] 重启测试通过
+  - [x] 并发测试通过
+  - [x] 幂等测试通过
+  - [x] 重启测试通过
 
 ---
 
@@ -437,8 +437,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   3. 配置管理：`pydantic-settings` 读 `.env`
   4. 健康检查端点
 - **验收点**：
-  - [ ] AI 服务启动
-  - [ ] 能消费到 Kafka 事件
+  - [x] AI 服务启动
+  - [x] 能消费到 Kafka 事件
 
 ### M3.2 合成数据生成
 
@@ -454,8 +454,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. 注入异常：5% 金额偏离、3% 状态停滞/回退、2% 支付死循环、1% 组合异常
   3. 输出 JSONL 格式，标注 `is_anomaly` + `anomaly_type`
 - **验收点**：
-  - [ ] 正常数据无异常标注
-  - [ ] 异常数据标注正确
+  - [x] 正常数据无异常标注
+  - [x] 异常数据标注正确
 
 ### M3.3 Java 规则引擎
 
@@ -485,8 +485,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   7. `RuleEngine.evaluate`：加载 ctx → 遍历规则 → 返回首个命中
   8. 规则引擎提供 REST 接口 `POST /anomaly/rules/evaluate`（被 AI 服务协同调用，见 M3.5；不作为独立 Kafka 消费者，避免与 AI 侧重复告警）
 - **验收点**：
-  - [ ] 5 条规则各自能命中对应异常
-  - [ ] 正常事件不误报
+  - [x] 5 条规则各自能命中对应异常
+  - [x] 正常事件不误报
 
 ### M3.4 Isolation Forest 训练 + 持久化
 
@@ -509,8 +509,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   4. `joblib` 持久化模型
   5. `EventLevelDetector` 加载模型，`detect` 返回 `AnomalyResult`
 - **验收点**：
-  - [ ] 模型训练完成并保存
-  - [ ] 异常事件 `detect` 返回 `is_anomaly=True`
+  - [x] 模型训练完成并保存
+  - [x] 异常事件 `detect` 返回 `is_anomaly=True`
 
 ### M3.5 事件级检测服务（规则 + ML 协同）
 
@@ -527,8 +527,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   3. 告警发到 Kafka `anomaly-alerts` topic
   4. 规则引擎与 ML 协同的优先级逻辑
 - **验收点**：
-  - [ ] 规则命中的异常高优先级告警
-  - [ ] ML 检出的异常低优先级告警
+  - [x] 规则命中的异常高优先级告警
+  - [x] ML 检出的异常低优先级告警
 
 ### M3.6 流程级规则检测
 
@@ -548,7 +548,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   3. 状态停滞检测（PAID 后 24h 无后续）
   4. 死循环检测（`PaymentFailed`→`Retried` 重复 >5 次）
 - **验收点**：
-  - [ ] 三种流程异常都能检出
+  - [x] 三种流程异常都能检出
 
 ### M3.7 根因分析
 
@@ -574,8 +574,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   5. 接入 Ollama 本地 或 远端 API
   6. 暴露 REST 接口 `GET /anomalies/{anomaly_id}/analysis`（前端 M4.4 调用）
 - **验收点**：
-  - [ ] 输出合法 JSON
-  - [ ] 建议在白名单内（`REFUND`/`NOTIFY_DELAY`/`MARK_OUT_OF_STOCK`/`FREEZE_ORDER`/`BACKOFF_AND_STOP`）
+  - [x] 输出合法 JSON
+  - [x] 建议在白名单内（`REFUND`/`NOTIFY_DELAY`/`MARK_OUT_OF_STOCK`/`FREEZE_ORDER`/`BACKOFF_AND_STOP`）
 
 ### M3.8 异常告警 WebSocket 推送
 
@@ -590,7 +590,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. `AnomalyAlertConsumer` 消费 `anomaly-alerts` topic → 推送到 WebSocket
   3. 前端连接 WebSocket 接收告警
 - **验收点**：
-  - [ ] 异常发生时前端实时收到告警
+  - [x] 异常发生时前端实时收到告警
 
 ### M3.9 [可选] HMM 训练与检测
 
@@ -630,7 +630,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. LLM 调用返回意图标签
   3. 兜底：LLM 失败时关键词匹配（"状态变更"→`trace_replay`、"多少"→`stats_aggregation`）
 - **验收点**：
-  - [ ] 3 类意图分类准确
+  - [x] 3 类意图分类准确
 
 ### M4.2 模板查询执行器
 
@@ -652,7 +652,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   5. LLM 润色结果回答
   6. REST 接口 `POST /ai/query`
 - **验收点**：
-  - [ ] 3 类查询都能返回正确结果
+  - [x] 3 类查询都能返回正确结果
 
 ### M4.3 订单列表页
 
@@ -667,7 +667,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. 状态筛选
   3. 调 `GET /orders`
 - **验收点**：
-  - [ ] 列表展示 + 分页 + 筛选可用
+  - [x] 列表展示 + 分页 + 筛选可用
 
 ### M4.4 异常看板
 
@@ -682,8 +682,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   3. 历史异常查询
   4. 点击异常 → 查看根因报告（调 `GET /anomalies/{id}/analysis`）
 - **验收点**：
-  - [ ] 实时告警弹出
-  - [ ] 根因报告展示
+  - [x] 实时告警弹出
+  - [x] 根因报告展示
 
 ### M4.5 NL 查询框
 
@@ -697,7 +697,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. 调 `POST /ai/query`
   3. 结果展示（文字 + 图表/时间线）
 - **验收点**：
-  - [ ] 3 类查询都能展示
+  - [x] 3 类查询都能展示
 
 ### M4.6 事件时间线可视化
 
@@ -712,7 +712,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. ECharts 时间线组件
   3. 每个事件节点显示类型 + 时间 + payload
 - **验收点**：
-  - [ ] 时间线正确渲染
+  - [x] 时间线正确渲染
 
 ### M4.7 补偿执行按钮
 
@@ -732,8 +732,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   3. 转换为补偿命令 → `commandBus.dispatch`
   4. 前端按钮：异常详情页"执行建议"按钮
 - **验收点**：
-  - [ ] 点击按钮触发补偿命令
-  - [ ] 订单状态更新
+  - [x] 点击按钮触发补偿命令
+  - [x] 订单状态更新
 
 ---
 
@@ -755,8 +755,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   3. 幂等消费测试（重复消费不变）
   4. 事件不丢失测试（kill PG 重启）
 - **验收点**：
-  - [ ] 全部测试通过
-  - [ ] 输出测试报告
+  - [x] 全部测试通过
+  - [x] 输出测试报告
 
 ### M5.2 Pumba 混沌实验
 
@@ -774,7 +774,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   3. `ai-delay`：`pumba delay --time 5000 eventguard-ai`，验证规则引擎兜底
   4. 截图 + 恢复曲线
 - **验收点**：
-  - [ ] 三种故障系统均能降级/恢复
+  - [x] 三种故障系统均能降级/恢复
   - [ ] 截图归档
 
 ### M5.3 AI vs Baseline 对比实验
@@ -792,7 +792,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   4. 生成对比表
 - **验收点**：
   - [ ] F1: 0.85 → 0.92
-  - [ ] 对比表完成
+  - [x] 对比表完成
 
 ### M5.4 Gatling 压测
 
@@ -807,8 +807,8 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. 跑 1min/5min 压测
   3. 输出 QPS、P95 延迟报告
 - **验收点**：
-  - [ ] QPS 曲线生成
-  - [ ] P95 < 500ms（基线）
+  - [x] QPS 曲线生成
+  - [x] P95 < 500ms（基线）
 
 ### M5.5 5 分钟 Demo 视频
 
@@ -838,7 +838,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. 架构图：从设计文档复制 + 美化
   3. 面试讲解映射表
 - **验收点**：
-  - [ ] 仓库可交付
+  - [x] 仓库可交付
 
 ---
 
