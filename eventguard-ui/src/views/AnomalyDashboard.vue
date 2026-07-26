@@ -60,7 +60,7 @@
             type="primary"
             plain
             style="margin-left: 8px"
-            @click="goCompensate(s.action, currentReport.anomaly_id)"
+            @click="goCompensate(s.action)"
           >
             执行 {{ s.action }}
           </el-button>
@@ -83,6 +83,7 @@ const { alerts, connected } = useAnomalyWebSocket()
 const dialogVisible = ref(false)
 const analysisLoading = ref(false)
 const currentReport = ref<AnalysisReport | null>(null)
+const currentAggregateId = ref('')
 
 function levelType(level: string): 'danger' | 'warning' | 'info' {
   if (level === 'ERROR') return 'danger'
@@ -94,6 +95,9 @@ async function showAnalysis(anomalyId: string) {
   dialogVisible.value = true
   analysisLoading.value = true
   currentReport.value = null
+  // ponytail: 补偿按订单聚合根执行，须用 anomaly 的 aggregate_id 而非 anomaly_id
+  const alert = alerts.value.find((a) => a.anomaly_id === anomalyId)
+  currentAggregateId.value = alert?.aggregate_id ?? ''
   try {
     currentReport.value = await AnomalyApi.getAnalysis(anomalyId)
   } catch (e: any) {
@@ -104,7 +108,7 @@ async function showAnalysis(anomalyId: string) {
   }
 }
 
-function goCompensate(action: string, anomalyId: string) {
-  router.push({ path: '/compensations', query: { actionType: action, anomalyId } })
+function goCompensate(action: string) {
+  router.push({ path: '/compensations', query: { actionType: action, aggregateId: currentAggregateId.value } })
 }
 </script>

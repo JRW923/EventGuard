@@ -94,7 +94,7 @@ onMounted(() => {
   if (route) {
     const q = route.query
     if (!props.initialActionType && q.actionType) form.value.actionType = q.actionType as string
-    if (!props.initialAggregateId && q.anomalyId) form.value.aggregateId = (q.anomalyId as string) || ''
+    if (!props.initialAggregateId && q.aggregateId) form.value.aggregateId = (q.aggregateId as string) || ''
   }
 })
 

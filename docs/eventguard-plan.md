@@ -605,7 +605,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
   2. 设定 log-likelihood 阈值
   3. `ProcessLevelHMMDetector` 检测低概率序列
 - **验收点**：
-  - [ ] HMM 能检出异常序列
+  - [x] HMM 能检出异常序列
 
 ---
 
