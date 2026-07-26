@@ -51,14 +51,32 @@
 
 SSH 登录服务器后执行（二选一，按你的发行版）：
 
+> 注意：OpenCloudOS 9（RHEL9 系）里 `yum-utils` 包已不存在，且 `download.docker.com` 在国内部署机常被墙（报 `Curl error (35): Connection reset`）。**请直接用国内镜像源**，不要加官方源、也不要用 `get.docker.com` 脚本。
+
+**CentOS / OpenCloudOS / TencentOS（腾讯云/阿里云镜像）：**
+
 ```bash
-# CentOS / OpenCloudOS / TencentOS
-sudo yum install -y yum-utils
-sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+# 先删掉可能误加的官方源（它指向被墙的 download.docker.com）
+sudo rm -f /etc/yum.repos.d/docker-ce.repo
+
+# 写入腾讯云镜像源（同腾讯云内网更快；如需换源把下面两处 cloud.tencent.com 改为 mirrors.aliyun.com）
+sudo tee /etc/yum.repos.d/docker-ce.repo > /dev/null <<'EOF'
+[docker-ce-stable]
+name=Docker CE Stable - $basearch
+baseurl=https://mirrors.cloud.tencent.com/docker-ce/linux/centos/$releasever/$basearch/stable
+enabled=1
+gpgcheck=1
+gpgkey=https://mirrors.cloud.tencent.com/docker-ce/linux/centos/gpg
+EOF
+
+sudo yum makecache
 sudo yum install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 sudo systemctl enable --now docker
+```
 
-# Ubuntu / Debian
+**Ubuntu / Debian：**
+
+```bash
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl
 sudo install -m 0755 -d /etc/apt/keyrings
