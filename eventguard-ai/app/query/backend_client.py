@@ -20,12 +20,14 @@ class BackendClient:
             or getattr(settings, "backend_base_url", None)
             or getattr(settings, "server_base_url", "http://eventguard-server:8080")
         )
+        # ponytail: 服务端全局 ApiKeyAuthFilter 对所有 REST 强校验 X-API-Key，AI 调用必须带；默认值 changeme 与 server 一致，生产经 EG_API_KEY 注入
+        self.headers = {"X-API-Key": settings.api_key}
 
     async def get_order(self, order_id: str) -> dict:
         """GET /orders/{id} — 查询订单基本信息。"""
         url = f"{self.base_url}/orders/{order_id}"
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers=self.headers)
             resp.raise_for_status()
             return resp.json()
 
@@ -40,7 +42,7 @@ class BackendClient:
             params["to"] = to
         url = f"{self.base_url}/orders/stats"
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
+            resp = await client.get(url, params=params, headers=self.headers)
             resp.raise_for_status()
             return resp.json()
 
@@ -48,6 +50,6 @@ class BackendClient:
         """GET /orders/{id}/events — 事件回放。"""
         url = f"{self.base_url}/orders/{order_id}/events"
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
+            resp = await client.get(url, headers=self.headers)
             resp.raise_for_status()
             return resp.json()

@@ -15,13 +15,15 @@ class EventStoreClient:
 
     def __init__(self, base_url: Optional[str] = None):
         self.base_url = base_url or settings.server_base_url
+        # ponytail: 服务端全局 ApiKeyAuthFilter 对所有 REST 强校验 X-API-Key，AI 调用必须带；默认值 changeme 与 server 一致，生产经 EG_API_KEY 注入
+        self.headers = {"X-API-Key": settings.api_key}
 
     def load_events(self, aggregate_id: str) -> list[dict]:
         """加载指定聚合根的事件序列"""
         url = f"{self.base_url}/orders/{aggregate_id}/events"
         try:
             with httpx.Client(timeout=5.0) as client:
-                resp = client.get(url)
+                resp = client.get(url, headers=self.headers)
                 resp.raise_for_status()
                 data = resp.json()
                 return data if isinstance(data, list) else data.get("events", [])

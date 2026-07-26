@@ -24,7 +24,11 @@ class RuleBridge:
         try:
             # ponytail: 单条同步阻塞硬超时=2.0s；规则引擎慢即整条事件检测被卡住，升级路径=异步/批量调用+熔断
             with httpx.Client(timeout=2.0) as client:
-                resp = client.post(self.url, json=request_body)
+                resp = client.post(
+                    self.url,
+                    json=request_body,
+                    headers={"X-API-Key": settings.api_key},
+                )
                 resp.raise_for_status()
                 data = resp.json()
         except (httpx.HTTPError, ValueError) as e:  # ValueError 覆盖 200 但 body 非合法 JSON（JSONDecodeError）
