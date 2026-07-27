@@ -140,7 +140,16 @@ git pull          # 无需再写 https://github.com/... 那串地址
 
 ### 4.1 每次 `git pull` 后需手动处理的项
 
-`git pull` 会用仓库最新版本**覆盖服务器上的 `docker-compose.yml` 和各 Dockerfile**（你本地对这些文件的修改会丢失）。每次拉取后都要补回下面两件事：
+`git pull` 会用仓库最新版本**覆盖服务器上的 `docker-compose.yml` 和各 Dockerfile**（你本地对这些文件的修改会丢失）。
+
+> **若 `git pull` 报 `Your local changes ... would be overwritten by merge`**：说明服务器上的 `docker-compose.yml` 有未提交的本地改动（如之前手动注释的端口）。处理办法——丢弃本地改动再拉取，然后重做端口注释：
+> ```bash
+> git checkout -- docker-compose.yml
+> git pull
+> ```
+> 不要用 `git stash`/`stash pop`：因为仓库新版文件结构已变（新增 VITE_API_KEY、PIP_INDEX_URL 构建参数），pop 多半冲突、更麻烦。
+
+每次拉取后都要补回下面两件事：
 
 1. **重新做端口收紧（第 6 节）**：仓库默认仍暴露 `5432/9092/8080/8000`，pull 后这些注释会被还原。需再把 `postgres`/`kafka`/`eventguard-server`/`eventguard-ai` 的 `ports:` 行注释掉，仅保留 UI 的 `3000`。
 2. **把 `.env.example` 新增字段并入你的 `.env`**：`.env` 被 git 忽略、pull 不会动它，但你当初是基于旧版 `.env.example` 创建的，可能缺后来加的字段（如 `VITE_API_KEY`、`PIPE_INDEX_URL`）。每次 pull 后对比：
