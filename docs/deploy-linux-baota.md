@@ -112,6 +112,32 @@ cd EventGuard
 
 > 用 IDEA 本地改完代码后，只需 `git push`，服务器上 `git pull` 再重新 `docker compose up -d --build` 即可更新。
 
+### 4.0 正确的更新命令与鉴权（避免 `git pull` 报错）
+
+**不要每次都写完整 URL**。`git clone` 时已把远程记为 `origin`，以后直接在仓库目录里：
+
+```bash
+cd /opt/EventGuard
+git pull          # 无需再写 https://github.com/... 那串地址
+```
+
+若 `git pull` 提示输入密码并失败，几乎都是 **GitHub 已禁用账号密码走 HTTPS**（报 "incorrect"/401）。改用以下任一种鉴权：
+
+1. **SSH（推荐，一劳永逸）**：在服务器生成密钥并加到 GitHub 账户（Settings → SSH keys）：
+   ```bash
+   ssh-keygen -t ed25519 -C "deploy@tencent"
+   cat ~/.ssh/id_ed25519.pub        # 复制公钥粘贴到 GitHub
+   git remote set-url origin git@github.com:JRW923/EventGuard.git
+   git pull
+   ```
+2. **HTTPS + 个人令牌（PAT）**：`git pull` 让输密码时，**粘贴 PAT**（不是登录密码；GitHub → Settings → Developer settings → Personal access tokens，勾 `repo`）。为免每次输入可缓存：
+   ```bash
+   git config --global credential.helper store
+   ```
+3. 若在**本机**装过 `gh` 并登录过，那是另一台机器、服务器不会继承；服务器想复用需另装 `gh` 并执行 `gh auth setup-git`，一般不如直接用 SSH。
+
+> `git pull https://github.com/...` 这种带完整 URL 的写法并非必须，只在临时从不同地址拉取时才用；常规更新用 `git pull` 即可。
+
 ### 4.1 每次 `git pull` 后需手动处理的项
 
 `git pull` 会用仓库最新版本**覆盖服务器上的 `docker-compose.yml` 和各 Dockerfile**（你本地对这些文件的修改会丢失）。每次拉取后都要补回下面两件事：
