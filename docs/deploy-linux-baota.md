@@ -116,11 +116,15 @@ cd EventGuard
 
 ## 5. 配置环境变量（重要：改掉默认密钥）
 
-仓库根目录已有 `.env`（以及 `.env.example`）。**生产部署务必修改默认弱口令**。编辑 `.env`：
+`.env` 被 `.gitignore` 忽略，不会进仓库；`git clone` 后只有 `.env.example`。**请先复制成 `.env`，再改值**：
 
 ```bash
+cd /opt/EventGuard
+cp .env.example .env
 vim .env   # 或用宝塔「文件」在线编辑 /opt/EventGuard/.env
 ```
+
+> 必须保留 `.env.example` 里的**全部字段**（数据库名/用户、Kafka/Server 内部地址等是容器间联通的关键），只修改下面列出的弱口令/密钥项，其余保持原样。不要只新建那几个字段——缺字段会导致数据库起不来或后端连不上库。
 
 需要修改的关键项：
 
