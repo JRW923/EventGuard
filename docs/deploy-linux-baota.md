@@ -112,6 +112,25 @@ cd EventGuard
 
 > 用 IDEA 本地改完代码后，只需 `git push`，服务器上 `git pull` 再重新 `docker compose up -d --build` 即可更新。
 
+### 4.1 每次 `git pull` 后需手动处理的项
+
+`git pull` 会用仓库最新版本**覆盖服务器上的 `docker-compose.yml` 和各 Dockerfile**（你本地对这些文件的修改会丢失）。每次拉取后都要补回下面两件事：
+
+1. **重新做端口收紧（第 6 节）**：仓库默认仍暴露 `5432/9092/8080/8000`，pull 后这些注释会被还原。需再把 `postgres`/`kafka`/`eventguard-server`/`eventguard-ai` 的 `ports:` 行注释掉，仅保留 UI 的 `3000`。
+2. **把 `.env.example` 新增字段并入你的 `.env`**：`.env` 被 git 忽略、pull 不会动它，但你当初是基于旧版 `.env.example` 创建的，可能缺后来加的字段（如 `VITE_API_KEY`、`PIPE_INDEX_URL`）。每次 pull 后对比：
+   ```bash
+   diff .env.example .env
+   ```
+   把 `.env.example` 多出来的键（连同默认值）补进 `.env`，再按需改成你的强随机值。
+
+> 注意：如果你之前在服务器上**直接把腾讯/清华镜像写死进 `eventguard-ai/Dockerfile`**（不走参数化），`git pull` 会把它覆盖回默认官方 PyPI，构建将再次超时。请改用参数化方式：在 `.env` 里加 `PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple`，由 compose 的 `args` 传入（见第 5 节 / Q6），不要再手改 Dockerfile。
+
+补完后统一重建：
+
+```bash
+docker compose up -d --build
+```
+
 ---
 
 ## 5. 配置环境变量（重要：改掉默认密钥）
