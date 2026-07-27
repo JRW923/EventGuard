@@ -154,9 +154,16 @@ git pull          # 无需再写 https://github.com/... 那串地址
 1. **重新做端口收紧（第 6 节）**：仓库默认仍暴露 `5432/9092/8080/8000`，pull 后这些注释会被还原。需再把 `postgres`/`kafka`/`eventguard-server`/`eventguard-ai` 的 `ports:` 行注释掉，仅保留 UI 的 `3000`。
 2. **把 `.env.example` 新增字段并入你的 `.env`**：`.env` 被 git 忽略、pull 不会动它，但你当初是基于旧版 `.env.example` 创建的，可能缺后来加的字段（如 `VITE_API_KEY`、`PIPE_INDEX_URL`）。每次 pull 后对比：
    ```bash
-   diff .env.example .env
+   diff .env.example .env      # 以 < 开头的行 = example 有、你的 .env 没有
    ```
-   把 `.env.example` 多出来的键（连同默认值）补进 `.env`，再按需改成你的强随机值。
+   **不要直接 `cp .env.example .env`**（会覆盖你已设的强随机密码/密钥，退回 `changeme`）**。只把缺的键手动追加进 `.env`：
+   ```dotenv
+   # 前端构建期密钥：必须与 EG_API_KEY 完全相同
+   VITE_API_KEY=这里填你 .env 里 EG_API_KEY 那个强随机值
+   # pip 镜像（国内部署用腾讯云，避免 PyPI 超时）
+   PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
+   ```
+   确认补上：`grep -E "VITE_API_KEY|PIPE_INDEX_URL" .env`。补完后 `docker compose up -d --build` 重建（让 `VITE_API_KEY` 烤进前端、`PIPE_INDEX_URL` 用于 AI 镜像构建）。
 
 > 注意：如果你之前在服务器上**直接把腾讯/清华镜像写死进 `eventguard-ai/Dockerfile`**（不走参数化），`git pull` 会把它覆盖回默认官方 PyPI，构建将再次超时。请改用参数化方式：在 `.env` 里加 `PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple`，由 compose 的 `args` 传入（见第 5 节 / Q6），不要再手改 Dockerfile。
 
