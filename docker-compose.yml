@@ -67,7 +67,11 @@ services:
       kafka: { condition: service_healthy }
 
   eventguard-ui:
-    build: ./eventguard-ui
+    build:
+      context: ./eventguard-ui
+      # ponytail: 构建期注入前端 API Key；未设置时兜底 changeme，与本地后端默认一致，保证零配置可跑
+      args:
+        VITE_API_KEY: ${VITE_API_KEY:-changeme}
     ports: ["3000:80"]
     depends_on: [eventguard-server]
 

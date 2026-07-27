@@ -136,7 +136,10 @@ DB_PASSWORD=换成强随机密码        # 须与上面一致
 # ② 网关鉴权密钥：前后端必须一致，且要足够强
 EG_API_KEY=换成强随机密钥(如 openssl rand -hex 32)
 
-# ③（可选）大模型：不填也行，AI 会降级为关键词/摘要，不影响主流程
+# ③ 前端构建期密钥：必须与 ② 完全相同，否则前端请求被后端 401 拒绝
+VITE_API_KEY=与上面 EG_API_KEY 完全相同的强随机密钥
+
+# ④（可选）大模型：不填也行，AI 会降级为关键词/摘要，不影响主流程
 # EG_LLM_BASE_URL=http://ollama:11434/v1
 # EG_LLM_API_KEY=ollama
 # EG_LLM_MODEL=qwen2.5:7b
@@ -181,31 +184,11 @@ openssl rand -hex 32
     ...
 ```
 
-### 6.1 让前端带上正确的 API Key（构建参数）
+### 6.1 前端 API Key 已内置（无需改 compose）
 
-前端把 `X-API-Key` 写死在构建产物里（环境变量 `VITE_API_KEY`）。需要在 compose 的 ui 服务里把这个参数传进去，否则前端会用默认的 `changeme`。
+`VITE_API_KEY` 的构建参数已经写进仓库的 `docker-compose.yml`（`args: { VITE_API_KEY: ${VITE_API_KEY:-changeme} }`，带 `changeme` 兜底），且 `.env.example` 已包含 `VITE_API_KEY` 一行。因此**部署时不用再改 compose**，只要确保第 5 节 `.env` 里的 `VITE_API_KEY` 与 `EG_API_KEY` 取值完全一致即可。
 
-在 `docker-compose.yml` 的 `eventguard-ui` 服务下增加 `args`，并在 `.env` 增加一行：
-
-`.env` 追加：
-
-```dotenv
-VITE_API_KEY=与上面 EG_API_KEY 完全相同的强随机密钥
-```
-
-`docker-compose.yml` 的 `eventguard-ui` 改为：
-
-```yaml
-  eventguard-ui:
-    build:
-      context: ./eventguard-ui
-      args:
-        VITE_API_KEY: ${VITE_API_KEY}
-    ports: ["3000:80"]
-    depends_on: [eventguard-server]
-```
-
-> 务必保证 `VITE_API_KEY` 与 `EG_API_KEY` 取值**完全一致**，否则前端请求会被后端的 `ApiKeyAuthFilter` 拒绝（返回 401）。
+> 务必保证两者**完全一致**，否则前端请求会被后端的 `ApiKeyAuthFilter` 拒绝（返回 401）。本地未创建 `.env` 时，兜底 `changeme` 与后端默认一致，`docker compose up` 仍可零配置跑通。
 
 ---
 
@@ -240,6 +223,10 @@ curl http://localhost:8000/health        # 若未实现该端点，可 curl http
 # 数据库初始化是否执行（postgres-init 脚本）
 docker compose exec postgres psql -U eventguard -d eventguard -c "\dt"
 ```
+
+> 若你做了第 6 节端口收紧（注释掉 `8080`/`8000` 的宿主机映射），上面两个 `curl localhost` 会连不上——这是预期，不是故障。改用容器内部探活：
+> `docker compose exec eventguard-server curl -s localhost:8080/actuator/health`
+> `docker compose exec eventguard-ai curl -s localhost:8000/health`
 
 ---
 
