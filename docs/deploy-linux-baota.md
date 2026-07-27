@@ -296,6 +296,16 @@ docker compose down -v
 **Q5：服务器内存不足 / 构建 OOM。**
 - 2G 内存机器编 Java 可能 OOM。建议 4G；或在 `docker compose build` 前临时加 swap。
 
+**Q6：构建 AI 镜像时 `pip install` 报 `ReadTimeoutError` / `files.pythonhosted.org` 超时。**
+- 国内网络连默认 PyPI 源不稳定。在 `.env` 里把 `PIP_INDEX_URL` 改成国内镜像再重建：
+  ```dotenv
+  PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
+  ```
+  ```bash
+  docker compose up -d --build eventguard-ai
+  ```
+- 该参数已内置为构建参数（默认官方 PyPI），非国内环境无需改动。
+
 ---
 
 ## 附录 A：不用 Docker 的手动部署（不推荐）

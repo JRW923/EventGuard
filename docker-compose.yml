@@ -60,8 +60,11 @@ services:
       kafka: { condition: service_healthy }
 
   eventguard-ai:
-    build: ./eventguard-ai
-    ports: ["8000:8000"]
+    build:
+      context: ./eventguard-ai
+      args:
+        PIP_INDEX_URL: ${PIPE_INDEX_URL:-https://pypi.org/simple}
+    # ports: ["8000:8000"]
     env_file: .env
     depends_on:
       kafka: { condition: service_healthy }
