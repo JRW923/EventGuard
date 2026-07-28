@@ -134,6 +134,7 @@ docker compose up -d --build
   git pull
   ```
   不要用 `git stash`/`stash pop`：仓库结构已变（新增 VITE_API_KEY、PIP_INDEX_URL 构建参数），pop 多半冲突。
+- **`git pull` 前不需要先停服务**：pull 只更新磁盘上的文件（compose/Dockerfile/源码），不影响正在运行的容器，业务不会中断。pull 后让改动生效靠 `docker compose up -d --build`（compose 会自动停掉旧容器、起新的），**也不用你手动 `docker compose down`**。本次含 UI 运行时注入修复，必须 `docker compose up -d --build eventguard-ui` 重建 UI 才能消 401。
 
 **Q4：每次 `git pull` 后端口又全暴露了 / 前端 401 又出现。**
 - `git pull` 会用仓库新版覆盖服务器上的 `docker-compose.yml` 与各 Dockerfile，你之前的端口注释会丢失。每次拉取后补两件事：
