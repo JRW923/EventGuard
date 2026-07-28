@@ -13,6 +13,7 @@
             <option :value="null">全部状态</option>
             <option v-for="s in statuses" :key="s" :value="s">{{ s }}</option>
           </select>
+          <el-button size="small" type="primary" @click="openCreate">新建订单</el-button>
           <el-button size="small" @click="loadData">刷新</el-button>
         </div>
       </template>
@@ -40,6 +41,21 @@
       />
 
       <el-alert v-if="error" type="error" :title="error" :closable="false" style="margin-top: 16px" />
+
+      <el-dialog v-model="createVisible" title="新建订单" width="420px">
+        <el-form :model="form" label-width="90px">
+          <el-form-item label="用户 ID">
+            <el-input v-model="form.userId" placeholder="如 u-demo" />
+          </el-form-item>
+          <el-form-item label="金额">
+            <el-input-number v-model="form.totalAmount" :min="0" :step="1" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="createVisible = false">取消</el-button>
+          <el-button type="primary" :loading="creating" @click="submitCreate">确定</el-button>
+        </template>
+      </el-dialog>
     </el-card>
   </div>
 </template>
@@ -47,6 +63,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { OrderApi, type OrderListItem } from '../api/order'
 
 const router = useRouter()
@@ -91,6 +108,33 @@ function onPageChange(page: number) {
 
 function goTimeline(orderId: string) {
   router.push(`/orders/${orderId}/timeline`)
+}
+
+const createVisible = ref(false)
+const creating = ref(false)
+const form = ref<{ userId: string; totalAmount: number }>({ userId: '', totalAmount: 199 })
+
+function openCreate() {
+  form.value = { userId: '', totalAmount: 199 }
+  createVisible.value = true
+}
+
+async function submitCreate() {
+  if (!form.value.userId) {
+    ElMessage.warning('请填写用户 ID')
+    return
+  }
+  creating.value = true
+  try {
+    await OrderApi.create({ userId: form.value.userId, totalAmount: Number(form.value.totalAmount) })
+    ElMessage.success('创建成功')
+    createVisible.value = false
+    loadData()
+  } catch (e: any) {
+    ElMessage.error('创建失败：' + (e.message || '未知错误'))
+  } finally {
+    creating.value = false
+  }
 }
 
 onMounted(loadData)

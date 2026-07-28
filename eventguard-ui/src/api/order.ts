@@ -27,6 +27,10 @@ export const OrderApi = {
     return http.get<OrderListItem>(`/orders/${orderId}`).then((r) => r.data)
   },
 
+  create(payload: { userId: string; totalAmount: number }): Promise<{ orderId: string }> {
+    return http.post<{ orderId: string }>('/orders', payload).then((r) => r.data)
+  },
+
   getEvents(orderId: string, upToVersion?: number): Promise<EventItem[]> {
     const params: Record<string, number> = {}
     if (upToVersion != null) params.upToVersion = upToVersion
