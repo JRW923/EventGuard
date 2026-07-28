@@ -285,8 +285,13 @@ curl http://localhost:8000/health        # 若未实现该端点，可 curl http
 docker compose exec postgres psql -U eventguard -d eventguard -c "\dt"
 ```
 
-> 若你做了第 6 节端口收紧（注释掉 `8080`/`8000` 的宿主机映射），上面两个 `curl localhost` 会连不上——这是预期，不是故障。改用容器内部探活：
-> `docker compose exec eventguard-server curl -s localhost:8080/actuator/health`
+> 若你做了第 6 节端口收紧（注释掉 `8080`/`8000` 的宿主机映射），上面两个 `curl localhost` 会连不上——这是**预期，不是故障**，原因如下：
+> - **根因**：server/ai 的 `ports:` 被注释后，容器内 8080/8000 只在 Docker 内部网络可见，宿主机 `localhost` 上无进程监听，于是 `curl` 报 `connection refused`。这跟服务本身正不正常无关（之前日志里 DispatcherServlet 能初始化，是因为请求来自 compose 内部的 ui 容器反代 `eventguard-server:8080`，不是宿主机 localhost）。
+> - **actuator 是开着的**：`application.yml` 配了 `management.endpoints.web.exposure.include: health,info,metrics`，`/actuator/health` 默认可访问。
+> - **不会被 API Key 拦**：`ApiKeyAuthFilter` 对 `path.startsWith("/actuator")` 免鉴权，所以容器内直连无需带 `X-API-Key` 头，不会 401。
+>
+> 因此改用容器内部探活（这是生产环境的标准姿势，且无需把 8080/8000 对外开放）：
+> `docker compose exec eventguard-server curl -s localhost:8080/actuator/health` → 预期 `{"status":"UP",...}`
 > `docker compose exec eventguard-ai curl -s localhost:8000/health`
 
 ---
