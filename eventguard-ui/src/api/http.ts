@@ -9,7 +9,9 @@ export const http = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-const apiKey = import.meta.env.VITE_API_KEY
+// ponytail: 优先用运行时注入的 window.__EG_API_KEY__（nginx envsubst 生成 config.js），
+// 兜底 import.meta.env.VITE_API_KEY（构建期）。解耦 compose build args 不可靠注入的问题
+const apiKey = (window as any).__EG_API_KEY__ || import.meta.env.VITE_API_KEY
 if (apiKey) {
   http.defaults.headers.common['X-API-Key'] = apiKey
 }

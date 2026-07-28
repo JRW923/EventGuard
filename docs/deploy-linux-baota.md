@@ -245,11 +245,14 @@ openssl rand -hex 32
     ...
 ```
 
-### 6.1 前端 API Key 已内置（无需改 compose）
+### 6.1 前端 API Key 的注入机制（无需手改 compose）
 
-`VITE_API_KEY` 的构建参数已经写进仓库的 `docker-compose.yml`（`args: { VITE_API_KEY: ${VITE_API_KEY:-changeme} }`，带 `changeme` 兜底），且 `.env.example` 已包含 `VITE_API_KEY` 一行。因此**部署时不用再改 compose**，只要确保第 5 节 `.env` 里的 `VITE_API_KEY` 与 `EG_API_KEY` 取值完全一致即可。
+前端在运行时从 `window.__EG_API_KEY__` 读取网关密钥，该值由 UI 容器启动时用 `EG_API_KEY` 经 nginx `envsubst` 注入到 `config.js`（见 `eventguard-ui/nginx-entrypoint.sh`）。`EG_API_KEY` 通过 `docker-compose.yml` 的 `environment` 从 `.env` 传入——**`environment` 是运行时变量，注入可靠**，不会再出现 build args 传不到导致 401 的问题。
 
-> 务必保证两者**完全一致**，否则前端请求会被后端的 `ApiKeyAuthFilter` 拒绝（返回 401）。本地未创建 `.env` 时，兜底 `changeme` 与后端默认一致，`docker compose up` 仍可零配置跑通。
+- `.env` 里必须设置 `EG_API_KEY`（见第 5 节），它就是前后端共用的密钥；前端自动取同一个值，因此**只要 `EG_API_KEY` 存在，前端与后端天然一致**。
+- `VITE_API_KEY` 仍保留为**构建期兜底**（仅当容器未注入 `EG_API_KEY` 时生效，默认 `changeme`）。正常部署不需要动它；若你之前遇过订单列表 401，根因就是 build args 没可靠传入，现已改用运行时注入解决。
+
+> 排查 401 时直接看容器里生成的 `config.js`：`docker compose exec eventguard-ui cat /usr/share/nginx/html/config.js`，正常应显示 `window.__EG_API_KEY__ = "你设置的EG_API_KEY值";`。若为空或 `changeme`，说明 `.env` 的 `EG_API_KEY` 没传给容器（检查 compose `environment` 与 `.env`）。
 
 ---
 

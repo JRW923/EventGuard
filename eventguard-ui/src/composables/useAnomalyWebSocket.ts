@@ -19,7 +19,8 @@ export function useAnomalyWebSocket(url?: string): {
   // 默认连接同源 /ws/anomalies（vite proxy 转发到后端 8080）
   // ponytail: 按页面协议推导 ws/wss，否则 https 部署会因 mixed-content 拒绝连接
   const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const apiKey = import.meta.env.VITE_API_KEY
+  // ponytail: 同 http.ts，优先运行时注入值，兜底构建期变量
+  const apiKey = (window as any).__EG_API_KEY__ || import.meta.env.VITE_API_KEY
   const wsUrl = url || `${wsProto}://${window.location.host}/ws/anomalies${apiKey ? `?api_key=${apiKey}` : ''}`
 
   function connect() {

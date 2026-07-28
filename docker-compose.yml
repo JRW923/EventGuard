@@ -75,6 +75,9 @@ services:
       # ponytail: 构建期注入前端 API Key；未设置时兜底 changeme，与本地后端默认一致，保证零配置可跑
       args:
         VITE_API_KEY: ${VITE_API_KEY:-changeme}
+    # ponytail: 运行时 API Key 由 EG_API_KEY 经 environment 注入（可靠），nginx envsubst 写进 config.js
+    environment:
+      EG_API_KEY: ${EG_API_KEY}
     ports: ["3000:80"]
     depends_on: [eventguard-server]
 
