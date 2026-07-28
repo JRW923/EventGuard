@@ -127,13 +127,13 @@ docker compose up -d --build
 - GitHub 已禁用账号密码走 HTTPS。改用：① **SSH（推荐）** `ssh-keygen -t ed25519`，公钥加到 GitHub → `git remote set-url origin git@github.com:JRW923/EventGuard.git` → `git pull`；② **HTTPS + PAT**：拉取让输密码时粘贴 Personal Access Token（非登录密码），并可 `git config --global credential.helper store` 缓存。
 - 日常更新直接 `git pull`，不要写完整 URL（`git clone` 时已记为 `origin`）。
 
-**Q3：`git pull` 报 `Your local changes ... would be overwritten by merge`（docker-compose.yml）。**
-- 服务器上对 compose 有未提交改动（如端口注释）。丢弃本地改动再拉，然后重做端口注释：
+**Q3：`git pull` 报 `Your local changes ... would be overwritten by merge`。**
+- 服务器上对受 git 跟踪的文件有未提交改动（如 `docker-compose.yml` 的端口注释、各 `Dockerfile` 的手动改法）。git 会拒绝覆盖，报错里会列出具体文件。把报错列出的文件逐个丢弃再拉，然后按 Q4 重做端口收紧：
   ```bash
-  git checkout -- docker-compose.yml
+  git checkout -- eventguard-ai/Dockerfile eventguard-ui/Dockerfile   # 以报错实际列出的文件为准
   git pull
   ```
-  不要用 `git stash`/`stash pop`：仓库结构已变（新增 VITE_API_KEY、PIP_INDEX_URL 构建参数），pop 多半冲突。
+  不要用 `git stash`/`stash pop`：仓库结构已变（新增 VITE_API_KEY、PIP_INDEX_URL 构建参数），pop 多半冲突。你之前手动改过的 Dockerfile（如写死国内镜像）通常已被仓库版覆盖等价实现，丢弃本地改动不会丢东西。
 - **`git pull` 前不需要先停服务**：pull 只更新磁盘上的文件（compose/Dockerfile/源码），不影响正在运行的容器，业务不会中断。pull 后让改动生效靠 `docker compose up -d --build`（compose 会自动停掉旧容器、起新的），**也不用你手动 `docker compose down`**。本次含 UI 运行时注入修复，必须 `docker compose up -d --build eventguard-ui` 重建 UI 才能消 401。
 
 **Q4：每次 `git pull` 后端口又全暴露了 / 前端 401 又出现。**
