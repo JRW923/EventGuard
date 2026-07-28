@@ -139,7 +139,18 @@ docker compose up -d --build
 **Q4：每次 `git pull` 后端口又全暴露了 / 前端 401 又出现。**
 - `git pull` 会用仓库新版覆盖服务器上的 `docker-compose.yml` 与各 Dockerfile，你之前的端口注释会丢失。每次拉取后补两件事：
   1. **重做端口收紧**（见下方「生产端口收紧」）：注释掉 `postgres`/`kafka`/`eventguard-server`/`eventguard-ai` 的 `ports:`，只留 UI `3000`。
-  2. **并入 `.env` 新增字段**：`.env` 被 git 忽略、pull 不动它，但你可能缺后来加的键。对比 `diff .env.example .env`（以 `<` 开头=example 有、你缺），**只追加缺的键，不要 `cp .env.example .env`**（会覆盖你设的强密码）。补完 `docker compose up -d --build`。
+  2. **并入 `.env` 新增字段**：`.env` 被 git 忽略、pull 不动它，但你可能缺后来加的键。
+     - 手动：`diff .env.example .env`（以 `<` 开头=example 有、你缺），只把缺的键追加进 `.env`，**不要 `cp .env.example .env`**（会覆盖强密码）。
+     - 更省事（一键合并缺失键，保留已有值，无需新依赖）：
+       ```bash
+       while IFS= read -r line; do
+         case "$line" in ''|#*) continue ;; esac
+         key="${line%%=*}"
+         grep -q "^${key}=" .env || echo "$line" >> .env
+       done < .env.example
+       grep -E "VITE_API_KEY|PIPE_INDEX_URL|EG_API_KEY" .env   # 确认关键键都在
+       ```
+       该脚本只追加「example 有、.env 没有」的键（用 example 默认值），你已设的值不动。追加后留意新出现的密钥类键，按需改成强值。补完 `docker compose up -d --build`。
 
 **生产端口收紧**（建议做，缩小暴露面）：
 ```yaml
