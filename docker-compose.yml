@@ -3,6 +3,7 @@ services:
     image: postgres:16
     ports: ["5432:5432"]
     environment:
+      TZ: Asia/Shanghai
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -32,6 +33,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      TZ: Asia/Shanghai
     healthcheck:
       test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
       interval: 5s
@@ -50,11 +52,14 @@ services:
       DEBEZIUM_SOURCE_DATABASE_USER: ${POSTGRES_USER}
       DEBEZIUM_SOURCE_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
       DEBEZIUM_SOURCE_DATABASE_DBNAME: ${POSTGRES_DB}
+      TZ: Asia/Shanghai
 
   eventguard-server:
     build: ./eventguard-server
     ports: ["8080:8080"]
     env_file: .env
+    environment:
+      TZ: Asia/Shanghai
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
@@ -66,6 +71,8 @@ services:
         PIP_INDEX_URL: ${PIPE_INDEX_URL:-https://pypi.org/simple}
     # ports: ["8000:8000"]
     env_file: .env
+    environment:
+      TZ: Asia/Shanghai
     depends_on:
       kafka: { condition: service_healthy }
 
@@ -78,6 +85,7 @@ services:
     # ponytail: 运行时 API Key 由 EG_API_KEY 经 environment 注入（可靠），nginx envsubst 写进 config.js
     environment:
       EG_API_KEY: ${EG_API_KEY}
+      TZ: Asia/Shanghai
     ports: ["3000:80"]
     depends_on: [eventguard-server]
 
