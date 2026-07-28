@@ -170,9 +170,10 @@ docker compose up -d --build
 - **预期行为，不是故障**：端口收紧后 8080 只在 compose 内部网络可见，宿主机无监听。actuator 明明开着（`application.yml` 配了 `exposure.include: health,info,metrics`），且 `ApiKeyAuthFilter` 对 `/actuator` 免鉴权。改在容器内探活：`docker compose exec eventguard-server curl -s localhost:8080/actuator/health` → `{"status":"UP",...}`。
 
 **Q6：前端订单列表报「加载失败：401」，无数据。**
-- 前端请求带的 `X-API-Key` 与后端 `EG_API_KEY` 不一致。本仓库已改为**运行时注入**：容器启动用 `.env` 的 `EG_API_KEY` 经 nginx `envsubst` 生成 `config.js`，前端读 `window.__EG_API_KEY__`（旧方案靠构建期 `VITE_API_KEY` 经 build args 注入，不可靠，曾导致烤进空值而 401）。
-- 排查：`docker compose exec eventguard-ui cat /usr/share/nginx/html/config.js`，正常应显示 `window.__EG_API_KEY__ = "你设置的EG_API_KEY值";`。若为空/`changeme`，说明 `EG_API_KEY` 没进容器：检查 `.env` 是否有 `EG_API_KEY`、compose 的 `environment: EG_API_KEY: ${EG_API_KEY}` 是否在。
-- 修复：`docker compose up -d --build eventguard-ui` 重建 UI 即可（已含运行时注入逻辑）。
+- 401 有两类根因，按顺序排查：
+  1. **nginx 把 `X-API-Key` 头丢掉了（最常见）**：`eventguard-ui/nginx.conf` 里写 `proxy_set_header X-API-Key $http_api_key;` 是错的。nginx 把请求头 `X-API-Key` 转成变量 `$http_x_api_key`（连字符变下划线、`X-` 变 `x_`），`$http_api_key` 恒为空，于是后端永远收不到 key。需改成 `$http_x_api_key`（已修正）。`docker compose up -d --build eventguard-ui` 重建后生效。
+  2. **前后端 key 值不一致**：本仓库已改为**运行时注入**——容器启动用 `.env` 的 `EG_API_KEY` 经 nginx `envsubst` 生成 `config.js`，前端读 `window.__EG_API_KEY__`（旧方案靠构建期 `VITE_API_KEY` 经 build args 注入，不可靠，曾烤进空值）。排查：`docker compose exec eventguard-ui cat /usr/share/nginx/html/config.js` 应显示 `window.__EG_API_KEY__ = "你设置的EG_API_KEY值";`；若为空/`changeme`，检查 `.env` 的 `EG_API_KEY` 与 compose 的 `environment: EG_API_KEY: ${EG_API_KEY}` 是否到位。
+- 快速判定：在 UI 容器内 `curl` 测后端——`docker compose exec eventguard-ui curl -s -o /dev/null -w "%{http_code}\n" -H "X-API-Key: 你的EG_API_KEY" http://localhost/orders`。返回 200 即通；仍 401 再按上面两类查（注意 `localhost` 走 nginx，能顺带验证转发头）。
 
 **Q7：构建 AI 镜像时 `pip install` 报 `ReadTimeoutError` / `files.pythonhosted.org` 超时。**
 - 国内连默认 PyPI 不稳。本仓库 `eventguard-ai/Dockerfile` 已**写死腾讯云镜像** `https://mirrors.cloud.tencent.com/pypi/simple`，正常不会再超时。若你曾手改回官方源或 `git pull` 覆盖了它，恢复写死即可；旧参数化方式（`PIP_INDEX_URL` 经 build args）不可靠，已弃用。
