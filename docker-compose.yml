@@ -1,7 +1,15 @@
+# ponytail: 所有服务复用同一份日志轮转，避免 json-file 不限额把磁盘撑满（本次磁盘满的根因之一）
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16
     ports: ["5432:5432"]
+    logging: *default-logging
     environment:
       TZ: Asia/Shanghai
       POSTGRES_DB: ${POSTGRES_DB}
@@ -20,6 +28,7 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     ports: ["9092:9092"]
+    logging: *default-logging
     environment:
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_NODE_ID: 1
@@ -42,6 +51,7 @@ services:
 
   debezium:
     image: debezium/server:2.6
+    logging: *default-logging
     volumes:
       - "./debezium/conf:/debezium/conf:ro"
       - "debezium-data:/debezium/data"
@@ -59,6 +69,7 @@ services:
   eventguard-server:
     build: ./eventguard-server
     ports: ["8080:8080"]
+    logging: *default-logging
     env_file: .env
     environment:
       TZ: Asia/Shanghai
@@ -69,6 +80,7 @@ services:
   eventguard-ai:
     build:
       context: ./eventguard-ai
+    logging: *default-logging
       args:
         PIP_INDEX_URL: ${PIPE_INDEX_URL:-https://pypi.org/simple}
     # ports: ["8000:8000"]
@@ -89,10 +101,12 @@ services:
       EG_API_KEY: ${EG_API_KEY}
       TZ: Asia/Shanghai
     ports: ["3000:80"]
+    logging: *default-logging
     depends_on: [eventguard-server]
 
   pumba:
     image: gaiaadm/pumba
+    logging: *default-logging
     volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
     command: --random --interval 60s kill --signal SIGTERM
     profiles: ["chaos"]
