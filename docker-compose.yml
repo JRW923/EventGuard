@@ -42,7 +42,9 @@ services:
 
   debezium:
     image: debezium/server:2.6
-    volumes: ["./debezium/conf:/debezium/conf:ro"]
+    volumes:
+      - "./debezium/conf:/debezium/conf:ro"
+      - "debezium-data:/debezium/data"
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
@@ -97,3 +99,4 @@ services:
 
 volumes:
   pgdata:
+  debezium-data:
