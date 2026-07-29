@@ -80,9 +80,9 @@ services:
   eventguard-ai:
     build:
       context: ./eventguard-ai
-    logging: *default-logging
       args:
         PIP_INDEX_URL: ${PIPE_INDEX_URL:-https://pypi.org/simple}
+    logging: *default-logging
     # ports: ["8000:8000"]
     env_file: .env
     environment:
