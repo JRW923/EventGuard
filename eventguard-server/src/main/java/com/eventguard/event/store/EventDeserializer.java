@@ -79,4 +79,19 @@ public class EventDeserializer {
             throw new IllegalStateException("Kafka 消息反序列化失败", e);
         }
     }
+
+    /**
+     * 兼容 Spring {@code JsonDeserializer} 已把消息反序列化为 Map 的场景（见 application.yml 的
+     * consumer.value-deserializer）。先把 Map 转回 JSON 字符串，再走上面的统一解析。
+     * ponytail: 根因是全局 consumer 用了 JsonDeserializer，而投影侧假设拿到的是原始 JSON 字符串；
+     * 这里用一次序列化回退兜底，避免每条事件被 ClassCastException 静默丢弃。
+     */
+    public DomainEvent deserializeFromKafka(Object value) {
+        try {
+            String json = (value instanceof String s) ? s : objectMapper.writeValueAsString(value);
+            return deserializeFromKafka(json);
+        } catch (Exception e) {
+            throw new IllegalStateException("Kafka 消息反序列化失败", e);
+        }
+    }
 }

@@ -38,7 +38,7 @@ public class OrderViewProjection implements Projection {
     // 故 Kafka 偏移提交独立于 DB 事务；at-least-once 由 idempotent_consumers 表保证，重投幂等。
     @KafkaListener(topics = "domain-events", groupId = "order-view-projection")
     @Transactional
-    public void on(ConsumerRecord<String, String> record) {
+    public void on(ConsumerRecord<String, Object> record) {
         DomainEvent event;
         try {
             event = deserializer.deserializeFromKafka(record.value());
