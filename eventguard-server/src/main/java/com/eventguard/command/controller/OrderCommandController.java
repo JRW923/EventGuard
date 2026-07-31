@@ -38,13 +38,15 @@ public class OrderCommandController {
     public ResponseEntity<CommandResult> createOrder(
             @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader,
             @RequestBody CreateOrderRequest req) {
+        UUID orderId = req.orderId() != null ? req.orderId() : UUID.randomUUID();
         CreateOrderCommand cmd = new CreateOrderCommand(
                 commandId(commandIdHeader),
-                req.orderId() != null ? req.orderId() : UUID.randomUUID(),
+                orderId,
                 req.userId(),
                 req.totalAmount()
         );
-        return ResponseEntity.ok(handler.handle(cmd));
+        CommandResult result = handler.handle(cmd);
+        return ResponseEntity.ok(new CommandResult(result.success(), result.version(), result.error(), orderId));
     }
 
     @PostMapping("/{orderId}/pay")

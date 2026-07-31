@@ -53,7 +53,8 @@ public class OrderViewRepository {
             item.setStatus(rs.getString("status"));
             item.setTotalAmount(rs.getBigDecimal("total_amount"));
             item.setVersion(rs.getInt("version"));
-            item.setUpdatedAt(rs.getObject("updated_at", java.time.Instant.class));
+            Timestamp ut = rs.getTimestamp("updated_at");
+            item.setUpdatedAt(ut != null ? ut.toInstant() : null);
             return item;
         };
 
@@ -85,10 +86,20 @@ public class OrderViewRepository {
             dto.setAggregateId(rs.getObject("aggregate_id", java.util.UUID.class));
             dto.setEventType(rs.getString("event_type"));
             dto.setVersion(rs.getInt("event_version"));
-            com.fasterxml.jackson.databind.JsonNode node = rs.getObject("payload", com.fasterxml.jackson.databind.JsonNode.class);
-            dto.setPayload(node != null ? EVENT_MAPPER.convertValue(
-                    node, new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {}) : null);
-            dto.setCreatedAt(rs.getObject("created_at", java.time.Instant.class));
+            String payloadStr = rs.getString("payload");
+            java.util.Map<String, Object> payload = null;
+            if (payloadStr != null) {
+                try {
+                    // ponytail: 单条畸形 payload 不应拖垮整条事件时间线查询
+                    payload = EVENT_MAPPER.convertValue(EVENT_MAPPER.readTree(payloadStr),
+                            new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() {});
+                } catch (Exception e) {
+                    payload = null;
+                }
+            }
+            dto.setPayload(payload);
+            Timestamp ct = rs.getTimestamp("created_at");
+            dto.setCreatedAt(ct != null ? ct.toInstant() : null);
             return dto;
         };
         return jdbc.query(

@@ -1,8 +1,6 @@
 package com.eventguard.query.repository;
 
 import com.eventguard.query.model.EventDto;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -13,6 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
 import java.sql.ResultSet;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -33,9 +32,6 @@ class OrderViewRepositoryTest {
     @Test
     @SuppressWarnings("unchecked")
     void findEventsByAggregateId_maps_payload_to_map() throws Exception {
-        ObjectMapper om = new ObjectMapper();
-        JsonNode payloadNode = om.readTree("{\"orderId\":\"abc\",\"amount\":99.5}");
-
         ResultSet rs = mock(ResultSet.class);
         UUID eventId = UUID.randomUUID();
         UUID aggId = UUID.randomUUID();
@@ -43,8 +39,8 @@ class OrderViewRepositoryTest {
         when(rs.getObject("aggregate_id", UUID.class)).thenReturn(aggId);
         when(rs.getString("event_type")).thenReturn("OrderCreated");
         when(rs.getInt("event_version")).thenReturn(1);
-        when(rs.getObject("payload", JsonNode.class)).thenReturn(payloadNode);
-        when(rs.getObject("created_at", Instant.class)).thenReturn(Instant.now());
+        when(rs.getString("payload")).thenReturn("{\"orderId\":\"abc\",\"amount\":99.5}");
+        when(rs.getTimestamp("created_at")).thenReturn(Timestamp.from(Instant.now()));
 
         ArgumentCaptor<RowMapper<EventDto>> captor = ArgumentCaptor.forClass(RowMapper.class);
         when(jdbc.query(anyString(), captor.capture(), eq(aggId))).thenReturn(List.of(new EventDto()));
@@ -69,8 +65,8 @@ class OrderViewRepositoryTest {
         when(rs.getObject("aggregate_id", UUID.class)).thenReturn(aggId);
         when(rs.getString("event_type")).thenReturn("OrderCreated");
         when(rs.getInt("event_version")).thenReturn(1);
-        when(rs.getObject("payload", JsonNode.class)).thenReturn(null);
-        when(rs.getObject("created_at", Instant.class)).thenReturn(Instant.now());
+        when(rs.getString("payload")).thenReturn(null);
+        when(rs.getTimestamp("created_at")).thenReturn(Timestamp.from(Instant.now()));
 
         ArgumentCaptor<RowMapper<EventDto>> captor = ArgumentCaptor.forClass(RowMapper.class);
         when(jdbc.query(anyString(), captor.capture(), eq(aggId))).thenReturn(List.of(new EventDto()));

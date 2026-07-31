@@ -59,24 +59,50 @@ public class EventDeserializer {
 
     /**
      * 从 Kafka JSON 反序列化事件。
-     * <p>假设 Debezium 已通过 ExtractNewRecordState SMT 将消息展平为扁平字段
-     * (event_id/aggregate_id/event_type/event_version/created_at/metadata/payload)。
-     * 若直接消费 Debezium 原始 envelope（含 before/after），需先在 Debezium connector 配置 SMT，或在此处解析 envelope。
+     * 兼容两种形态（不依赖 Debezium 的 ExtractNewRecordState 是否生效）：
+     *  - envelope：{"schema":{...},"payload":{event_id,...}}（当前 Debezium Server 实际产出）
+     *  - 展平：{event_id,...}（ExtractNewRecordState 生效时）
+     * envelope 中 payload / metadata 这俩 JSONB 列被序列化为 JSON 字符串（io.debezium.data.Json），
+     * 展平后则是嵌套对象——两种都以文本优先解析。
      */
     public DomainEvent deserializeFromKafka(String json) {
         try {
             JsonNode root = objectMapper.readTree(json);
-            UUID eventId = UUID.fromString(root.get("event_id").asText());
-            UUID aggregateId = UUID.fromString(root.get("aggregate_id").asText());
-            String eventType = root.get("event_type").asText();
-            int version = root.get("event_version").asInt();
-            Instant occurredAt = Instant.parse(root.get("created_at").asText());
-            Map<String, String> metadata = objectMapper.convertValue(
-                    root.get("metadata"), new TypeReference<Map<String, String>>() {});
-            String payloadJson = root.get("payload").toString();
+            // envelope 形态：事件字段在 root.payload 下
+            JsonNode ev = (root.has("payload") && root.get("payload").has("event_id")) ? root.get("payload") : root;
+            UUID eventId = UUID.fromString(ev.get("event_id").asText());
+            UUID aggregateId = UUID.fromString(ev.get("aggregate_id").asText());
+            String eventType = ev.get("event_type").asText();
+            int version = ev.get("event_version").asInt();
+            Instant occurredAt = Instant.parse(ev.get("created_at").asText());
+            Map<String, String> metadata = toTextMap(ev.get("metadata"));
+            JsonNode payloadNode = ev.get("payload");
+            String payloadJson = (payloadNode == null) ? "{}"
+                    : (payloadNode.isTextual() ? payloadNode.asText() : payloadNode.toString());
             return deserialize(eventId, aggregateId, eventType, version, occurredAt, metadata, payloadJson);
         } catch (Exception e) {
-            throw new IllegalStateException("Kafka 消息反序列化失败", e);
+            // ponytail: 打印原始消息便于定位 Debezium 输出结构与预期不符（截断避免刷屏）
+            String preview = json == null ? "null" : json.substring(0, Math.min(json.length(), 2000));
+            throw new IllegalStateException("Kafka 消息反序列化失败, 原始消息=" + preview, e);
+        }
+    }
+
+    private Map<String, String> toTextMap(JsonNode node) {
+        if (node == null || node.isNull()) return Map.of();
+        JsonNode obj = node.isTextual() ? tryParse(node.asText()) : node;
+        if (obj == null || obj.isNull()) return Map.of();
+        try {
+            return objectMapper.convertValue(obj, new TypeReference<Map<String, String>>() {});
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
+    private JsonNode tryParse(String s) {
+        try {
+            return objectMapper.readTree(s);
+        } catch (Exception e) {
+            return null;
         }
     }
 

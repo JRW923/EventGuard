@@ -126,14 +126,30 @@ async function submitCreate() {
   }
   creating.value = true
   try {
-    await OrderApi.create({ userId: form.value.userId, totalAmount: Number(form.value.totalAmount) })
+    const { orderId } = await OrderApi.create({ userId: form.value.userId, totalAmount: Number(form.value.totalAmount) })
     ElMessage.success('创建成功')
     createVisible.value = false
-    loadData()
+    // ponytail: 读模型经 Debezium→Kafka 投影有秒级延迟，轮询直到订单出现在读模型再刷新列表，
+    // 否则 loadData 跑在投影完成前，列表看不到新订单（即之前“需手动刷新”的根因）。
+    await waitForOrder(orderId)
+    await loadData()
   } catch (e: any) {
     ElMessage.error('创建失败：' + (e.message || '未知错误'))
   } finally {
     creating.value = false
+  }
+}
+
+// 轮询订单读模型，直到投影完成（GET /orders/{id} 返回 200）或超时后继续
+async function waitForOrder(orderId: string, attempts = 10, interval = 400): Promise<void> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await OrderApi.get(orderId)
+      return
+    } catch {
+      // 尚未投影（404）或瞬时错误，稍后重试
+    }
+    await new Promise((r) => setTimeout(r, interval))
   }
 }
 

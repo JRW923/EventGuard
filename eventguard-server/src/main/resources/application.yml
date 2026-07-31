@@ -14,11 +14,11 @@ spring:
     consumer:
       group-id: ${KAFKA_GROUP:debug-consumer}
       auto-offset-reset: earliest
+      # Debezium 用 StringSerializer 产出纯 JSON 字符串（无 Spring 的 __TypeId__ 头），故消费端必须用
+      # StringDeserializer 原样接收，再交由 EventDeserializer 解析。用 JsonDeserializer 会因找不到目标类型
+      # 抛 IllegalStateException，使整条投影链（Kafka -> order_view）静默断开，前端创建的订单永不出现在列表。
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        # ponytail: 当前生产者为可信内部 Python 服务；若将来接外部 topic 有 Jackson 多态反序列化风险，应收紧为具体包名
-        spring.json.trusted.packages: "*"
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
