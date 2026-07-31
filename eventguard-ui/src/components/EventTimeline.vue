@@ -10,10 +10,12 @@
         autoresize
         style="height: 400px"
       />
-      <el-table :data="sortedEvents" border size="small" style="margin-top: 16px">
+      <el-table :data="sortedEvents" border stripe size="small" style="margin-top: 16px">
         <el-table-column prop="version" label="版本" width="80" />
-        <el-table-column prop="eventType" label="事件类型" width="220" />
-        <el-table-column prop="createdAt" label="发生时间" width="220" />
+        <el-table-column prop="eventType" label="事件类型" width="220" show-overflow-tooltip />
+        <el-table-column label="发生时间" width="220">
+          <template #default="scope">{{ formatTime(scope?.row?.createdAt) }}</template>
+        </el-table-column>
         <el-table-column label="Payload">
           <template #default="scope">
             <pre v-if="scope && scope.row" style="margin: 0; font-size: 12px">{{ JSON.stringify(scope.row.payload, null, 2) }}</pre>
@@ -36,6 +38,12 @@ import { EventItem } from '@/types/event'
 use([CanvasRenderer, LineChart, GridComponent, TooltipComponent])
 
 const props = defineProps<{ events: EventItem[] }>()
+
+function formatTime(iso?: string): string {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('zh-CN', { hour12: false })
+}
 
 // ponytail: 排序按 version 升序，假设 version 即事件回放顺序；若后端乱序返回需强一致可改为 createdAt 兜底
 const sortedEvents = computed(() =>

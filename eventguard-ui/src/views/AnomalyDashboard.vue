@@ -10,16 +10,18 @@
         </div>
       </template>
 
-      <el-table :data="alerts" border style="width: 100%" max-height="400">
-        <el-table-column prop="anomaly_id" label="异常 ID" width="180" />
+      <el-table :data="alerts" border stripe style="width: 100%" max-height="400">
+        <el-table-column prop="anomaly_id" label="异常 ID" width="180" show-overflow-tooltip />
         <el-table-column prop="rule_id" label="规则 ID" width="100" />
         <el-table-column prop="level" label="级别" width="80">
           <template #default="{ row }">
-            <el-tag :type="levelType(row.level)" size="small">{{ row.level }}</el-tag>
+            <el-tag :type="levelType(row.level)" size="small" style="white-space: nowrap">{{ row.level }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="描述" />
-        <el-table-column prop="detected_at" label="检测时间" width="200" />
+        <el-table-column prop="description" label="描述" show-overflow-tooltip />
+        <el-table-column prop="detected_at" label="检测时间" width="200">
+          <template #default="{ row }">{{ formatTime(row.detected_at) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="140">
           <template #default="{ row }">
             <el-button
@@ -89,6 +91,12 @@ function levelType(level: string): 'danger' | 'warning' | 'info' {
   if (level === 'ERROR') return 'danger'
   if (level === 'WARN') return 'warning'
   return 'info'
+}
+
+function formatTime(iso?: string): string {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('zh-CN', { hour12: false })
 }
 
 async function showAnalysis(anomalyId: string) {

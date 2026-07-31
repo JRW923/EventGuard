@@ -8,7 +8,7 @@
             v-model="statusFilter"
             data-testid="status-filter"
             @change="onFilterChange"
-            style="padding: 4px 8px"
+            class="eg-select"
           >
             <option :value="null">全部状态</option>
             <option v-for="s in statuses" :key="s" :value="s">{{ s }}</option>
@@ -18,12 +18,20 @@
         </div>
       </template>
 
-      <el-table :data="orders" v-loading="loading" border style="width: 100%">
-        <el-table-column prop="orderId" label="订单 ID" width="320" />
-        <el-table-column prop="status" label="状态" width="160" />
-        <el-table-column prop="totalAmount" label="金额" width="120" />
+      <el-table :data="orders" v-loading="loading" border stripe style="width: 100%">
+        <el-table-column prop="orderId" label="订单 ID" width="320" show-overflow-tooltip />
+        <el-table-column label="状态" width="160">
+          <template #default="{ row }">
+            <el-tag :type="statusType(row.status)" effect="light" style="white-space: nowrap">{{ row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="金额" width="120">
+          <template #default="{ row }">¥{{ Number(row.totalAmount).toFixed(2) }}</template>
+        </el-table-column>
         <el-table-column prop="version" label="版本" width="80" />
-        <el-table-column prop="updatedAt" label="更新时间" />
+        <el-table-column label="更新时间">
+          <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
             <el-button size="small" @click="goTimeline(row.orderId)">事件时间线</el-button>
@@ -80,6 +88,31 @@ const statuses = [
   'PENDING_PAYMENT', 'PAYMENT_FAILED', 'PAID', 'CONFIRMED',
   'SHIPPED', 'DELIVERED', 'CLOSED', 'CANCELLED', 'REFUNDED',
 ]
+
+// ponytail: 状态用彩色标签单行展示（白底浅色，避免长状态名换行）
+function statusType(status: string): 'success' | 'info' | 'warning' | 'danger' | 'primary' {
+  switch (status) {
+    case 'PAID':
+    case 'DELIVERED':
+      return 'success'
+    case 'PENDING_PAYMENT':
+    case 'REFUNDED':
+      return 'warning'
+    case 'PAYMENT_FAILED':
+      return 'danger'
+    case 'CONFIRMED':
+    case 'SHIPPED':
+      return 'primary'
+    default:
+      return 'info'
+  }
+}
+
+function formatTime(iso?: string): string {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('zh-CN', { hour12: false })
+}
 
 async function loadData() {
   loading.value = true

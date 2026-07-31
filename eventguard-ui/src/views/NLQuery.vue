@@ -43,6 +43,7 @@
           v-else-if="result.intent === 'stats_aggregation' && Array.isArray(result.data)"
           :data="result.data"
           border
+          stripe
           size="small"
         >
           <el-table-column prop="status" label="状态" width="180" />
@@ -55,6 +56,7 @@
           v-else-if="result.intent === 'trace_replay' && Array.isArray(result.data)"
           :data="result.data"
           border
+          stripe
           size="small"
         >
           <el-table-column prop="version" label="版本" width="80" />

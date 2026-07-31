@@ -8,7 +8,8 @@
           <select
             v-model="form.actionType"
             data-testid="action-type"
-            style="padding: 4px 8px; width: 320px"
+            class="eg-select"
+            style="width: 320px"
           >
             <option v-for="a in actionTypes" :key="a.value" :value="a.value">
               {{ a.value }}（{{ a.risk }}）
