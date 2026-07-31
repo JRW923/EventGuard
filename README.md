@@ -58,3 +58,8 @@ docker compose up -d --build
 - 更丰富的自然语言能力与一致性验证。
 
 详细设计与未做项见 [`docs/eventguard-plan.md`](docs/eventguard-plan.md)。
+
+## 部署
+
+- [Cloudflare Tunnel 免备案 HTTPS 访问](docs/deploy-cloudflare-tunnel.md) —— 不迁服务器、不用备案，用自定义域名 + HTTPS 访问（推荐生产方案）。
+- [腾讯云轻量 + 宝塔面板部署](docs/deploy-linux-baota.md) —— 本地写码、推 Git、服务器 `docker compose` 一键起。

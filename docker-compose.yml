@@ -100,9 +100,28 @@ services:
     environment:
       EG_API_KEY: ${EG_API_KEY}
       TZ: Asia/Shanghai
-    ports: ["3000:80"]
+    # ponytail: 映射到宿主机 80，使 http://域名 默认端口即可直达 UI（无需 :3000）；
+    # 若后续上 HTTPS，再叠加 443 映射并在容器内 nginx 启用 TLS。
+    ports: ["80:80"]
+    volumes:
+      # ponytail: 预留 ACME webroot（若后续备案后用 DNS-01 给源站签发证书则复用）；
+      # 当前 Cloudflare 代理走 Flexible，源站只用 80，证书由 Cloudflare 边缘提供。
+      - "/var/www/letsencrypt:/var/www/letsencrypt"
     logging: *default-logging
     depends_on: [eventguard-server]
+
+  # ponytail: Cloudflare Tunnel 出网代理，绕过未备案域名的 Host 拦截。
+  # 服务器主动连 Cloudflare（非外部连入 Tencent IP），故永不带"未备案 Host"入站；
+  # --url 指定隧道把流量转发到 docker 内部 eventguard-ui:80，浏览器→Cloudflare(有效证书)→隧道→源站，
+  # WebSocket/TLS 由 Cloudflare 透明处理。TUNNEL_TOKEN 在 .env 中提供。
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run --token ${TUNNEL_TOKEN} --url http://eventguard-ui:80
+    env_file: .env
+    # ponytail: 隧道是长连接，断了要能自恢复；其余服务沿用默认 no-restart 策略，此处单独开。
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on: [eventguard-ui]
 
   pumba:
     image: gaiaadm/pumba
