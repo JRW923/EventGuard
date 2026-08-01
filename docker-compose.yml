@@ -101,7 +101,8 @@ services:
       args:
         PIP_INDEX_URL: ${PIPE_INDEX_URL:-https://pypi.org/simple}
     logging: *default-logging
-    # ports: ["8000:8000"]
+    # ponytail: 开发期在宿主跑 Vite dev server 时，需经 localhost:8000 代理到 AI 服务（与 server 的 8080 同理）
+    ports: ["8000:8000"]
     env_file: .env
     environment:
       TZ: Asia/Shanghai
