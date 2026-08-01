@@ -5,8 +5,13 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+# ponytail: 核心服务统一 unless-stopped，避免宿主机重启后全部躺平导致 502（曾因只有 cloudflared 有 restart 策略而复发）
+x-restart: &default-restart
+  restart: unless-stopped
+
 services:
   postgres:
+    <<: *default-restart
     image: postgres:16
     ports: ["5432:5432"]
     logging: *default-logging
@@ -26,10 +31,14 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   kafka:
+    <<: *default-restart
     image: confluentinc/cp-kafka:7.6.0
     ports: ["9092:9092"]
     logging: *default-logging
+    # ponytail: 容器内存封顶 + JVM 堆上限双保险，避免在 3.6G 小机上 JVM 按宿主机内存默认吃满触发 OOM
+    mem_limit: 1.2g
     environment:
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx900m"
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_NODE_ID: 1
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
@@ -50,8 +59,11 @@ services:
       retries: 10
 
   debezium:
+    <<: *default-restart
     image: debezium/server:2.6
     logging: *default-logging
+    # ponytail: JVM 堆封顶，防止 CDC 连接器失控吃光内存
+    mem_limit: 800m
     volumes:
       - "./debezium/conf:/debezium/conf:ro"
       - "debezium-data:/debezium/data"
@@ -59,6 +71,7 @@ services:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
     environment:
+      JAVA_OPTS: "-Xms256m -Xmx512m"
       DEBEZIUM_SOURCE_DATABASE_HOSTNAME: postgres
       DEBEZIUM_SOURCE_DATABASE_PORT: 5432
       DEBEZIUM_SOURCE_DATABASE_USER: ${POSTGRES_USER}
@@ -67,17 +80,22 @@ services:
       TZ: Asia/Shanghai
 
   eventguard-server:
+    <<: *default-restart
     build: ./eventguard-server
     ports: ["8080:8080"]
     logging: *default-logging
+    # ponytail: JVM 堆封顶，避免 java -jar 按宿主机内存默认分配
+    mem_limit: 800m
     env_file: .env
     environment:
       TZ: Asia/Shanghai
+      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m"
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
 
   eventguard-ai:
+    <<: *default-restart
     build:
       context: ./eventguard-ai
       args:
@@ -91,6 +109,7 @@ services:
       kafka: { condition: service_healthy }
 
   eventguard-ui:
+    <<: *default-restart
     build:
       context: ./eventguard-ui
       # ponytail: 构建期注入前端 API Key；未设置时兜底 changeme，与本地后端默认一致，保证零配置可跑
@@ -115,11 +134,11 @@ services:
   # --url 指定隧道把流量转发到 docker 内部 eventguard-ui:80，浏览器→Cloudflare(有效证书)→隧道→源站，
   # WebSocket/TLS 由 Cloudflare 透明处理。TUNNEL_TOKEN 在 .env 中提供。
   cloudflared:
+    <<: *default-restart
     image: cloudflare/cloudflared:latest
     command: tunnel run --token ${TUNNEL_TOKEN} --url http://eventguard-ui:80
     env_file: .env
     # ponytail: 隧道是长连接，断了要能自恢复；其余服务沿用默认 no-restart 策略，此处单独开。
-    restart: unless-stopped
     logging: *default-logging
     depends_on: [eventguard-ui]
 

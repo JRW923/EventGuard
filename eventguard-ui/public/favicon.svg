@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="EventGuard">
+  <defs>
+    <linearGradient id="eg-shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 5 C44 5 54 9 54 9 L54 30 C54 43 44 53 32 59 C20 53 10 43 10 30 L10 9 C10 9 20 5 32 5 Z"
+        fill="url(#eg-shield)"/>
+  <path d="M14 33 L24 33 L28 25 L32 41 L36 27 L40 33 L50 33"
+        fill="none" stroke="#5eead4" stroke-width="3.2"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="41" r="2.4" fill="#f43f5e"/>
+</svg>
