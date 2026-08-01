@@ -1,5 +1,6 @@
 package com.eventguard.compensation.controller;
 
+import com.eventguard.auth.security.RequirePermission;
 import com.eventguard.compensation.model.CompensationRequest;
 import com.eventguard.compensation.model.CompensationResult;
 import com.eventguard.compensation.service.CompensationService;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/compensations")
+@RequirePermission("compensation:execute")
 public class CompensationController {
 
     private final CompensationService service;

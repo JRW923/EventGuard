@@ -12,11 +12,32 @@
           router
           class="app-menu"
         >
-          <el-menu-item index="/orders">订单列表</el-menu-item>
-          <el-menu-item index="/anomalies">异常看板</el-menu-item>
-          <el-menu-item index="/nl-query">NL 查询</el-menu-item>
-          <el-menu-item index="/compensations">补偿执行</el-menu-item>
+          <el-menu-item v-if="auth.hasPermission('order:read')" index="/orders">订单列表</el-menu-item>
+          <el-menu-item v-if="auth.hasPermission('anomaly:view')" index="/anomalies">异常看板</el-menu-item>
+          <el-menu-item v-if="auth.hasPermission('ai:query')" index="/nl-query">NL 查询</el-menu-item>
+          <el-menu-item v-if="auth.hasPermission('compensation:execute')" index="/compensations">补偿执行</el-menu-item>
+          <el-sub-menu
+            v-if="auth.hasPermission('user:manage') || auth.hasPermission('role:manage')"
+            index="/admin"
+          >
+            <template #title>系统管理</template>
+            <el-menu-item v-if="auth.hasPermission('user:manage')" index="/admin/users">用户管理</el-menu-item>
+            <el-menu-item v-if="auth.hasPermission('role:manage')" index="/admin/roles">角色管理</el-menu-item>
+          </el-sub-menu>
         </el-menu>
+
+        <el-dropdown class="app-user" @command="onUserCommand">
+          <span class="app-user-trigger">
+            <span class="app-user-avatar">{{ avatarText }}</span>
+            {{ auth.user?.displayName || auth.user?.username }}
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="profile">修改密码</el-dropdown-item>
+              <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </el-header>
     <el-main class="app-main">
@@ -28,6 +49,34 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessageBox } from 'element-plus'
+import { auth } from '@/stores/auth'
+import { AuthApi } from '@/api/auth'
+
+const router = useRouter()
+
+const avatarText = computed(() => (auth.user?.displayName || auth.user?.username || '?').charAt(0).toUpperCase())
+
+async function onUserCommand(command: string) {
+  if (command === 'profile') {
+    router.push('/profile')
+  } else if (command === 'logout') {
+    try {
+      await ElMessageBox.confirm('确定退出登录？', '提示', { type: 'warning' })
+    } catch {
+      return
+    }
+    try {
+      await AuthApi.logout()
+    } catch {
+      // 即使注销接口失败也继续登出
+    }
+    auth.logout()
+    router.push('/login')
+  }
+}
 </script>
 
 <style>
@@ -71,13 +120,55 @@ body {
   border-bottom: none;
   background: transparent !important;
 }
-.app-menu .el-menu-item {
+.app-menu .el-menu-item,
+.app-menu .el-sub-menu__title {
   height: 60px;
   line-height: 60px;
   border-bottom: 2px solid transparent;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+.app-menu .el-menu-item:hover,
+.app-menu .el-sub-menu__title:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #fff !important;
 }
 .app-menu .el-menu-item.is-active {
   border-bottom-color: #fff;
+  font-weight: 600;
+  color: #fff !important;
+}
+.app-menu .el-sub-menu .el-menu {
+  background: #fff;
+}
+.app-menu .el-sub-menu .el-menu-item {
+  height: 44px;
+  line-height: 44px;
+  color: #303133 !important;
+}
+.app-menu .el-sub-menu .el-menu-item.is-active {
+  color: #409eff !important;
+}
+
+.app-user {
+  margin-left: 16px;
+}
+.app-user-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+.app-user-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 600;
 }
 

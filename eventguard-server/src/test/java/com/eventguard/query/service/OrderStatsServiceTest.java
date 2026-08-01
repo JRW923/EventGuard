@@ -33,7 +33,9 @@ class OrderStatsServiceTest {
         Instant to = Instant.parse("2026-07-21T00:00:00Z");
 
         OrderStats row = new OrderStats("PAID", 5L, new java.math.BigDecimal("495.00"));
-        when(jdbc.query(anyString(), any(RowMapper.class), eq(from), eq(to)))
+        // 时间窗参数显式转 Timestamp 绑定（修复 Instant 无法推断 SQL 类型的 500）
+        when(jdbc.query(anyString(), any(RowMapper.class),
+                eq(java.sql.Timestamp.from(from)), eq(java.sql.Timestamp.from(to))))
                 .thenReturn(List.of(row));
 
         List<OrderStats> result = service.getStats(null, from, to);
@@ -48,7 +50,8 @@ class OrderStatsServiceTest {
         Instant from = Instant.parse("2026-07-20T00:00:00Z");
         Instant to = Instant.parse("2026-07-21T00:00:00Z");
 
-        when(jdbc.query(anyString(), any(RowMapper.class), eq("PAID"), eq(from), eq(to)))
+        when(jdbc.query(anyString(), any(RowMapper.class), eq("PAID"),
+                eq(java.sql.Timestamp.from(from)), eq(java.sql.Timestamp.from(to))))
                 .thenReturn(List.of(new OrderStats("PAID", 3L, new java.math.BigDecimal("300.00"))));
 
         List<OrderStats> result = service.getStats("PAID", from, to);
@@ -61,7 +64,8 @@ class OrderStatsServiceTest {
     void getStats_empty_result_when_no_data() {
         Instant from = Instant.parse("2026-07-20T00:00:00Z");
         Instant to = Instant.parse("2026-07-21T00:00:00Z");
-        when(jdbc.query(anyString(), any(RowMapper.class), eq(from), eq(to)))
+        when(jdbc.query(anyString(), any(RowMapper.class),
+                eq(java.sql.Timestamp.from(from)), eq(java.sql.Timestamp.from(to))))
                 .thenReturn(List.of());
 
         List<OrderStats> result = service.getStats(null, from, to);

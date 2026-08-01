@@ -49,12 +49,13 @@ public class OrderStatsService {
         }
         if (from != null) {
             sql.append(hasWhere ? " AND" : " WHERE").append(" updated_at >= ?");
-            args.add(from);
+            // ponytail: Instant 直接绑定会报 "Can't infer the SQL type"，显式转 Timestamp
+            args.add(java.sql.Timestamp.from(from));
             hasWhere = true;
         }
         if (to != null) {
             sql.append(hasWhere ? " AND" : " WHERE").append(" updated_at <= ?");
-            args.add(to);
+            args.add(java.sql.Timestamp.from(to));
             hasWhere = true;
         }
 

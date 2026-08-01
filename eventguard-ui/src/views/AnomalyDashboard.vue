@@ -61,6 +61,7 @@
             :key="s.action"
             type="primary"
             plain
+            v-permission="'compensation:execute'"
             style="margin-left: 8px"
             @click="goCompensate(s.action)"
           >

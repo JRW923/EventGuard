@@ -1,5 +1,6 @@
 package com.eventguard.command.controller;
 
+import com.eventguard.auth.security.RequirePermission;
 import com.eventguard.command.command.*;
 import com.eventguard.command.handler.OrderCommandHandler;
 import com.eventguard.common.dto.CommandResult;
@@ -9,8 +10,12 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.util.UUID;
 
+/**
+ * 订单写命令。类级默认 order:write；新建订单单独要求 order:create。
+ */
 @RestController
 @RequestMapping("/orders")
+@RequirePermission("order:write")
 public class OrderCommandController {
 
     private final OrderCommandHandler handler;
@@ -35,6 +40,7 @@ public class OrderCommandController {
     }
 
     @PostMapping
+    @RequirePermission("order:create")
     public ResponseEntity<CommandResult> createOrder(
             @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader,
             @RequestBody CreateOrderRequest req) {

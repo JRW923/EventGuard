@@ -1282,6 +1282,49 @@ CREATE TABLE compensation_approval (
 
 ---
 
+## 7.5 鉴权与权限管理（登录 + RBAC）`[V2 后，已实现]`
+
+早期版本全系统共用单一静态 `X-API-Key`（默认 `changeme`），无用户账号、无权限差异。已升级为**登录 + RBAC（用户-角色-权限）**，覆盖前端路由/菜单/按钮与后端 REST/WebSocket/AI 接口。
+
+### 认证协议：JWT（无状态）
+
+- 用户 `POST /auth/login`（用户名+密码，BCrypt 校验）→ 返回 JWT（HS256，默认 12h）+ 用户信息 + 权限码。
+- JWT claims 含 `uid / username / displayName / roles / permissions / mcp(mustChangePassword)`；
+  server（jjwt）与 AI 服务（PyJWT）**共用 `EG_JWT_SECRET`** 校验。
+- 前端存 localStorage，REST 带 `Authorization: Bearer`，WS 带 `?token=`（浏览器 WS 无法带自定义头）。
+- 双主体认证：用户主体（JWT）或**机器主体**（`X-API-Key == EG_MACHINE_API_KEY`，固定权限集
+  `{order:read, anomaly:evaluate}`，供 AI→后端内部调用与运维工具，天然不可写订单/管用户）。
+
+### 权限模型与数据表（`V3__auth.sql`）
+
+| 表 | 用途 |
+|---|---|
+| `auth_user` / `auth_role` / `auth_permission` | 用户 / 角色 / 权限目录 |
+| `auth_user_role` / `auth_role_permission` | 多对多关联 |
+| `auth_audit_log` | 登录成败 / 登出 / 改密 / 用户管理审计 |
+
+权限码（代码内定义）：`order:read / order:create / order:write / anomaly:view / ai:query /
+compensation:execute / user:manage / role:manage / anomaly:evaluate`。
+
+种子角色（`AuthDataSeeder` 启动幂等写入，BCrypt 运行时生成）：`ADMIN`（全部）、`OPERATOR`（下单/状态操作/
+异常/补偿）、`VIEWER`（只读）；种子账号 `admin` / `operator` / `viewer`，默认密码见代码，首次登录强制改密。
+
+### 执行链路
+
+1. `AuthFilter`（`@Order(1)`）：放行 `/auth/login`、`/actuator`、`/health`、`/ws`；否则解析 Bearer JWT 或机器密钥 → `AuthPrincipal` 放入 request attribute；失败 401。
+2. `PermissionInterceptor`：读取 Controller 方法/类上 `@RequirePermission("order:write")`，无权限返回 403。
+3. WS 握手：`JwtHandshakeInterceptor` 校验 `?token=` 且权限含 `anomaly:view`。
+4. AI 服务：`app/security.py` 用 PyJWT 校验同一 secret，`/ai/query` 需 `ai:query`、根因分析需 `anomaly:view`。
+5. 前端：路由守卫 + 路由 `meta.permission` + `v-permission` 指令（按钮级）+ 菜单按权限过滤。
+
+### 已知上限（ponytail）
+
+- JWT 权限放 claims，角色/权限变更需重新登录生效；无刷新令牌/吊销机制（升级路径 = refresh token + jti 黑名单）。
+- 登录防爆破为进程内计数（同一用户名 5 次失败锁 5 分钟），多实例需换 Redis。
+- 前端 token 存 localStorage，XSS 风险与常见管理台同级别。
+
+---
+
 ## 8. MVP 路线图
 
 > 原则：**先跑通端到端最小闭环，再叠 AI 与验证**。每两周一个可演示里程碑。

@@ -271,3 +271,37 @@ git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时�
 - [ ] 全栈 `docker compose up -d --build` 冒烟 + 端到端（M5.2/M5.3）—— `PENDING` 云服务器回填，不在本机范围
 
 > 结论：M5 单元测试维度全部完成且全绿；M5.2/M5.3 部署态验证待云服务器回填，属既定分工（本机无 Docker），不构成本任务阻塞项。
+
+---
+
+## 7. 登录 + RBAC 权限管理系统（JWT 替换静态 API Key）验证
+
+### 7.1 改动范围
+
+- **后端**：`com.eventguard.auth` 包（JwtService / AuthFilter / @RequirePermission 拦截器 / JwtHandshakeInterceptor /
+  LoginAttemptGuard / AuditLogger / Auth·User·Role 控制器）、`V3__auth.sql`（6 张表）、`AuthDataSeeder` 种子；
+  既有控制器挂权限注解；删除 `ApiKeyValidator/AuthFilter/HandshakeInterceptor` 三件套。
+- **AI**：PyJWT 校验同一 `EG_JWT_SECRET`，出站改 `EG_MACHINE_API_KEY`。
+- **前端**：登录页 + auth store + 路由守卫 + v-permission 指令 + 用户/角色管理页 + WS `?token=`。
+- **网关/部署**：nginx 透传 `Authorization`，`.env` 拆 `EG_JWT_SECRET`/`EG_MACHINE_API_KEY`，删 `VITE_API_KEY`。
+
+### 7.2 单元测试
+
+| 套件 | 结果 |
+|------|------|
+| `mvn test`（server） | 109 通过 / 0 失败 / 4 跳过（Testcontainers 本机跳过） |
+| `pytest tests/`（AI） | 59 通过 / 0 失败 |
+| `npm test` + `vue-tsc`（UI） | 24 通过 / 0 失败，type-check 通过 |
+| `docker compose build` | server / ai / ui 三镜像构建成功 |
+
+### 7.3 端到端验证（docker compose 全栈）
+
+- 无 token 调 `/orders` → 401；`/auth/login` 校验 BCrypt，错误密码 5 次后第 6 次 429 锁定。
+- 三角色矩阵：admin 全接口 200；viewer 读 200、下单 403、管用户 403；operator 下单 200。
+- 机器密钥：读订单 200、下单 403（受限权限）。
+- JWT 固定 HS256（修：jjwt 按密钥长度推断 HS384 与 AI 侧 HS256 不一致）。
+- AI 经 nginx 转发 `Authorization`：无 token 401、admin `/ai/query` 200。
+- WS 握手：含 `anomaly:view` 的 token 通过、无权限 token 拒绝。
+- 改密流程：改后旧密码 401、新密码 200、`mustChangePassword` 置 false；admin 可重置他人密码。
+- 修复两个既存问题：`/orders/stats` 带 from/to 时 Instant 无法绑定 SQL 类型（改 Timestamp）→ 200；
+  `OrderViewProjectionTest` 重载 stub 错位（`anyString()` 命中 String 重载而生产走 Object 重载，改 `any(Object.class)`）。

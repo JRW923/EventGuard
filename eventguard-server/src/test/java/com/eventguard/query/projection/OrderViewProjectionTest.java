@@ -91,7 +91,9 @@ class OrderViewProjectionTest {
     void handle_should_skip_already_processed_event() {
         UUID orderId = UUID.randomUUID();
         OrderCreatedEvent e = new OrderCreatedEvent(orderId, 1, "u1", new BigDecimal("99"), null);
-        when(deserializer.deserializeFromKafka(anyString())).thenReturn(e);
+        // ponytail: 生产代码调用 deserializeFromKafka(Object) 重载（record.value() 为 Object）；
+        // any()/anyString() 会被类型推断命中 String 重载，须显式 any(Object.class)
+        when(deserializer.deserializeFromKafka(any(Object.class))).thenReturn(e);
         when(idempotentConsumer.isProcessed("order-view", e.getEventId())).thenReturn(true);
 
         projection.on(new ConsumerRecord<>("domain-events", 0, 0, orderId.toString(), "{}"));
@@ -103,7 +105,7 @@ class OrderViewProjectionTest {
     void handle_should_mark_processed_after_success() {
         UUID orderId = UUID.randomUUID();
         OrderCreatedEvent e = new OrderCreatedEvent(orderId, 1, "u1", new BigDecimal("99"), null);
-        when(deserializer.deserializeFromKafka(anyString())).thenReturn(e);
+        when(deserializer.deserializeFromKafka(any(Object.class))).thenReturn(e);
 
         projection.on(new ConsumerRecord<>("domain-events", 0, 0, orderId.toString(), "{}"));
 

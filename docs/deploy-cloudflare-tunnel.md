@@ -101,9 +101,12 @@ docker compose up -d --build cloudflared
 curl -I https://jrwdev.site/
 curl -I https://www.jrwdev.site/
 
-# WebSocket 升级（真实端点 /ws/anomalies，需 api_key）
-curl -i -N -H "X-API-Key: root" \
-  "https://jrwdev.site/ws/anomalies?api_key=root"
+# WebSocket 升级（真实端点 /ws/anomalies，需登录 JWT 经 ?token= 校验）
+# 先登录拿 token，再连 WS
+TOKEN=$(curl -s -X POST https://jrwdev.site/auth/login -H "Content-Type: application/json" \
+  -d '{"username":"operator","password":"operator123456"}' \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+curl -i -N "https://jrwdev.site/ws/anomalies?token=$TOKEN"
 # 应看到：HTTP/1.1 101 Switching Protocols
 ```
 

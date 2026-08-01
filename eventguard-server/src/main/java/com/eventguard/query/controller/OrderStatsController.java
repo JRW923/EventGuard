@@ -1,5 +1,6 @@
 package com.eventguard.query.controller;
 
+import com.eventguard.auth.security.RequirePermission;
 import com.eventguard.query.model.OrderStats;
 import com.eventguard.query.service.OrderStatsService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +16,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/orders/stats")
+@RequirePermission("order:read")
 public class OrderStatsController {
 
     private final OrderStatsService statsService;

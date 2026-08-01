@@ -15,8 +15,8 @@ class EventStoreClient:
 
     def __init__(self, base_url: Optional[str] = None):
         self.base_url = base_url or settings.server_base_url
-        # ponytail: 服务端全局 ApiKeyAuthFilter 对所有 REST 强校验 X-API-Key，AI 调用必须带；默认值 changeme 与 server 一致，生产经 EG_API_KEY 注入
-        self.headers = {"X-API-Key": settings.api_key}
+        # ponytail: 服务端 AuthFilter 对 REST 强校验；AI 用机器密钥（EG_MACHINE_API_KEY）以受限权限调用后端读接口
+        self.headers = {"X-API-Key": settings.machine_api_key}
 
     def load_events(self, aggregate_id: str) -> list[dict]:
         """加载指定聚合根的事件序列"""

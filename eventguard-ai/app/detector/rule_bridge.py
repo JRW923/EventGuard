@@ -27,7 +27,7 @@ class RuleBridge:
                 resp = client.post(
                     self.url,
                     json=request_body,
-                    headers={"X-API-Key": settings.api_key},
+                    headers={"X-API-Key": settings.machine_api_key},
                 )
                 resp.raise_for_status()
                 data = resp.json()

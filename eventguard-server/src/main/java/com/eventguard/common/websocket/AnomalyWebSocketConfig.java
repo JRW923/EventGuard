@@ -1,7 +1,7 @@
 package com.eventguard.common.websocket;
 
-import com.eventguard.common.security.ApiKeyHandshakeInterceptor;
-import com.eventguard.common.security.ApiKeyValidator;
+import com.eventguard.auth.security.JwtHandshakeInterceptor;
+import com.eventguard.auth.security.JwtService;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -12,11 +12,11 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class AnomalyWebSocketConfig implements WebSocketConfigurer {
 
     private final AnomalyWebSocketHandler handler;
-    private final ApiKeyValidator validator;
+    private final JwtService jwtService;
 
-    public AnomalyWebSocketConfig(AnomalyWebSocketHandler handler, ApiKeyValidator validator) {
+    public AnomalyWebSocketConfig(AnomalyWebSocketHandler handler, JwtService jwtService) {
         this.handler = handler;
-        this.validator = validator;
+        this.jwtService = jwtService;
     }
 
     @Override
@@ -24,6 +24,6 @@ public class AnomalyWebSocketConfig implements WebSocketConfigurer {
         // ponytail: setAllowedOrigins("*") 仅限 MVP；生产需改具体前端域名
         registry.addHandler(handler, "/ws/anomalies")
                 .setAllowedOrigins("*")
-                .addInterceptors(new ApiKeyHandshakeInterceptor(validator));
+                .addInterceptors(new JwtHandshakeInterceptor(jwtService));
     }
 }

@@ -13,7 +13,7 @@
             <option :value="null">全部状态</option>
             <option v-for="s in statuses" :key="s" :value="s">{{ s }}</option>
           </select>
-          <el-button size="small" type="primary" @click="openCreate">新建订单</el-button>
+          <el-button size="small" type="primary" v-permission="'order:create'" @click="openCreate">新建订单</el-button>
           <el-button size="small" @click="loadData">刷新</el-button>
         </div>
       </template>

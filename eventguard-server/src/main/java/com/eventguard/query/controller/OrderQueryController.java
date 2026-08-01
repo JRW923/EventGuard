@@ -1,5 +1,6 @@
 package com.eventguard.query.controller;
 
+import com.eventguard.auth.security.RequirePermission;
 import com.eventguard.common.exception.ProjectionLagException;
 import com.eventguard.query.model.OrderView;
 import com.eventguard.query.service.OrderQueryService;
@@ -12,6 +13,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/orders")
+@RequirePermission("order:read")
 public class OrderQueryController {
 
     private final OrderQueryService queryService;

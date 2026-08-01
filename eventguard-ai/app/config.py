@@ -11,7 +11,10 @@ class Settings(BaseSettings):
     llm_model: str = "qwen2.5:7b"
     model_dir: str = "models"
     server_base_url: str = "http://eventguard-server:8080"
-    api_key: str = "changeme"  # ponytail: 明文单 key 占位，无轮换/多 key；生产须以 EG_API_KEY 注入强随机，否则形同无鉴权
+    # 用户 JWT 校验密钥（与 Java 后端共用 EG_JWT_SECRET，HS256）；生产必须注入强随机值
+    jwt_secret: str = "eventguard-dev-secret-change-me-0123456789abcdef"
+    # 机器密钥：AI→后端内部调用（X-API-Key）用，与 Java 侧 EG_MACHINE_API_KEY 一致
+    machine_api_key: str = "dev-machine-key"
 
     class Config:
         env_prefix = "EG_"

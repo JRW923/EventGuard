@@ -6,23 +6,32 @@ import io.gatling.http.Predef._
 /**
  * OrderSimulation —— EventGuard 下单链路压测（对齐计划 M5.4）
  *
- * 场景：下单(POST /orders) → 支付(POST /orders/{id}/pay) → 查询(GET /orders/{id})
+ * 场景：登录(POST /auth/login 取 JWT) → 下单(POST /orders) → 支付(POST /orders/{id}/pay) → 查询(GET /orders/{id})
  * 递增并发：先 30s 内爬坡到 50 用户，再瞬时追加 20 用户。
  * 断言：全局 P95 延迟 < 500ms（基线，对应 M5.4 验收点），成功率 > 99%。
  *
  * 端点路径以 eventguard-server 实际控制器为准（OrderCommandController / OrderQueryController），
- * 鉴权走 X-API-Key 头（V2 已加）。baseUrl 与 apiKey 可通过环境变量覆盖。
+ * 鉴权走登录 JWT（Authorization: Bearer）。baseUrl 与压测账号可通过环境变量覆盖。
  */
 class OrderSimulation extends Simulation {
 
   // ponytail: 端点路径硬编码对齐 MVP 控制器；若路由变更需同步此处。
   private val baseUrl = sys.env.getOrElse("TARGET_URL", "http://localhost:8080")
-  private val apiKey  = sys.env.getOrElse("API_KEY", "changeme")
+  // 压测账号须具备 order:create / order:write 权限（默认用种子 OPERATOR 账号）
+  private val benchUser = sys.env.getOrElse("BENCH_USER", "operator")
+  private val benchPass = sys.env.getOrElse("BENCH_PASSWORD", "operator123456")
+
+  // 0) 登录换取 JWT，存入会话变量 egToken
+  private val login = http("login")
+    .post("/auth/login")
+    .body(StringBody(s"""{"username":"${benchUser}","password":"${benchPass}"}"""))
+    .check(status.is(200))
+    .check(jsonPath("$.token").saveAs("egToken"))
 
   private val httpProtocol = http
     .baseUrl(baseUrl)
     .header("Content-Type", "application/json")
-    .header("X-API-Key", apiKey)
+    .header("Authorization", "Bearer ${egToken}")
     .acceptHeader("application/json")
 
   // 1) 创建订单，从响应 JSON 中取出 orderId 供后续步骤使用
@@ -44,6 +53,7 @@ class OrderSimulation extends Simulation {
     .check(status.is(200))
 
   private val orderLifecycle = scenario("OrderLifecycle")
+    .exec(login)
     .exec(createOrder)
     .exec(payOrder)
     .exec(getOrder)

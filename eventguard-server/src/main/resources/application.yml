@@ -28,6 +28,7 @@ spring:
       schema-locations:
         - classpath:db/migration/V1__init.sql
         - classpath:db/migration/V2__full_schema.sql
+        - classpath:db/migration/V3__auth.sql
 
 management:
   endpoints:

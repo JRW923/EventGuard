@@ -40,6 +40,7 @@
           <el-button
             type="danger"
             data-testid="execute-btn"
+            v-permission="'compensation:execute'"
             :loading="loading"
             @click="execute"
           >

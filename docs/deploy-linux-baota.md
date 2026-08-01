@@ -73,7 +73,8 @@ vim .env      # 或用宝塔「文件」在线编辑 /opt/EventGuard/.env
 ```dotenv
 POSTGRES_PASSWORD=换成强随机密码
 DB_PASSWORD=换成同样的强随机密码          # 须与上面一致
-EG_API_KEY=换成强随机密钥(openssl rand -hex 32)   # 前后端共用，前端自动取此值
+EG_JWT_SECRET=换成强随机密钥(openssl rand -hex 32)    # 签发/校验用户登录 JWT（server 与 AI 共用）
+EG_MACHINE_API_KEY=换成另一个强随机密钥                # AI→后端内部调用机器密钥
 ```
 `EG_LLM_*` 大模型配置可不填（AI 自动降级为关键词/摘要，不影响主流程）。
 
@@ -133,7 +134,7 @@ docker compose up -d --build
   git checkout -- eventguard-ai/Dockerfile eventguard-ui/Dockerfile   # 以报错实际列出的文件为准
   git pull
   ```
-  不要用 `git stash`/`stash pop`：仓库结构已变（新增 VITE_API_KEY、PIP_INDEX_URL 构建参数），pop 多半冲突。你之前手动改过的 Dockerfile（如写死国内镜像）通常已被仓库版覆盖等价实现，丢弃本地改动不会丢东西。
+  不要用 `git stash`/`stash pop`：仓库结构经常变（构建参数、鉴权机制等），pop 多半冲突。你之前手动改过的 Dockerfile（如写死国内镜像）通常已被仓库版覆盖等价实现，丢弃本地改动不会丢东西。
 - **`git pull` 前不需要先停服务**：pull 只更新磁盘上的文件（compose/Dockerfile/源码），不影响正在运行的容器，业务不会中断。pull 后让改动生效靠 `docker compose up -d --build`（compose 会自动停掉旧容器、起新的），**也不用你手动 `docker compose down`**。本次含 UI 运行时注入修复，必须 `docker compose up -d --build eventguard-ui` 重建 UI 才能消 401。
 
 **Q4：每次 `git pull` 后端口又全暴露了 / 前端 401 又出现。**
@@ -148,7 +149,7 @@ docker compose up -d --build
          key="${line%%=*}"
          grep -q "^${key}=" .env || echo "$line" >> .env
        done < .env.example
-       grep -E "VITE_API_KEY|PIPE_INDEX_URL|EG_API_KEY" .env   # 确认关键键都在
+       grep -E "EG_JWT_SECRET|EG_MACHINE_API_KEY|PIPE_INDEX_URL" .env   # 确认关键键都在
        ```
        该脚本只追加「example 有、.env 没有」的键（用 example 默认值），你已设的值不动。追加后留意新出现的密钥类键，按需改成强值。补完 `docker compose up -d --build`。
 
@@ -167,13 +168,14 @@ docker compose up -d --build
 ```
 
 **Q5：在宿主机 `curl http://localhost:8080/actuator/health` 连不上（connection refused）。**
-- **预期行为，不是故障**：端口收紧后 8080 只在 compose 内部网络可见，宿主机无监听。actuator 明明开着（`application.yml` 配了 `exposure.include: health,info,metrics`），且 `ApiKeyAuthFilter` 对 `/actuator` 免鉴权。改在容器内探活：`docker compose exec eventguard-server curl -s localhost:8080/actuator/health` → `{"status":"UP",...}`。
+- **预期行为，不是故障**：端口收紧后 8080 只在 compose 内部网络可见，宿主机无监听。actuator 明明开着（`application.yml` 配了 `exposure.include: health,info,metrics`），且 `AuthFilter` 对 `/actuator` 免鉴权。改在容器内探活：`docker compose exec eventguard-server curl -s localhost:8080/actuator/health` → `{"status":"UP",...}`。
 
 **Q6：前端订单列表报「加载失败：401」，无数据。**
-- 401 有两类根因，按顺序排查：
-  1. **nginx 把 `X-API-Key` 头丢掉了（最常见）**：`eventguard-ui/nginx.conf` 里写 `proxy_set_header X-API-Key $http_api_key;` 是错的。nginx 把请求头 `X-API-Key` 转成变量 `$http_x_api_key`（连字符变下划线、`X-` 变 `x_`），`$http_api_key` 恒为空，于是后端永远收不到 key。需改成 `$http_x_api_key`（已修正）。`docker compose up -d --build eventguard-ui` 重建后生效。
-  2. **前后端 key 值不一致**：本仓库已改为**运行时注入**——容器启动用 `.env` 的 `EG_API_KEY` 经 nginx `envsubst` 生成 `config.js`，前端读 `window.__EG_API_KEY__`（旧方案靠构建期 `VITE_API_KEY` 经 build args 注入，不可靠，曾烤进空值）。排查：`docker compose exec eventguard-ui cat /usr/share/nginx/html/config.js` 应显示 `window.__EG_API_KEY__ = "你设置的EG_API_KEY值";`；若为空/`changeme`，检查 `.env` 的 `EG_API_KEY` 与 compose 的 `environment: EG_API_KEY: ${EG_API_KEY}` 是否到位。
-- 快速判定：在 UI 容器内 `curl` 测后端——`docker compose exec eventguard-ui curl -s -o /dev/null -w "%{http_code}\n" -H "X-API-Key: 你的EG_API_KEY" http://localhost/orders`。返回 200 即通；仍 401 再按上面两类查（注意 `localhost` 走 nginx，能顺带验证转发头）。
+- 401 说明未带有效 JWT，按顺序排查：
+  1. **未登录 / token 过期**：系统已改为**登录 + JWT**鉴权，未登录直接调 API 会 401。先到 `http://域名` 用种子账号登录（首次登录强制改密）；token 默认 12h 过期，过期后前端自动跳登录页。
+  2. **nginx 丢了 `Authorization` 头**：`eventguard-ui/nginx.conf` 的代理 location 须有 `proxy_set_header Authorization $http_authorization;`（已内置）。缺了它后端收不到 Bearer token。
+  3. **`EG_JWT_SECRET` 不一致**：server 与 AI 必须用同一个 `EG_JWT_SECRET` 签发/校验；`.env` 改过后需 `docker compose up -d --build eventguard-server eventguard-ai` 重建生效。
+- 快速判定：在 UI 容器内 `curl` 测后端——先登录拿 token，再带 `Authorization: Bearer` 请求 `http://localhost/orders`，返回 200 即通（`localhost` 走 nginx，能顺带验证转发头）。
 
 **Q7：构建 AI 镜像时 `pip install` 报 `ReadTimeoutError` / `files.pythonhosted.org` 超时。**
 - 国内连默认 PyPI 不稳。本仓库 `eventguard-ai/Dockerfile` 已**写死腾讯云镜像** `https://mirrors.cloud.tencent.com/pypi/simple`，正常不会再超时。若你曾手改回官方源或 `git pull` 覆盖了它，恢复写死即可；旧参数化方式（`PIP_INDEX_URL` 经 build args）不可靠，已弃用。
@@ -197,7 +199,7 @@ docker compose up -d --build
    java -jar eventguard-server-*.jar \
      --DB_URL=jdbc:postgresql://localhost:5432/eventguard \
      --DB_USER=eventguard --DB_PASSWORD=你的密码 \
-     --KAFKA_BOOTSTRAP=localhost:9092 --EG_API_KEY=你的密钥
+     --KAFKA_BOOTSTRAP=localhost:9092 --EG_JWT_SECRET=你的JWT密钥 --EG_MACHINE_API_KEY=你的机器密钥
    ```
 3. AI：服务器装 Python 3.11，`pip install -r eventguard-ai/requirements.txt`，设 `EG_` 环境变量后 `uvicorn app.main:app --host 0.0.0.0 --port 8000`。
 4. 前端：IDEA/`npm run build` 出 `dist/`，宝塔建静态站点指向 `dist/`，反代 `/orders`、`/compensations`、`/ai`、`/anomalies`、`/ws` 到对应后端（等价于 `eventguard-ui/nginx.conf`）。

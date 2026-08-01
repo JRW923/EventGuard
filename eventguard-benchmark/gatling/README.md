@@ -11,8 +11,8 @@
 ## 前置
 
 - 已 `docker compose up -d --build` 且全栈健康（压测打的是真实运行中的 `eventguard-server:8080`）。
-- 目标端点需鉴权：脚本默认带 `X-API-Key: changeme`（与 README 默认密钥一致）。
-  若改过密钥，运行前设置环境变量 `API_KEY`。
+- 压测账号需登录鉴权：脚本先 `POST /auth/login` 换取 JWT 再请求，默认用种子账号 `operator / operator123456`
+  （该角色具备 order:create / order:write 权限）。如需换账号，运行前设置环境变量 `BENCH_USER` / `BENCH_PASSWORD`。
 
 > ponytail: 本机无 sbt / 无运行中的全栈，无法编译或产出真实报告；
 > 以下为运行方式说明，实跑需在具备 sbt 或官方 Gatling 发行版 + 运行全栈的环境执行。
@@ -24,7 +24,7 @@
 3. 运行（默认 `TARGET_URL=http://localhost:8080`）：
 
    ```bash
-   TARGET_URL=http://localhost:8080 API_KEY=changeme \
+   TARGET_URL=http://localhost:8080 BENCH_USER=operator BENCH_PASSWORD=operator123456 \
      ./bin/gatling.sh -s class OrderSimulation
    ```
 
@@ -32,7 +32,7 @@
 
 ```bash
 # 在工程根（含 build.sbt）执行
-API_KEY=changeme sbt "gatling:testOnly OrderSimulation"
+BENCH_USER=operator BENCH_PASSWORD=operator123456 sbt "gatling:testOnly OrderSimulation"
 ```
 
 ## 预期产出

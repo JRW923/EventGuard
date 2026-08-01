@@ -1,11 +1,12 @@
 import httpx
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 
 from app.analyzer.root_cause import RootCauseAnalyzer, LLMResponseError
 from app.config import settings
 from app.query.nl_query_engine import NLQueryEngine
 from app.query.query_result import QueryResult
+from app.security import require_permission
 from app.store.anomaly_store import anomaly_store
 
 app = FastAPI(title=settings.app_name)
@@ -28,15 +29,8 @@ def _get_nl_query_engine() -> NLQueryEngine:
     return _nl_query_engine
 
 
-async def verify_api_key(x_api_key: str = Header(None)):
-    """校验 X-API-Key；缺失或不符返回 401。"""
-    if x_api_key != settings.api_key:
-        raise HTTPException(status_code=401, detail="Missing or invalid X-API-Key")
-    return True
-
-
 @app.post("/ai/query", response_model=QueryResult)
-async def ai_query(req: NLQueryRequest, _: bool = Depends(verify_api_key)):
+async def ai_query(req: NLQueryRequest, _: dict = Depends(require_permission("ai:query"))):
     """自然语言查询：意图分类 + 模板查询 + LLM 润色。"""
     engine = _get_nl_query_engine()
     return await engine.query(req.question)
@@ -48,7 +42,7 @@ def health():
 
 
 @app.get("/anomalies/{anomaly_id}/analysis")
-async def get_analysis(anomaly_id: str, _: bool = Depends(verify_api_key)):
+async def get_analysis(anomaly_id: str, _: dict = Depends(require_permission("anomaly:view"))):
     """根因分析：通过 anomaly_id 查找异常并生成分析报告"""
     anomaly = anomaly_store.get(anomaly_id)
     if anomaly is None:

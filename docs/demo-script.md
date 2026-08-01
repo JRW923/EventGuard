@@ -6,7 +6,17 @@
 > 预期画面/返回、讲解要点（面试怎么说）。
 
 前置：全栈已起且健康（UI `http://localhost:3000`、Java `8080`、AI `8000`）。
-下列 curl 命令与 `README.md` 演示脚本一致（默认 API Key `changeme` 已在服务端校验）。
+下列 curl 命令先登录换取 JWT，再带 `Authorization: Bearer $TOKEN` 请求（RBAC 鉴权）。
+
+```bash
+# 登录换取 JWT（默认 OPERATOR 账号可下单/补偿；只读查询也可用 viewer）
+# 注：种子账号首次登录会被强制改密，若已改过请用你自己的密码
+TOKEN=$(curl -s -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"operator","password":"operator123456"}' \
+  | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
+echo "token=$TOKEN"
+```
 
 ---
 
@@ -16,7 +26,7 @@
   或命令行：
   ```bash
   OID=$(curl -s -X POST http://localhost:8080/orders -H "Content-Type: application/json" \
-    -H "X-API-Key: changeme" \
+    -H "Authorization: Bearer $TOKEN" \
     -d '{"userId":"u-demo","totalAmount":199.0}' \
     | python -c "import sys,json;print(json.load(sys.stdin)['orderId'])")
   echo "orderId=$OID"
@@ -31,7 +41,7 @@
 - **操作**：点该订单「支付」；或：
   ```bash
   curl -s -X POST http://localhost:8080/orders/$OID/pay \
-    -H "Content-Type: application/json" -H "X-API-Key: changeme" \
+    -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
     -d '{"paymentId":"p1"}' >/dev/null
   ```
 - **预期**：状态变为 `PAID`；订单列表对应行刷新。
@@ -65,15 +75,15 @@
 
 - **操作**：点刚收到的告警 → 打开根因报告；或取 `anomaly_id` 后：
   ```bash
-  # 取一个 anomaly_id（需装 websocket-client）：
+  # 取一个 anomaly_id（需装 websocket-client）；WS 握手按 ?token= 校验 JWT
   AID=$(python - <<'PY'
-  import json, websocket
-  ws = websocket.create_connection("ws://localhost:8080/ws/anomalies?api_key=changeme")
+  import json, websocket, os
+  ws = websocket.create_connection("ws://localhost:8080/ws/anomalies?token=" + os.environ["TOKEN"])
   msg = json.loads(ws.recv()); ws.close()
   print(msg.get("anomaly_id") or msg.get("anomalyId") or "")
   PY
   )
-  [ -n "$AID" ] && curl -s "http://localhost:8000/anomalies/$AID/analysis" -H "X-API-Key: changeme" ; echo
+  [ -n "$AID" ] && curl -s "http://localhost:8000/anomalies/$AID/analysis" -H "Authorization: Bearer $TOKEN" ; echo
   ```
 - **预期**：报告含 `rootCause`（根因）、`evidence`（证据事件）、`suggestions`（建议动作，
   白名单内如 REFUND / NOTIFY_DELAY）。
@@ -85,7 +95,7 @@
 - **操作 A（NL 查询）**：在「NL 查询」框输入 `订单 $OID 当前状态是什么`，回车：
   ```bash
   curl -s -X POST http://localhost:8000/ai/query -H "Content-Type: application/json" \
-    -H "X-API-Key: changeme" \
+    -H "Authorization: Bearer $TOKEN" \
     -d "{\"question\":\"订单 $OID 当前状态是什么\"}" ; echo
   ```
 - **预期 A**：返回自然语言答案（意图分类 `event_lookup` → 调 `GET /orders/{id}` → 润色）。
@@ -94,7 +104,7 @@
 - **操作 C（执行补偿建议）**：在异常根因报告的「建议」里点一个白名单动作（如 REFUND）执行：
   ```bash
   curl -s -X POST http://localhost:8080/compensations -H "Content-Type: application/json" \
-    -H "X-API-Key: changeme" \
+    -H "Authorization: Bearer $TOKEN" \
     -d "{\"actionType\":\"REFUND\",\"aggregateId\":\"$OID\"}" ; echo
   ```
 - **预期 C**：返回 200，补偿命令被 dispatch（人工触发的可读描述；ponytail：当前不接真实支付网关）。
@@ -119,5 +129,5 @@
 - AI 无 `GET /anomalies` 历史列表接口，异常仅经 WebSocket 推送，根因走 `GET /anomalies/{id}/analysis`。
 - LLM 根因为可选增强，无 Ollama 时走兜底。
 - 补偿为人工触发白名单动作，不接真实支付/通知网关，无 Saga 编排。
-- 端点已加 `X-API-Key` 鉴权（默认 `changeme`），演示与生产务必改密钥；当前仍是单一静态密钥，
-  无用户级认证/授权。
+- 端点鉴权为登录 JWT（`Authorization: Bearer` / WS `?token=`），按角色授权（OPERATOR 可下单/补偿，
+  VIEWER 只读）；演示用种子账号首次登录会强制改密。生产务必设置强随机 `EG_JWT_SECRET` 与 `EG_MACHINE_API_KEY`。

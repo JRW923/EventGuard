@@ -7,7 +7,7 @@
 - **AI 异常检测**：规则引擎 + IsolationForest + HMM 流程级检测（规则第二意见）+ LLM 根因分析（无 Ollama 时关键词兜底）。
 - **NL 查询**：中文自然语言 → 结构化查询（IntentRouter + SQLBuilder）。
 - **前端**：Vue3 + Element Plus + ECharts，订单列表 / NL 查询框 / 异常看板 / 补偿执行 / 事件时间线。
-- **端点鉴权**：REST `X-API-Key` + WS `?api_key`，共用 `ApiKeyValidator`（默认 `changeme`，生产须改）。
+- **端点鉴权（v1.1 起为登录 + RBAC）**：REST `Authorization: Bearer <JWT>` + WS `?token=`，用户-角色-权限三级模型（`admin`/`operator`/`viewer` 种子账号，首次登录强制改密）；内部服务走 `EG_MACHINE_API_KEY` 机器密钥（受限权限）。早期 v1.0.0 为单一 `X-API-Key`，已废弃。
 - **AI 服务异步化**：全链路 `httpx.AsyncClient`，不再阻塞事件循环。
 
 ## 本版本新增（相对 v0 基线）
