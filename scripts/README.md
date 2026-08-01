@@ -5,7 +5,10 @@
 
 ## 脚本
 
-`dev-tunnel.sh` —— 建立 `localhost:3000 → 服务器:3000` 的转发，并默认自动确保服务器侧
+- `dev-tunnel.sh` —— Linux / macOS / WSL / Git Bash 下使用（bash）。
+- `dev-tunnel.ps1` —— Windows PowerShell 下使用。
+
+两者功能一致：建立 `localhost:3000 → 服务器:3000` 的转发，并默认自动确保服务器侧
 dev server 已在运行。
 
 ## 前置条件
@@ -13,8 +16,9 @@ dev server 已在运行。
 - 本地已配置好到开发服务器的 SSH 免密登录（密钥）。
 - 服务器上 `eventguard-ui` 的依赖已安装（`node_modules` 存在），`npm run dev` 可直接启动。
 - 服务器侧相关后端服务（eventguard-server、eventguard-ai 等）正常运行。
+- Windows 需安装系统自带组件 **OpenSSH 客户端**（`ssh.exe`，Win10+ 可选功能中开启）。
 
-## 用法
+## 用法（Linux / macOS / Git Bash）
 
 ```bash
 # 方式一：直接传 用户@主机
@@ -22,6 +26,34 @@ dev server 已在运行。
 
 # 方式二：用环境变量（避免每次输入）
 EG_SSH_HOST=服务器IP EG_SSH_USER=root ./dev-tunnel.sh
+```
+
+## 用法（Windows PowerShell）
+
+> 注意：bash 版里的 `EG_SSH_HOST=... ./script.sh` 前缀语法是 bash 专属，PowerShell 不支持，
+> 请用下面参数形式。
+
+```powershell
+# 方式一：直接传 用户@主机
+.\dev-tunnel.ps1 root@服务器IP
+
+# 方式二：用参数
+.\dev-tunnel.ps1 -SshHost 服务器IP -SshUser root
+
+# 只转发、不自动起服务器
+.\dev-tunnel.ps1 root@服务器IP -NoStart
+```
+
+首次运行若被 PowerShell 执行策略拦截，先执行一次：
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+或直接绕过策略运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\dev-tunnel.ps1 root@服务器IP
 ```
 
 运行后：
