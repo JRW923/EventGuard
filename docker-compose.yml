@@ -38,7 +38,7 @@ services:
     # ponytail: 容器内存封顶 + JVM 堆上限双保险，避免在 3.6G 小机上 JVM 按宿主机内存默认吃满触发 OOM
     mem_limit: 1.2g
     environment:
-      KAFKA_HEAP_OPTS: "-Xms512m -Xmx900m"
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_NODE_ID: 1
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
@@ -71,7 +71,7 @@ services:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
     environment:
-      JAVA_OPTS: "-Xms256m -Xmx512m"
+      JAVA_OPTS: "-Xms128m -Xmx256m"
       DEBEZIUM_SOURCE_DATABASE_HOSTNAME: postgres
       DEBEZIUM_SOURCE_DATABASE_PORT: 5432
       DEBEZIUM_SOURCE_DATABASE_USER: ${POSTGRES_USER}
@@ -89,7 +89,7 @@ services:
     env_file: .env
     environment:
       TZ: Asia/Shanghai
-      JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m"
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx384m"
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
