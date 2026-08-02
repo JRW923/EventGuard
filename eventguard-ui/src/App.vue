@@ -6,9 +6,6 @@
         <el-menu
           :default-active="$route.path"
           mode="horizontal"
-          background-color="transparent"
-          text-color="rgba(255,255,255,0.85)"
-          active-text-color="#fff"
           router
           class="app-menu"
         >
@@ -137,6 +134,13 @@ body {
   font-weight: 600;
   color: #fff !important;
 }
+/* 系统管理子菜单激活态（进入用户/角色管理页时高亮「系统管理」） */
+.app-menu .el-sub-menu__title.is-active {
+  color: #fff !important;
+  border-bottom-color: #fff;
+  font-weight: 600;
+}
+/* 内联渲染（非 teleport）时子菜单下拉面板 */
 .app-menu .el-sub-menu .el-menu {
   background: #fff;
 }
@@ -147,6 +151,20 @@ body {
 }
 .app-menu .el-sub-menu .el-menu-item.is-active {
   color: #409eff !important;
+}
+/* 系统管理下拉（popper 默认 teleport 到 body，须用全局选择器覆盖主菜单传下来的白字/透明底） */
+.el-menu--popup {
+  background: #fff;
+}
+.el-menu--popup .el-menu-item {
+  color: #303133;
+}
+.el-menu--popup .el-menu-item:hover {
+  background: #ecf5ff;
+}
+.el-menu--popup .el-menu-item.is-active {
+  color: #409eff;
+  font-weight: 600;
 }
 
 .app-user {
