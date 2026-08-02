@@ -1,6 +1,8 @@
 package com.eventguard.anomaly.engine;
 
 import com.eventguard.event.model.DomainEvent;
+import com.eventguard.event.model.InventoryReservedEvent;
+import com.eventguard.gateway.InventoryGateway;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -18,9 +20,11 @@ import java.util.List;
 public class RuleContextLoader {
 
     private final JdbcTemplate jdbc;
+    private final InventoryGateway inventoryGateway;
 
-    public RuleContextLoader(JdbcTemplate jdbc) {
+    public RuleContextLoader(JdbcTemplate jdbc, InventoryGateway inventoryGateway) {
         this.jdbc = jdbc;
+        this.inventoryGateway = inventoryGateway;
     }
 
     public RuleContext load(DomainEvent event) {
@@ -31,8 +35,16 @@ public class RuleContextLoader {
                 .recentPaymentCompletions(loadRecentPaymentCompletions(event.getAggregateId().toString()))
                 .previousState(loadPreviousState(event.getAggregateId().toString()))
                 .recentCreateOrders(loadRecentCreateOrders(userId))
-                .actualStock(1000) // ponytail: MVP 硬编码库存;升级路径:从 order_view 读真实库存,否则 R005 在生产中几乎不触发
+                .actualStock(loadActualStock(event))
                 .build();
+    }
+
+    /** R005 实际库存：从库存网关读真实库存；无 skuId 的普通事件回退为 0（不触发越界判断）。 */
+    private int loadActualStock(DomainEvent event) {
+        if (event instanceof InventoryReservedEvent inv) {
+            return inventoryGateway.currentStock(inv.getSkuId());
+        }
+        return 0;
     }
 
     private BigDecimal loadUserMeanAmount(String userId) {

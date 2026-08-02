@@ -1,0 +1,68 @@
+package com.eventguard.gateway.mock;
+
+import com.eventguard.gateway.InventoryGateway;
+import com.eventguard.gateway.config.GatewayProperties;
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Mock 库存网关：内存 SKU 库存表。reserve 递减库存、不足返回失败；currentStock 从内存读，
+ * 替换 RuleContextLoader 硬编码的 1000（R005 库存越界规则因此真实可触发）。
+ * 库存种子来自 {@code EG_GATEWAY_MOCK_SKUS}（如 SKU-A:100,SKU-B:5）。
+ */
+@Component
+public class MockInventoryGateway implements InventoryGateway {
+
+    private final ConcurrentHashMap<String, Integer> stock;
+
+    public MockInventoryGateway(GatewayProperties properties) {
+        this.stock = new ConcurrentHashMap<>(properties.getSkus());
+    }
+
+    @Override
+    public ReservationResult reserve(ReserveRequest req) {
+        // 原子递减：成功则扣库存并返回剩余，不足则不动库存返回失败
+        boolean[] reserved = {false};
+        Integer remaining = stock.compute(req.skuId(), (sku, current) -> {
+            int base = (current == null) ? 0 : current;
+            if (base < req.quantity()) {
+                reserved[0] = false;
+                return base; // 不足不扣
+            }
+            reserved[0] = true;
+            return base - req.quantity();
+        });
+        if (!reserved[0]) {
+            return new ReservationResult(false, remaining, "库存不足: " + req.skuId());
+        }
+        return new ReservationResult(true, remaining, null);
+    }
+
+    @Override
+    public ReleaseResult release(ReleaseRequest req) {
+        stock.computeIfPresent(req.skuId(), (sku, current) -> current + req.quantity());
+        return new ReleaseResult(true, null);
+    }
+
+    @Override
+    public int currentStock(String skuId) {
+        return stock.getOrDefault(skuId, 0);
+    }
+
+    @Override
+    public MarkOutOfStockResult markOutOfStock(String skuId) {
+        stock.put(skuId, 0);
+        return new MarkOutOfStockResult(true, null);
+    }
+
+    /** 仅供测试：设置某 SKU 库存。 */
+    public void setStock(String skuId, int qty) {
+        stock.put(skuId, qty);
+    }
+
+    public Map<String, Integer> snapshot() {
+        return Map.copyOf(stock);
+    }
+}
