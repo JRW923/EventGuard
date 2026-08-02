@@ -141,6 +141,10 @@ public class OrderAggregate extends AggregateRoot {
             status = OrderStatus.CANCELLED;
         } else if (event instanceof OrderRefundedEvent) {
             status = OrderStatus.REFUNDED;
+        } else if (event instanceof CompensationExecutedEvent) {
+            // 补偿事件不改订单状态，仅留痕（修复：此前回放会抛 IllegalStateException）
+        } else if (event instanceof OrderRefundRequestedEvent) {
+            // 退款意图事件不改状态（订单仍 PAID，待退款结果确认）
         } else {
             throw new IllegalStateException("未知事件类型: " + event.getEventType());
         }

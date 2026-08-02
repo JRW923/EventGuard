@@ -48,6 +48,11 @@ public class EventDeserializer {
                         p.get("reason").asText());
                 case "OrderRefundedEvent" -> new OrderRefundedEvent(eventId, aggregateId, version, occurredAt, metadata,
                         new BigDecimal(p.get("refundAmount").asText()));
+                case "OrderRefundRequestedEvent" -> new OrderRefundRequestedEvent(eventId, aggregateId, version, occurredAt, metadata,
+                        new BigDecimal(p.get("refundAmount").asText()));
+                case "CompensationExecutedEvent" -> new CompensationExecutedEvent(eventId, aggregateId, version, occurredAt, metadata,
+                        p.get("actionType").asText(),
+                        objectMapper.convertValue(p.get("params"), new TypeReference<Map<String, Object>>() {}));
                 default -> throw new IllegalStateException("未知事件类型: " + eventType);
             };
         } catch (IllegalStateException e) {

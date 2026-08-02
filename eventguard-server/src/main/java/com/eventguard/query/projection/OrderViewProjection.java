@@ -79,6 +79,10 @@ public class OrderViewProjection implements Projection {
                     e.getVersion(), e.getAggregateId());
         } else if (event instanceof InventoryReservedEvent) {
             // 不改读模型状态
+        } else if (event instanceof CompensationExecutedEvent) {
+            // 补偿事件不改读模型状态，仅留痕
+        } else if (event instanceof OrderRefundRequestedEvent) {
+            // 退款意图事件不改读模型状态（订单仍 PAID，待退款结果确认）
         } else if (event instanceof OrderConfirmedEvent e) {
             jdbc.update(
                     "UPDATE order_view SET status = 'CONFIRMED', version = ? WHERE order_id = ?",

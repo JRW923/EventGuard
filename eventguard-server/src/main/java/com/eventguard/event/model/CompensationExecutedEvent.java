@@ -1,5 +1,6 @@
 package com.eventguard.event.model;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
@@ -14,6 +15,14 @@ public class CompensationExecutedEvent extends DomainEvent {
     public CompensationExecutedEvent(UUID aggregateId, int version, String actionType,
                                      Map<String, Object> params, Map<String, String> metadata) {
         super(aggregateId, version, metadata);
+        this.actionType = actionType;
+        this.params = params;
+    }
+
+    public CompensationExecutedEvent(UUID eventId, UUID aggregateId, int version, Instant occurredAt,
+                                     Map<String, String> metadata, String actionType,
+                                     Map<String, Object> params) {
+        super(eventId, aggregateId, "CompensationExecutedEvent", version, occurredAt, metadata);
         this.actionType = actionType;
         this.params = params;
     }

@@ -1,15 +1,66 @@
+import logging
+from contextlib import asynccontextmanager
+
 import httpx
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 
 from app.analyzer.root_cause import RootCauseAnalyzer, LLMResponseError
 from app.config import settings
+from app.detector.event_level import EventLevelService
+from app.detector.event_window import EventWindow
+from app.detector.process_level import ProcessLevelRuleDetector
+from app.kafka_consumer import DetectionHandler, EventKafkaConsumer
+from app.publisher.anomaly_publisher import AnomalyPublisher
 from app.query.nl_query_engine import NLQueryEngine
 from app.query.query_result import QueryResult
 from app.security import require_permission
 from app.store.anomaly_store import anomaly_store
 
-app = FastAPI(title=settings.app_name)
+logger = logging.getLogger(__name__)
+
+# 检测管道全局引用：启动时在 lifespan 中装配，shutdown 时停止
+_consumer: EventKafkaConsumer | None = None
+_publisher: AnomalyPublisher | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """启动时装配 Kafka 事件检测管道（事件级 + 流程级），使 domain-events → anomaly-alerts 闭环真正运行。"""
+    global _consumer, _publisher
+    try:
+        # 事件级：规则引擎（HTTP，高优）→ Isolation Forest（低优）；流程级：规则 + HMM（可选）
+        event_level_service = EventLevelService()
+        event_window = EventWindow(window_size=20)
+        process_detector = ProcessLevelRuleDetector()
+        _publisher = AnomalyPublisher()
+        handler = DetectionHandler(
+            event_level_service=event_level_service,
+            publisher=_publisher,
+            process_level_detector=process_detector,
+            event_window=event_window,
+            # HMM 缺文件时 detect 返回 []，不阻断主流程
+            hmm_detector=None,
+        )
+        _consumer = EventKafkaConsumer(handler=handler)
+        _consumer.start()
+        logger.info("AI 检测管道已启动：消费 domain-events → 检测 → 发布 anomaly-alerts")
+    except Exception as e:
+        # ponytail: 检测管道启动失败不应拖垮 API（NL 查询 / 根因分析仍可用），降级为关闭状态
+        logger.exception("AI 检测管道启动失败（降级：仅提供 API，不消费事件）: %s", e)
+        _consumer = None
+        _publisher = None
+    try:
+        yield
+    finally:
+        if _consumer is not None:
+            _consumer.stop()
+        if _publisher is not None:
+            _publisher.close()
+        logger.info("AI 检测管道已停止")
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 _analyzer = RootCauseAnalyzer()
 
@@ -38,7 +89,14 @@ async def ai_query(req: NLQueryRequest, _: dict = Depends(require_permission("ai
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "detector": {
+            "running": _consumer is not None and _consumer._running,
+            "topic": _consumer.topic if _consumer is not None else None,
+            "group_id": _consumer.group_id if _consumer is not None else None,
+        },
+    }
 
 
 @app.get("/anomalies/{anomaly_id}/analysis")
