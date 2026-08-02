@@ -144,8 +144,10 @@ powershell -ExecutionPolicy Bypass -File .\dev-tunnel.ps1 root@服务器IP
    因此 Vite 代理（`eventguard-server:8080` / `eventguard-ai:8000`）和生产环境一致，无需改前端代理配置。
 4. **私钥权限**：私钥文件权限过宽会被 ssh 拒绝。Linux/Git Bash 执行
    `chmod 600 私钥路径`；Windows 把 `.ssh` 目录权限设为仅当前用户可读。
-5. **小内存机器 OOM 风险**：开发版 Java 服务内存占用高于生产 jar（后台持续编译 + DevTools 重启）。
-   如 OOM，适当下调 `docker-compose.dev.yml` 中的 `mem_limit` / JVM 堆大小。
+5. **小内存机器 OOM 风险**：默认已按下保守值（`eventguard-server` mem_limit 1g / 堆 320m，
+   `eventguard-ai` mem_limit 512m）留约 300m 余量。极小内存机器仍 OOM 时再下调，并注意约束：
+   Java 跑两个 JVM（编译循环 + run），上调时须保证「两 JVM 堆之和 + ~200m」< `mem_limit`，
+   否则 cgroup 会 OOM-kill；堆上限以 `JAVA_TOOL_OPTIONS` 的 `-Xmx` 为准。
 6. **dev server 后台常驻**：SSH 隧道断开不会杀掉服务器侧 dev server；长期不用记得
    手动停止，避免占用资源。
 7. **勿误提交开发镜像**：dev 镜像在本地构建，不要 `docker compose push` 开发版镜像。
