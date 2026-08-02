@@ -24,6 +24,14 @@ public class RefundAction implements CompensationAction {
     public String defaultRiskLevel() { return "MEDIUM"; }
 
     @Override
+    public boolean requiresApproval(UUID aggregateId, Map<String, Object> params) {
+        Object amountObj = params.get("amount");
+        BigDecimal amount = amountObj instanceof Number n ? BigDecimal.valueOf(n.doubleValue()) : BigDecimal.ZERO;
+        // 对齐设计文档 7.4.2：退款金额 > 100 需人工审批
+        return amount.compareTo(BigDecimal.valueOf(100)) > 0;
+    }
+
+    @Override
     public String execute(UUID aggregateId, Map<String, Object> params) {
         Object amountObj = params.get("amount");
         BigDecimal amount = amountObj instanceof Number n ? BigDecimal.valueOf(n.doubleValue()) : BigDecimal.ZERO;

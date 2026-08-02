@@ -16,6 +16,12 @@ public class FreezeOrderAction implements CompensationAction {
     public String defaultRiskLevel() { return "HIGH"; }
 
     @Override
+    public boolean requiresApproval(UUID aggregateId, Map<String, Object> params) {
+        // 冻结订单风险高，恒需人工审批（对齐设计文档 7.4.2）
+        return true;
+    }
+
+    @Override
     public String execute(UUID aggregateId, Map<String, Object> params) {
         return "已冻结订单 " + aggregateId;
     }

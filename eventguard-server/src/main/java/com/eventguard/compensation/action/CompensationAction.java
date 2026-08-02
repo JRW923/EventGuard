@@ -15,7 +15,17 @@ public interface CompensationAction {
     String defaultRiskLevel();
 
     /**
-     * 执行补偿动作（MVP：仅记录，不实际触发业务命令；V2 接 Saga 编排）。
+     * 是否需人工审批（对齐设计文档 7.4.2）：默认自动执行，高风险动作覆写此方法。
+     *
+     * @param aggregateId 聚合根 ID
+     * @param params      动作参数
+     */
+    default boolean requiresApproval(UUID aggregateId, Map<String, Object> params) {
+        return false;
+    }
+
+    /**
+     * 执行补偿动作（已接入真实网关副作用，见各动作实现；MVP 不接 Saga 自动编排前的描述化）。
      *
      * @param aggregateId 聚合根 ID
      * @param params      动作参数
