@@ -41,6 +41,10 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml build eventguard-
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d eventguard-server eventguard-ai
 ```
 
+> **开发镜像用独立 `-dev` 标签**（`eventguard-eventguard-server-dev` / `eventguard-eventguard-ai-dev`），
+> 与生产镜像互不覆盖。上面命令怎么跑都不会碰生产镜像，生产 `docker compose up -d` 完全无感；
+> 也**不要**在开发环境 `docker compose push`（dev 镜像仅存在于本机，不该进仓库）。
+
 启动后：
 
 - **Java**：容器后台持续增量编译，Spring Boot DevTools 在类路径变化后自动重启——改 `.java` 保存即生效。
@@ -93,6 +97,10 @@ powershell -ExecutionPolicy Bypass -File .\dev-tunnel.ps1 root@服务器IP
 ### 4. 浏览器调试
 
 打开 `http://localhost:3000`（若本地 3000 被占用，脚本自动顺延到 `3001` 并提示）。
+
+系统带登录鉴权，首次打开会跳到登录页，用默认账号登录（首登强制改密）：
+`admin` / `operator` / `viewer`，默认密码 `admin123456` / `operator123456` / `viewer123456`
+（可由 `.env` 的 `EG_ADMIN_PASSWORD` 等覆盖）。不同角色看到的菜单/按钮不同。
 保存任意前端/后端代码，浏览器即时热更新。
 
 ### 5. 结束与恢复
@@ -138,8 +146,10 @@ powershell -ExecutionPolicy Bypass -File .\dev-tunnel.ps1 root@服务器IP
 1. **端口冲突是头号坑**：开发版后端占用 `8080`/`8000`，启动前务必先
    `docker compose down eventguard-server eventguard-ai` 停掉生产后端，否则容器起不来。
 2. **开发配置不影响生产**：`docker-compose.dev.yml` 与 `Dockerfile.dev` 是独立覆盖文件，
-   仅当显式 `-f docker-compose.dev.yml` 时才生效。普通 `docker compose up -d` 走的仍是生产配置，
-   使用者完全无感知。`pom.xml` 里的 `spring-boot-devtools` 标记为 `optional`，生产 jar 自动剔除。
+   仅当显式 `-f docker-compose.dev.yml` 时才生效。且 dev 镜像用独立 `-dev` 标签
+   （`eventguard-eventguard-server-dev` / `eventguard-eventguard-ai-dev`），不会覆盖生产镜像，
+   普通 `docker compose up -d` 走的仍是生产配置，使用者完全无感知。`pom.xml` 里的
+   `spring-boot-devtools` 标记为 `optional`，生产 jar 自动剔除。
 3. **服务名不变**：开发版沿用 `eventguard-server` / `eventguard-ai` 服务名与端口，
    因此 Vite 代理（`eventguard-server:8080` / `eventguard-ai:8000`）和生产环境一致，无需改前端代理配置。
 4. **私钥权限**：私钥文件权限过宽会被 ssh 拒绝。Linux/Git Bash 执行
@@ -150,7 +160,7 @@ powershell -ExecutionPolicy Bypass -File .\dev-tunnel.ps1 root@服务器IP
    否则 cgroup 会 OOM-kill；堆上限以 `JAVA_TOOL_OPTIONS` 的 `-Xmx` 为准。
 6. **dev server 后台常驻**：SSH 隧道断开不会杀掉服务器侧 dev server；长期不用记得
    手动停止，避免占用资源。
-7. **勿误提交开发镜像**：dev 镜像在本地构建，不要 `docker compose push` 开发版镜像。
+7. **勿提交开发镜像**：dev 镜像（`*-dev` 标签）仅在本地构建，不要 `docker compose push` 开发版镜像。
 8. **WebSocket**：`/ws` 走 WebSocket 代理，热更新与实时异常推送在同一来源下正常工作，无需额外配置。
 
 ---
@@ -182,11 +192,13 @@ Windows 默认把 `.ps1` 关联记事本。从 **PowerShell（或终端）命令
 ## 原理
 
 - 开发态前端由 Vite dev server 提供（非生产 nginx 构建）。`vite.config.ts` 已将
-  `/orders`、`/compensations` 代理到 `localhost:8080`，`/anomalies`、`/ai` 代理到
-  `localhost:8000`，`/ws` 走 WebSocket 代理。Vite dev server 跑在服务器上，故 `localhost`
-  指服务器本机，正是开发版后端映射出来的端口。
+  `/orders`、`/compensations`、`/auth`、`/users`、`/roles` 代理到 `localhost:8080`，
+  `/anomalies`、`/ai` 代理到 `localhost:8000`，`/ws` 走 WebSocket 代理。Vite dev server
+  跑在服务器上，故 `localhost` 指服务器本机，正是开发版后端映射出来的端口。
 - 后端开发版通过 `docker-compose.dev.yml` 使用 `Dockerfile.dev`：Java 用 `mvn spring-boot:run`
   + DevTools，Python 用 `uvicorn --reload`，源码以 volume 挂载进容器，改即重载。
+- 鉴权与生产一致：前端经 `/auth/login` 拿 JWT 存 localStorage，接口带 `Authorization: Bearer`，
+  异常实时推送走 `/ws?token=`（`?api_key=` 已废弃）。开发环境直接拿默认账号登录即可，无需额外配置。
 - SSH 本地转发把服务器 `3000` 映射到本地 `3000`，浏览器访问 `localhost:3000` 即等同访问服务器
   dev server；前端接口与 WebSocket 经转发抵达后端，热更新也在同一来源下正常工作。
 
