@@ -2,6 +2,7 @@ package com.eventguard.gateway.mock;
 
 import com.eventguard.gateway.InventoryGateway;
 import com.eventguard.gateway.config.GatewayProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -9,11 +10,12 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Mock 库存网关：内存 SKU 库存表。reserve 递减库存、不足返回失败；currentStock 从内存读，
- * 替换 RuleContextLoader 硬编码的 1000（R005 库存越界规则因此真实可触发）。
- * 库存种子来自 {@code EG_GATEWAY_MOCK_SKUS}（如 SKU-A:100,SKU-B:5）。
+ * Mock 库存网关：内存 SKU 库存表（EG_INVENTORY_PROVIDER=mock，缺省值）。reserve 递减库存、
+ * 不足返回失败；currentStock 从内存读，替换 RuleContextLoader 硬编码的 1000
+ * （R005 库存越界规则因此真实可触发）。库存种子来自 {@code EG_GATEWAY_MOCK_SKUS}。
  */
 @Component
+@ConditionalOnProperty(name = "eg.inventory.provider", havingValue = "mock", matchIfMissing = true)
 public class MockInventoryGateway implements InventoryGateway {
 
     private final ConcurrentHashMap<String, Integer> stock;

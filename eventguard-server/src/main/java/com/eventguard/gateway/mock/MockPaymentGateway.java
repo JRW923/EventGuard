@@ -2,17 +2,20 @@ package com.eventguard.gateway.mock;
 
 import com.eventguard.gateway.PaymentGateway;
 import com.eventguard.gateway.config.GatewayProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.Random;
 import java.util.UUID;
 
 /**
- * Mock 支付网关：默认实现。按 {@link GatewayProperties} 的失败率/延迟模拟真实网关行为。
+ * Mock 支付网关：默认实现（EG_PAYMENT_PROVIDER=mock，缺省值）。
+ * 按 {@link GatewayProperties} 的失败率/延迟模拟真实网关行为。
  * A 步同步返回结果（createPayment 即出支付单号）；B 步异步回调模式由调度器触发
  * POST /gateway/callback/payment，此处接口与结果已就绪，仅缺异步投递。
  */
 @Component
+@ConditionalOnProperty(name = "eg.payment.provider", havingValue = "mock", matchIfMissing = true)
 public class MockPaymentGateway implements PaymentGateway {
 
     private final GatewayProperties properties;

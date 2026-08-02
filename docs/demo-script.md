@@ -36,18 +36,23 @@ echo "token=$TOKEN"
   PostgreSQL `domain_events`（事件溯源），而非直接 update 一张订单表；`UNIQUE(aggregate_id, event_version)`
   保证版本续接、并发安全。
 
-## 场景 2：支付 → 状态流转（聚合根状态机）
+## 场景 2：支付 → 异步回调 → 状态流转（聚合根状态机 + 网关异步）
 
 - **操作**：点该订单「支付」；或：
   ```bash
   curl -s -X POST http://localhost:8080/orders/$OID/pay \
     -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
-    -d '{"paymentId":"p1"}' >/dev/null
+    -d '{"paymentId":"p1"}'
   ```
-- **预期**：状态变为 `PAID`；订单列表对应行刷新。
-- **讲解要点**：支付触发 `PayOrderCommand` → `PaymentCompletedEvent`，由 `OrderAggregate`
-  状态机校验合法迁移（`PENDING_PAYMENT→PAID`）。非法迁移（如直接 SHIPPED）会抛异常——
-  这是领域不变量在聚合根内强制的体现。
+- **预期**：支付改为**异步意图+回调**——立即返回 `status=PAYMENT_REQUESTED` 与 `paymentId`，
+  订单状态仍 `PENDING_PAYMENT`；mock 网关回调后订单变 `PAID`（配 `EG_GATEWAY_MOCK_PAYMENT_DELAY_MS` 可看到延迟）。
+- **讲解要点**：
+  - 支付触发 `PayOrderCommand` → `PaymentRequestedEvent`（意图，不改状态）→ `gateway_request` 落库(PENDING)
+    → 调 `PaymentGateway` → 异步回调 `POST /gateway/callback/payment` → `CompletePaymentCommand` →
+    `PaymentCompletedEvent`，由 `OrderAggregate` 状态机校验合法迁移（`PENDING_PAYMENT→PAID`）。
+  - 这是**真实支付的形态**（支付宝/微信都是异步 webhook），不再是"命令即结果"。
+  - 非法迁移（如直接 SHIPPED）会抛异常——领域不变量在聚合根内强制的体现。
+  - 配 `EG_GATEWAY_MOCK_PAYMENT_FAILURE_RATE` 可演示支付失败 → `PAYMENT_FAILED` → Saga 自动补偿闭环。
 
 ## 场景 3：注入异常 → 检测命中（规则 + ML 协同）
 
@@ -107,9 +112,19 @@ echo "token=$TOKEN"
     -H "Authorization: Bearer $TOKEN" \
     -d "{\"actionType\":\"REFUND\",\"aggregateId\":\"$OID\"}" ; echo
   ```
-- **预期 C**：返回 200，补偿命令被 dispatch（人工触发的可读描述；ponytail：当前不接真实支付网关）。
+- **预期 C**：返回 200，补偿命令被 dispatch；动作已接真实网关副作用（退款单号 / 通知落库 `notification_log`）。
 - **讲解要点**：收尾点题——NL 查询是「中文提问 → 意图分类 → 模板执行后端接口」而非裸 Text-to-SQL
-  （安全沙箱）；事件时间线体现事件溯源的可回放性；补偿为人工触发白名单动作（Saga 自动编排是 V2 Roadmap）。
+  （安全沙箱）；事件时间线体现事件溯源的可回放性；补偿为白名单动作，**高风险（退款 >100 元）自动挂审批**
+  （`GET /approvals` 查待审，`POST /approvals/{id}/approve` 决策）。
+
+## 场景 7：自动补偿（Saga 闭环，可选演示）
+
+- **操作**：把 `.env` 的 `EG_GATEWAY_MOCK_PAYMENT_FAILURE_RATE` 调高（如 1.0）并重启 server；
+  下单 → 支付 → 支付失败（`PAYMENT_FAILED`）→ 前端异常看板看到告警。
+- **预期**：失败类事件（支付重试超限 / 库存预留失败）被 `SagaTrigger` 消费，自动触发
+  REFUND + NOTIFY_DELAY（或 MARK_OUT_OF_STOCK），无需人工点补偿；`notification_log` 有记录。
+- **讲解要点**：设计文档 7.4 的补偿编排（Saga）已落地——不再是"人工点按钮假成功"，
+  而是事件驱动的自动补偿闭环，高风险步骤挂审批流。
 
 ---
 
@@ -128,6 +143,7 @@ echo "token=$TOKEN"
 
 - AI 无 `GET /anomalies` 历史列表接口，异常仅经 WebSocket 推送，根因走 `GET /anomalies/{id}/analysis`。
 - LLM 根因为可选增强，无 Ollama 时走兜底。
-- 补偿为人工触发白名单动作，不接真实支付/通知网关，无 Saga 编排。
+- 网关默认走 mock（`EG_*_PROVIDER=mock`）；支付为异步回调形态，真实 Provider（支付宝/企业微信）需在 `.env`
+  配置凭证（未配置时优雅降级为失败原因）。Saga 实例为内存态，重启即清。
 - 端点鉴权为登录 JWT（`Authorization: Bearer` / WS `?token=`），按角色授权（OPERATOR 可下单/补偿，
   VIEWER 只读）；演示用种子账号首次登录会强制改密。生产务必设置强随机 `EG_JWT_SECRET` 与 `EG_MACHINE_API_KEY`。

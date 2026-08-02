@@ -83,15 +83,38 @@ docker compose up -d --build
 
 ## 已知限制
 
-- **补偿为人工触发**：不对接真实支付、库存或通知系统，也无自动编排，动作只产出处理说明。
 - **异常无历史列表**：告警仅实时推送，暂无按历史检索的接口。
 - **鉴权为 JWT + localStorage**：无刷新令牌/吊销机制，角色或权限变更需重新登录生效；XSS 风险与常见管理台同级别。
 - **大模型根因为可选**：未配置本地模型时自动降级为关键词 / 数据摘要，不影响主流程。
+- **Saga 实例为内存态**：自动补偿编排器状态存于单实例内存（重启即清），审批单持久化到 DB；多实例/可恢复留给后续。
+- **支付异步回调演示走 mock 网关**：默认 `EG_PAYMENT_PROVIDER=mock`，无需凭证即可演示「发起支付 → 回调 → PAID」全流程；真实 Provider 见下方「网关接入」。
+
+## 网关接入（支付 / 库存 / 通知）
+
+支付/库存/通知均通过**网关抽象层**（`com.eventguard.gateway`）对接，默认 Mock 实现即可全流程演示，
+切换真实 Provider 只需改 `.env` 的三个环境变量，无需改代码：
+
+| 变量 | 可选值 | 说明 |
+|---|---|---|
+| `EG_PAYMENT_PROVIDER` | `mock`（默认）\| `alipay` | 支付宝沙箱网关（需 `EG_ALIPAY_APP_ID` / `EG_ALIPAY_PRIVATE_KEY`） |
+| `EG_INVENTORY_PROVIDER` | `mock`（默认）\| `http` | 外部库存服务 REST API（需 `EG_INVENTORY_SERVICE_URL`） |
+| `EG_NOTIFY_PROVIDER` | `mock`（默认）\| `wecom` | 企业微信群机器人 webhook（需 `EG_NOTIFY_WECOM_WEBHOOK`） |
+
+**支付是异步意图+回调**：`POST /orders/{id}/pay` 先落 `PaymentRequestedEvent`（状态仍 `PENDING_PAYMENT`），
+协调器调网关后写 `gateway_request`（PENDING），异步回调经 `POST /gateway/callback/{provider}`（机器密钥校验）
+派发 `CompletePaymentCommand` → `PaymentCompletedEvent`（PAID）。库存预留经 `InventoryGateway`，
+不足时产生 `InventoryReservationFailedEvent` 触发 R005 告警。
+
+**自动补偿（Saga）**：失败类事件（支付重试超限 / 库存预留失败）经 `SagaTrigger` 自动触发补偿步骤
+（REFUND / MARK_OUT_OF_STOCK / NOTIFY_DELAY）；高风险动作（退款 >100 元、冻结订单）挂起审批，
+经 `POST /approvals/{id}/approve|reject` 决策。可用 `EG_SAGA_ENABLED=false` 关闭。
+
+Mock 网关行为可配：`EG_GATEWAY_MOCK_PAYMENT_FAILURE_RATE`（支付失败率，演示异常流）、
+`EG_GATEWAY_MOCK_PAYMENT_DELAY_MS`（异步回调延迟）、`EG_GATEWAY_MOCK_SKUS`（内存库存种子）。
+真实 Provider 凭证未配置时优雅降级（返回失败原因），不会崩溃。
 
 ## 后续计划
 
-- 自动补偿编排（Saga），替代当前人工触发。
-- 对接真实支付 / 库存 / 通知网关。
 - 更丰富的自然语言能力与一致性验证。
 
 详细设计与未做项见 [`docs/eventguard-plan.md`](docs/eventguard-plan.md)。

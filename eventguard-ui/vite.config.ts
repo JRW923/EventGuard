@@ -20,6 +20,7 @@ export default defineConfig({
       '/auth': 'http://localhost:8080',
       '/users': 'http://localhost:8080',
       '/roles': 'http://localhost:8080',
+      '/gateway': 'http://localhost:8080',
       '/ws': {
         target: 'ws://localhost:8080',
         ws: true,

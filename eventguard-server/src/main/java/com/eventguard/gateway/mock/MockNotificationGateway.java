@@ -4,6 +4,7 @@ import com.eventguard.gateway.NotificationGateway;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -14,6 +15,7 @@ import java.util.UUID;
  * 不真实发送；真实 Provider（企业微信 webhook / SMTP）由 D 步按 EG_NOTIFY_PROVIDER 切换。
  */
 @Component
+@ConditionalOnProperty(name = "eg.notify.provider", havingValue = "mock", matchIfMissing = true)
 public class MockNotificationGateway implements NotificationGateway {
 
     private static final Logger log = LoggerFactory.getLogger(MockNotificationGateway.class);
