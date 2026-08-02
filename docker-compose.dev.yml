@@ -20,6 +20,10 @@ services:
   # Java：用 Dockerfile.dev 构建薄开发镜像（仅换启动方式，不重新打应用），
   # 后台持续增量编译，spring-boot:run + devtools 在类路径变化后自动重启。
   eventguard-server:
+    # ponytail: 必须用独立镜像名，否则 dev 构建会覆盖生产 `eventguard-eventguard-server:latest`
+    # （其 CMD 是 mvn spring-boot:run，需源码挂载），生产 `docker compose up -d` 无 --build 时
+    # 复用该镜像会因无 pom.xml 崩溃循环（曾致订单数据查不到）。
+    image: eventguard-eventguard-server-dev
     build:
       context: ./eventguard-server
       dockerfile: Dockerfile.dev
@@ -36,6 +40,7 @@ services:
   # Python：用 Dockerfile.dev（复用已构建 AI 镜像，依赖已装），仅开 uvicorn --reload，
   # 挂载源码后文件变化即自动重启。
   eventguard-ai:
+    image: eventguard-eventguard-ai-dev
     build:
       context: ./eventguard-ai
       dockerfile: Dockerfile.dev
