@@ -115,30 +115,32 @@ body {
   margin-left: 32px;
   flex: 1;
   border-bottom: none;
-  background: transparent !important;
+  /* ponytail: 强制与头部同色，而非依赖透明——Element Plus 默认 --el-menu-bg-color 为白，
+     若透明失效会出现白底白字看不清标签 */
+  background: #409eff !important;
 }
 .app-menu .el-menu-item,
 .app-menu .el-sub-menu__title {
   height: 60px;
   line-height: 60px;
-  border-bottom: 2px solid transparent;
-  color: rgba(255, 255, 255, 0.85) !important;
+  margin: 0 4px;
+  border-radius: 6px;
+  color: #fff !important;
+  font-weight: 500;
 }
 .app-menu .el-menu-item:hover,
 .app-menu .el-sub-menu__title:hover {
-  background: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.18) !important;
   color: #fff !important;
 }
-.app-menu .el-menu-item.is-active {
-  border-bottom-color: #fff;
-  font-weight: 600;
-  color: #fff !important;
-}
-/* 系统管理子菜单激活态（进入用户/角色管理页时高亮「系统管理」） */
+/* 激活态反色药丸：白底蓝字，当前页标签最清晰 */
+.app-menu .el-menu-item.is-active,
 .app-menu .el-sub-menu__title.is-active {
-  color: #fff !important;
-  border-bottom-color: #fff;
+  background: #fff !important;
+  color: #409eff !important;
   font-weight: 600;
+  border-radius: 6px;
+  border-bottom: none !important;
 }
 /* 内联渲染（非 teleport）时子菜单下拉面板 */
 .app-menu .el-sub-menu .el-menu {
