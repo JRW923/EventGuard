@@ -26,6 +26,10 @@ dev server 已在运行。
 
 # 方式二：用环境变量（避免每次输入）
 EG_SSH_HOST=服务器IP EG_SSH_USER=root ./dev-tunnel.sh
+
+# 指定私钥文件（服务器禁用密码登录时必须，Windows 下 Git Bash 用 /c/Users/... 形式）
+./dev-tunnel.sh root@服务器IP --key ~/.ssh/eventguard_key
+./dev-tunnel.sh root@服务器IP --key "/c/Users/你的用户/.ssh/eventguard_key"
 ```
 
 ## 用法（Windows PowerShell）
@@ -39,6 +43,9 @@ EG_SSH_HOST=服务器IP EG_SSH_USER=root ./dev-tunnel.sh
 
 # 方式二：用参数
 .\dev-tunnel.ps1 -SshHost 服务器IP -SshUser root
+
+# 指定私钥文件（服务器禁用密码登录时必须）
+.\dev-tunnel.ps1 root@服务器IP -IdentityFile C:\Users\你的用户\.ssh\eventguard_key
 
 # 只转发、不自动起服务器
 .\dev-tunnel.ps1 root@服务器IP -NoStart
@@ -81,6 +88,27 @@ powershell -ExecutionPolicy Bypass -File .\dev-tunnel.ps1 root@服务器IP
 > 指定，或把公钥发管理员追加到 `/root/.ssh/authorized_keys`。
 
 本地 `3000` 端口被占用时，脚本会自动顺延到 `3001` 并提示，避免 Vite 自行跳端口造成混淆。
+
+## 常见问题
+
+### 双击 `.ps1` 用记事本打开了
+Windows 默认把 `.ps1` 关联记事本。不要用 cmd 或双击运行，必须从 **PowerShell（或终端）命令行**
+执行；或者改用 Git Bash 跑 `dev-tunnel.sh`。
+
+### `Permission denied (publickey)`
+`root` 禁止密码登录，且所用私钥与服务器 `/root/.ssh/authorized_keys` 登记的公钥不是一对。
+- 确认用了正确的私钥：bash 用 `--key /路径/私钥`，PowerShell 用 `-IdentityFile C:\路径\私钥`。
+- 或本地生成新密钥 `ssh-keygen -t ed25519`，把 `~/.ssh/id_ed25519.pub` 发给管理员追加到服务器
+  `authorized_keys`。
+
+### `WARNING: UNPROTECTED PRIVATE KEY FILE`
+私钥文件权限过宽被 ssh 拒绝。Git Bash 下执行 `chmod 600 私钥路径`；Windows 下把 `.ssh`
+目录权限设为仅当前用户可读。
+
+### 本地仍打不开 `localhost:3000`
+说明隧道没真正建立——SSH 认证失败会走兜底提示但不会建隧道。确认脚本最后停在
+“建立 SSH 转发”之后、且该窗口保持打开，再去浏览器访问。若 3000 被占用会自动顺延到 3001，
+按提示访问对应端口即可。
 
 ## 原理
 
