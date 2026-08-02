@@ -45,6 +45,8 @@ EVENT_TO_STATE = {
 STAGNATION_TIMEOUT = timedelta(hours=24)
 # 死循环检测的阈值
 DEAD_LOOP_THRESHOLD = 5
+# 状态保留事件：补偿/意图类事件不改订单状态，不参与 P001 迁移校验
+STATE_PRESERVING_EVENTS = {"CompensationExecutedEvent", "PaymentRequestedEvent", "InventoryReservationFailedEvent", "OrderRefundRequestedEvent"}
 
 
 class ProcessLevelRuleDetector:
@@ -87,6 +89,9 @@ class ProcessLevelRuleDetector:
         current_state = EVENT_TO_STATE.get(sequence[0].get("event_type", ""), "INIT")
         for event in sequence[1:]:
             event_type = event.get("event_type", "")
+            # 状态保留事件（补偿/意图等不改状态）不参与迁移校验，避免误报
+            if event_type in STATE_PRESERVING_EVENTS:
+                continue
             legal_next = LEGAL_TRANSITIONS.get(current_state, set())
             if event_type not in legal_next:
                 anomalies.append(self._build_anomaly(

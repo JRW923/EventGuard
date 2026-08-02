@@ -305,3 +305,33 @@ git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时�
 - 改密流程：改后旧密码 401、新密码 200、`mustChangePassword` 置 false；admin 可重置他人密码。
 - 修复两个既存问题：`/orders/stats` 带 from/to 时 Instant 无法绑定 SQL 类型（改 Timestamp）→ 200；
   `OrderViewProjectionTest` 重载 stub 错位（`anyString()` 命中 String 重载而生产走 Object 重载，改 `any(Object.class)`）。
+
+---
+
+## 8. 网关接入 A→D 端到端验证（2026-08-03）
+
+### 8.1 单元测试
+
+| 套件 | 结果 |
+|------|------|
+| `mvn test`（server） | 139 通过 / 0 失败 / 4 跳过（Testcontainers 本机跳过） |
+| `pytest tests/`（AI） | 59 通过 / 0 失败 |
+| `npm test`（UI） | 24 通过 / 0 失败 |
+| `docker compose build` | server / ai / ui 三镜像构建成功 |
+
+### 8.2 端到端验证（docker compose 全栈，新代码 + V4__gateway.sql）
+
+- **AI 检测管道接通**：`GET /ai/health` 返回 `detector.running=true`（domain-events → anomaly-alerts → WebSocket 闭环首次真正运行）。
+- **支付异步意图+回调**：`POST /orders/{id}/pay` 返回 `status=PAYMENT_REQUESTED` + `paymentId`（订单仍 PENDING_PAYMENT），mock 回调后订单变 `PAID`（事件流 OrderCreated→PaymentRequested→PaymentCompleted）。
+- **库存不足 → R005 命中 → 告警**：`SKU-B` 数量 5 请求 10 → `InventoryReservationFailedEvent` → 规则引擎 R005 命中（rule_id=R005）→ anomaly-alerts topic 可见 → server 日志「收到异常告警」→ WebSocket 广播。
+- **Saga 自动补偿（重试超限）**：fail-payment×4 + retry-payment×4 → `OrderCancelledEvent`(重试超限) → Saga 自动 REFUND + NOTIFY_DELAY（事件流 v10/v11 CompensationExecutedEvent，notification_log 落库）。
+- **Saga 自动补偿（库存失败）**：库存不足 → 自动 MARK_OUT_OF_STOCK + NOTIFY_DELAY。
+- **审批流挂起/恢复**：金额 200>100 退款 → `GET /approvals` 见 PENDING REFUND → `POST /approvals/{id}/approve` → Saga 继续执行至 COMPLETED，approval 表 APPROVED。
+- **网关回调端点**：`POST /gateway/callback/payment` 无 X-API-Key → 401；nginx `/gateway/` 透传 X-API-Key 到后端。
+
+### 8.3 端到端暴露并修复的问题（接线时发现，非计划内）
+
+- **AI Kafka 消息是 Debezium envelope**：`kafka_consumer.py` 只 `json.loads` 未拆 `{schema,payload}`，导致 event_id/aggregate_id 为 None → 规则引擎 `UUID.fromString(null)` 500。修复：消费循环拆 envelope + 展平 JSONB 字符串字段。
+- **AnomalyAlertConsumer 消息转换失败**：全局 value-deserializer 为 String，但监听器接收 `AnomalyAlert` POJO → `MessageConversionException` 告警静默丢弃。修复：改收 String 手动反序列化。
+- **SagaTrigger 读金额竞态**：从 `order_view`（读模型）读金额，saga 消费组与投影消费组独立推进可能投影未跟上 → 读 0 → `requiresApproval(0)` 不触发。修复：改从 `domain_events` 事件库读 `OrderCreatedEvent.totalAmount`（事件库必然已落库）。
+- **P001 误报补偿事件**：`CompensationExecutedEvent` 未入 Python 状态表被 P001 判非法迁移。修复：`STATE_PRESERVING_EVENTS` 跳过状态保留事件。

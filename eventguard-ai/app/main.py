@@ -42,7 +42,8 @@ async def lifespan(app: FastAPI):
             # HMM 缺文件时 detect 返回 []，不阻断主流程
             hmm_detector=None,
         )
-        _consumer = EventKafkaConsumer(handler=handler)
+        # EventKafkaConsumer 的 handler 参数是可调用对象：传 handler.handle 而非实例本身
+        _consumer = EventKafkaConsumer(handler=handler.handle)
         _consumer.start()
         logger.info("AI 检测管道已启动：消费 domain-events → 检测 → 发布 anomaly-alerts")
     except Exception as e:

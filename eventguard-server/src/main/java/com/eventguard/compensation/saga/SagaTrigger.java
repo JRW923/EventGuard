@@ -77,13 +77,21 @@ public class SagaTrigger {
         }
     }
 
+    /**
+     * 读订单金额：从 domain_events（事件库）取 OrderCreatedEvent 的 totalAmount，
+     * 而非 order_view 读模型——Saga 由后续事件（OrderCancelled v9）触发时，
+     * 投影消费组可能尚未跟上，order_view 会漏读；事件库是 append-only 事实源，
+     * 触发事件之前的事件必然已落库。
+     */
     private BigDecimal loadAmount(UUID aggregateId) {
         try {
             List<BigDecimal> amounts = jdbc.queryForList(
-                    "SELECT total_amount FROM order_view WHERE order_id = ?",
+                    "SELECT (payload->>'totalAmount')::numeric FROM domain_events " +
+                            "WHERE aggregate_id = ? AND event_type='OrderCreatedEvent' LIMIT 1",
                     BigDecimal.class, aggregateId);
             return amounts.isEmpty() ? BigDecimal.ZERO : amounts.get(0);
         } catch (Exception e) {
+            log.warn("[Saga] 读取订单金额失败 order={}: {}", aggregateId, e.getMessage());
             return BigDecimal.ZERO;
         }
     }

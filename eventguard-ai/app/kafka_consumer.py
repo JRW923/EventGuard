@@ -59,6 +59,18 @@ class EventKafkaConsumer:
                                 value = json.loads(value.decode("utf-8"))
                             elif isinstance(value, str):
                                 value = json.loads(value)
+                            # Debezium envelope → 展平（与 Java EventDeserializer 对齐）：
+                            # envelope: {"schema":{...},"payload":{event_id,...}}；展平: {event_id,...}
+                            if isinstance(value, dict) and isinstance(value.get("payload"), dict) \
+                                    and "event_id" in value["payload"]:
+                                value = value["payload"]
+                            # Debezium 把 JSONB 列序列化为 JSON 字符串，展平为对象供检测器使用
+                            for key in ("payload", "metadata"):
+                                if isinstance(value.get(key), str):
+                                    try:
+                                        value[key] = json.loads(value[key])
+                                    except (ValueError, TypeError):
+                                        pass
                             self.handler(value)
                         except Exception as e:
                             logger.exception("handler error: %s", e)
