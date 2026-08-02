@@ -3,6 +3,7 @@ package com.eventguard.command.controller;
 import com.eventguard.command.command.CreateOrderCommand;
 import com.eventguard.command.handler.OrderCommandHandler;
 import com.eventguard.common.dto.CommandResult;
+import com.eventguard.gateway.service.PaymentCoordinator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,12 +26,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OrderCommandControllerTest {
 
     @Mock OrderCommandHandler handler;
+    @Mock PaymentCoordinator paymentCoordinator;
     OrderCommandController controller;
     MockMvc mvc;
 
     @BeforeEach
     void setUp() {
-        controller = new OrderCommandController(handler);
+        controller = new OrderCommandController(handler, paymentCoordinator);
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
         when(handler.handle(any(CreateOrderCommand.class))).thenReturn(CommandResult.success(1));
     }

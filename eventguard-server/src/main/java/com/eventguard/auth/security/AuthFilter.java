@@ -46,7 +46,8 @@ public class AuthFilter implements Filter {
         String path = req.getServletPath();
 
         if (path.startsWith("/actuator") || path.equals("/health")
-                || path.startsWith("/ws") || path.equals("/auth/login")) {
+                || path.startsWith("/ws") || path.equals("/auth/login")
+                || path.startsWith("/gateway")) {
             chain.doFilter(request, response);
             return;
         }

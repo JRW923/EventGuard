@@ -1,6 +1,7 @@
 package com.eventguard.consistency;
 
 import com.eventguard.command.aggregate.AggregateRepository;
+import com.eventguard.command.command.CompletePaymentCommand;
 import com.eventguard.command.command.CreateOrderCommand;
 import com.eventguard.command.command.PayOrderCommand;
 import com.eventguard.command.handler.CommandLogRepository;
@@ -79,7 +80,8 @@ class OrderConsistencyTest {
         CommandLogRepository commandLogRepository = new CommandLogRepository(jdbc, om);
         CommandRetryTemplate retryTemplate = new CommandRetryTemplate();
         handler = new OrderCommandHandler(aggregateRepository, commandLogRepository, retryTemplate,
-                new DataSourceTransactionManager(ds));
+                new DataSourceTransactionManager(ds), new com.eventguard.gateway.mock.MockInventoryGateway(
+                        new com.eventguard.gateway.config.GatewayProperties("mock", "mock", "mock", 0.0, 0, "SKU-A:100")));
     }
 
     private static String readResource(String path) throws Exception {
@@ -93,6 +95,8 @@ class OrderConsistencyTest {
     void concurrent_payments_same_order_should_only_succeed_once() throws Exception {
         UUID orderId = UUID.randomUUID();
         handler.handle(new CreateOrderCommand(UUID.randomUUID(), orderId, "user-1", new BigDecimal("99.00")));
+        // B 步：pay 只记录意图（PaymentRequestedEvent），随后并发 CompletePaymentCommand 争抢唯一 PAID
+        handler.handle(new PayOrderCommand(UUID.randomUUID(), orderId, "pay-0"));
 
         int threads = 10;
         ExecutorService executor = Executors.newFixedThreadPool(threads);
@@ -104,7 +108,7 @@ class OrderConsistencyTest {
             futures.add(executor.submit(() -> {
                 start.await();
                 try {
-                    return handler.handle(new PayOrderCommand(UUID.randomUUID(), orderId, paymentId));
+                    return handler.handle(new CompletePaymentCommand(UUID.randomUUID(), orderId, paymentId));
                 } catch (OptimisticConcurrencyException e) {
                     return CommandResult.failure("OCC: " + e.getMessage());
                 }
@@ -121,14 +125,14 @@ class OrderConsistencyTest {
         }).count();
 
         assertThat(successCount)
-                .as("10 个并发支付应该只有 1 个成功")
+                .as("10 个并发支付完成应该只有 1 个成功（其余 OCC 或状态已终）")
                 .isEqualTo(1);
 
-        // 验证事件版本号连续无间隔
+        // 验证事件版本号连续无间隔：create(1) + requested(2) + completed(3)
         List<Integer> versions = jdbc.queryForList(
                 "SELECT event_version FROM domain_events WHERE aggregate_id = ? ORDER BY event_version",
                 Integer.class, orderId);
-        assertThat(versions).containsExactly(1, 2);
+        assertThat(versions).containsExactly(1, 2, 3);
 
         // 验证聚合根重建后状态正确
         var agg = aggregateRepository.load(orderId);

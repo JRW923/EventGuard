@@ -64,7 +64,8 @@ class IdempotencyTest {
         CommandLogRepository commandLogRepository = new CommandLogRepository(jdbc, om);
         CommandRetryTemplate retryTemplate = new CommandRetryTemplate();
         handler = new OrderCommandHandler(aggregateRepository, commandLogRepository, retryTemplate,
-                new DataSourceTransactionManager(ds));
+                new DataSourceTransactionManager(ds), new com.eventguard.gateway.mock.MockInventoryGateway(
+                        new com.eventguard.gateway.config.GatewayProperties("mock", "mock", "mock", 0.0, 0, "SKU-A:100")));
     }
 
     private static String readResource(String path) throws Exception {

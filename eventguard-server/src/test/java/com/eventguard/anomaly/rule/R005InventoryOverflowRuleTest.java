@@ -17,7 +17,7 @@ class R005InventoryOverflowRuleTest {
         R005InventoryOverflowRule rule = new R005InventoryOverflowRule();
         SimpleEvent event = new SimpleEvent(
                 UUID.randomUUID(), UUID.randomUUID(), "InventoryReservedEvent", 3,
-                Instant.now(), Map.of(), Map.of("reservedQty", 150)
+                Instant.now(), Map.of(), Map.of("quantity", 150)
         );
         RuleContext ctx = RuleContext.builder()
                 .actualStock(100)
@@ -31,12 +31,26 @@ class R005InventoryOverflowRuleTest {
         R005InventoryOverflowRule rule = new R005InventoryOverflowRule();
         SimpleEvent event = new SimpleEvent(
                 UUID.randomUUID(), UUID.randomUUID(), "InventoryReservedEvent", 3,
-                Instant.now(), Map.of(), Map.of("reservedQty", 50)
+                Instant.now(), Map.of(), Map.of("quantity", 50)
         );
         RuleContext ctx = RuleContext.builder()
                 .actualStock(100)
                 .build();
 
         assertThat(rule.matches(event, ctx)).isFalse();
+    }
+
+    @Test
+    void matches_inventory_reservation_failed_event() {
+        R005InventoryOverflowRule rule = new R005InventoryOverflowRule();
+        SimpleEvent event = new SimpleEvent(
+                UUID.randomUUID(), UUID.randomUUID(), "InventoryReservationFailedEvent", 3,
+                Instant.now(), Map.of(), Map.of("quantity", 10, "reason", "库存不足")
+        );
+        RuleContext ctx = RuleContext.builder()
+                .actualStock(0)
+                .build();
+
+        assertThat(rule.matches(event, ctx)).isTrue();
     }
 }

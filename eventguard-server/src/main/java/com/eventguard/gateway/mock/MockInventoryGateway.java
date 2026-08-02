@@ -5,6 +5,7 @@ import com.eventguard.gateway.config.GatewayProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -16,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MockInventoryGateway implements InventoryGateway {
 
     private final ConcurrentHashMap<String, Integer> stock;
+    private final ConcurrentHashMap<UUID, ReservationResult> reservedByCommandId = new ConcurrentHashMap<>();
 
     public MockInventoryGateway(GatewayProperties properties) {
         this.stock = new ConcurrentHashMap<>(properties.getSkus());
@@ -23,6 +25,9 @@ public class MockInventoryGateway implements InventoryGateway {
 
     @Override
     public ReservationResult reserve(ReserveRequest req) {
+        // 幂等：同一 commandId（订单命令幂等键）已预留过则返回缓存结果，避免重放/重试重复扣减
+        ReservationResult cached = reservedByCommandId.get(req.commandId());
+        if (cached != null) return cached;
         // 原子递减：成功则扣库存并返回剩余，不足则不动库存返回失败
         boolean[] reserved = {false};
         Integer remaining = stock.compute(req.skuId(), (sku, current) -> {
@@ -34,10 +39,11 @@ public class MockInventoryGateway implements InventoryGateway {
             reserved[0] = true;
             return base - req.quantity();
         });
-        if (!reserved[0]) {
-            return new ReservationResult(false, remaining, "库存不足: " + req.skuId());
-        }
-        return new ReservationResult(true, remaining, null);
+        ReservationResult result = reserved[0]
+                ? new ReservationResult(true, remaining, null)
+                : new ReservationResult(false, remaining, "库存不足: " + req.skuId());
+        reservedByCommandId.put(req.commandId(), result);
+        return result;
     }
 
     @Override

@@ -4,6 +4,7 @@ import com.eventguard.auth.security.RequirePermission;
 import com.eventguard.command.command.*;
 import com.eventguard.command.handler.OrderCommandHandler;
 import com.eventguard.common.dto.CommandResult;
+import com.eventguard.gateway.service.PaymentCoordinator;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,9 +20,11 @@ import java.util.UUID;
 public class OrderCommandController {
 
     private final OrderCommandHandler handler;
+    private final PaymentCoordinator paymentCoordinator;
 
-    public OrderCommandController(OrderCommandHandler handler) {
+    public OrderCommandController(OrderCommandHandler handler, PaymentCoordinator paymentCoordinator) {
         this.handler = handler;
+        this.paymentCoordinator = paymentCoordinator;
     }
 
     /**
@@ -56,11 +59,19 @@ public class OrderCommandController {
     }
 
     @PostMapping("/{orderId}/pay")
-    public ResponseEntity<CommandResult> pay(@PathVariable UUID orderId,
+    public ResponseEntity<PayResponse> pay(@PathVariable UUID orderId,
             @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader,
             @RequestBody PayRequest req) {
-        return ResponseEntity.ok(handler.handle(
-                new PayOrderCommand(commandId(commandIdHeader), orderId, req.paymentId())));
+        UUID cmdId = commandId(commandIdHeader);
+        CommandResult result = handler.handle(new PayOrderCommand(cmdId, orderId, req.paymentId()));
+        if (!result.success()) {
+            return ResponseEntity.ok(new PayResponse(orderId, result.success(), result.version(),
+                    null, "PAYMENT_FAILED", result.error()));
+        }
+        // B 步：命令落 PaymentRequestedEvent 后，协调器发起网关支付（异步回调完成后置 PAID）
+        PaymentCoordinator.InitiationResult init = paymentCoordinator.initiate(orderId, cmdId);
+        return ResponseEntity.ok(new PayResponse(orderId, true, result.version(),
+                init.paymentId(), init.failed() ? "PAYMENT_FAILED" : "PAYMENT_REQUESTED", init.reason()));
     }
 
     @PostMapping("/{orderId}/fail-payment")
@@ -139,4 +150,7 @@ public class OrderCommandController {
     public record ShipRequest(String trackingNo) {}
     public record CancelRequest(String reason) {}
     public record RefundRequest(BigDecimal refundAmount) {}
+
+    /** 支付发起响应（B 步异步）：status=PAYMENT_REQUESTED 待网关回调 / PAYMENT_FAILED 已失败。 */
+    public record PayResponse(UUID orderId, boolean success, int version, String paymentId, String status, String error) {}
 }

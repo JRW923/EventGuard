@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 # 合法状态迁移表：当前状态 → 允许的下一事件类型集合
 LEGAL_TRANSITIONS = {
     "INIT": {"OrderCreatedEvent"},
-    "PENDING_PAYMENT": {"PaymentCompletedEvent", "PaymentFailedEvent", "OrderCancelledEvent"},
+    "PENDING_PAYMENT": {"PaymentCompletedEvent", "PaymentFailedEvent", "PaymentRequestedEvent", "OrderCancelledEvent"},
     "PAYMENT_FAILED": {"PaymentRetriedEvent", "OrderCancelledEvent"},
-    "PAID": {"InventoryReservedEvent", "OrderConfirmedEvent", "OrderRefundRequestedEvent", "OrderCancelledEvent"},
+    "PAID": {"InventoryReservedEvent", "InventoryReservationFailedEvent", "OrderConfirmedEvent", "OrderRefundRequestedEvent", "OrderCancelledEvent"},
     "CONFIRMED": {"ShippedEvent", "OrderCancelledEvent"},
     "SHIPPED": {"DeliveredEvent"},
     "DELIVERED": {"OrderClosedEvent"},
@@ -26,10 +26,12 @@ LEGAL_TRANSITIONS = {
 # 事件 → 事件后状态
 EVENT_TO_STATE = {
     "OrderCreatedEvent": "PENDING_PAYMENT",
+    "PaymentRequestedEvent": "PENDING_PAYMENT",
     "PaymentCompletedEvent": "PAID",
     "PaymentFailedEvent": "PAYMENT_FAILED",
     "PaymentRetriedEvent": "PENDING_PAYMENT",
     "InventoryReservedEvent": "PAID",
+    "InventoryReservationFailedEvent": "PAID",
     "OrderConfirmedEvent": "CONFIRMED",
     "ShippedEvent": "SHIPPED",
     "DeliveredEvent": "DELIVERED",

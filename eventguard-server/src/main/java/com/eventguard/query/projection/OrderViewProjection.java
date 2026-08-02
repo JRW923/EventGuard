@@ -77,8 +77,12 @@ public class OrderViewProjection implements Projection {
             jdbc.update(
                     "UPDATE order_view SET status = 'PENDING_PAYMENT', version = ? WHERE order_id = ?",
                     e.getVersion(), e.getAggregateId());
+        } else if (event instanceof PaymentRequestedEvent) {
+            // 支付意图事件不改读模型状态（仍 PENDING_PAYMENT，待网关回调）
         } else if (event instanceof InventoryReservedEvent) {
             // 不改读模型状态
+        } else if (event instanceof InventoryReservationFailedEvent) {
+            // 库存预留失败不改读模型状态（仍 PAID，触发 R005/Saga）
         } else if (event instanceof CompensationExecutedEvent) {
             // 补偿事件不改读模型状态，仅留痕
         } else if (event instanceof OrderRefundRequestedEvent) {

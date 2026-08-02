@@ -37,7 +37,16 @@ public class OrderAggregate extends AggregateRoot {
 
     public void handle(PayOrderCommand cmd) {
         if (status != OrderStatus.PENDING_PAYMENT) {
-            throw new IllegalStateException("只有待支付的订单才能支付，当前状态: " + status);
+            throw new IllegalStateException("只有待支付的订单才能发起支付，当前状态: " + status);
+        }
+        // B 步：支付改为异步意图+回调。此处仅记录「已发起支付」意图，状态不变；
+        // 真实结果由网关回调经 CompletePaymentCommand 落 PaymentCompletedEvent。
+        raise(new PaymentRequestedEvent(getAggregateId(), getVersion() + 1, cmd.getCommandId(), null));
+    }
+
+    public void handle(CompletePaymentCommand cmd) {
+        if (status != OrderStatus.PENDING_PAYMENT) {
+            throw new IllegalStateException("只有待支付的订单才能确认支付完成，当前状态: " + status);
         }
         raise(new PaymentCompletedEvent(getAggregateId(), getVersion() + 1, cmd.paymentId(), null));
     }
@@ -68,6 +77,15 @@ public class OrderAggregate extends AggregateRoot {
         }
         raise(new InventoryReservedEvent(getAggregateId(), getVersion() + 1,
                 cmd.skuId(), cmd.quantity(), null));
+    }
+
+    /** 库存预留失败分支：网关返回库存不足，记录失败事件（状态不变，仍 PAID），供 R005/Saga 处理。 */
+    public void handleInventoryReservationFailed(ReserveInventoryCommand cmd, String reason) {
+        if (status != OrderStatus.PAID) {
+            throw new IllegalStateException("只有已支付的订单才能预留库存，当前状态: " + status);
+        }
+        raise(new InventoryReservationFailedEvent(getAggregateId(), getVersion() + 1,
+                cmd.skuId(), cmd.quantity(), reason, null));
     }
 
     public void handle(ConfirmOrderCommand cmd) {
@@ -127,8 +145,12 @@ public class OrderAggregate extends AggregateRoot {
         } else if (event instanceof PaymentRetriedEvent e) {
             retryCount = e.getRetryCount();
             status = OrderStatus.PENDING_PAYMENT;
+        } else if (event instanceof PaymentRequestedEvent) {
+            // 支付意图事件不改状态（仍 PENDING_PAYMENT，待网关回调）
         } else if (event instanceof InventoryReservedEvent) {
             // 不改状态，仅记录
+        } else if (event instanceof InventoryReservationFailedEvent) {
+            // 库存预留失败不改状态（仍 PAID，触发 R005/Saga）
         } else if (event instanceof OrderConfirmedEvent) {
             status = OrderStatus.CONFIRMED;
         } else if (event instanceof ShippedEvent) {

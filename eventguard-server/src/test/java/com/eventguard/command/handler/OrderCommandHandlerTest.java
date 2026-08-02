@@ -6,6 +6,9 @@ import com.eventguard.command.aggregate.OrderStatus;
 import com.eventguard.command.command.CreateOrderCommand;
 import com.eventguard.command.command.PayOrderCommand;
 import com.eventguard.common.dto.CommandResult;
+import com.eventguard.gateway.InventoryGateway;
+import com.eventguard.gateway.mock.MockInventoryGateway;
+import com.eventguard.gateway.config.GatewayProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -37,7 +40,10 @@ class OrderCommandHandlerTest {
         // handler 内部 new TransactionTemplate(transactionManager)；
         // mock 的 transactionManager 默认 getTransaction→null、commit/rollback→no-op，
         // 因此 TransactionTemplate.execute 会直接执行 callback，无需额外 stub。
-        handler = new OrderCommandHandler(aggregateRepository, commandLogRepository, retryTemplate, transactionManager);
+        MockInventoryGateway inventoryGateway = new MockInventoryGateway(
+                new GatewayProperties("mock", "mock", "mock", 0.0, 0, "SKU-A:100"));
+        handler = new OrderCommandHandler(aggregateRepository, commandLogRepository, retryTemplate, transactionManager,
+                inventoryGateway);
     }
 
     @Test
@@ -89,7 +95,8 @@ class OrderCommandHandlerTest {
         PayOrderCommand cmd = new PayOrderCommand(UUID.randomUUID(), orderId, "pay-1");
         CommandResult result = handler.handle(cmd);
 
+        // B 步：pay 只记录支付意图，状态仍 PENDING_PAYMENT，等待网关回调 CompletePaymentCommand
         assertThat(result.success()).isTrue();
-        assertThat(agg.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(agg.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
     }
 }

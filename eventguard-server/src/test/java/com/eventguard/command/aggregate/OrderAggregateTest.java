@@ -4,6 +4,7 @@ import com.eventguard.command.command.*;
 import com.eventguard.event.model.DomainEvent;
 import com.eventguard.event.model.OrderCancelledEvent;
 import com.eventguard.event.model.OrderCreatedEvent;
+import com.eventguard.event.model.PaymentRequestedEvent;
 import com.eventguard.event.model.PaymentRetriedEvent;
 import org.junit.jupiter.api.Test;
 
@@ -45,9 +46,20 @@ class OrderAggregateTest {
     }
 
     @Test
-    void payOrder_should_transition_to_paid() {
+    void payOrder_should_emit_payment_requested_and_stay_pending() {
         OrderAggregate agg = newOrder();
         agg.handle(new PayOrderCommand(UUID.randomUUID(), agg.getAggregateId(), "pay-1"));
+        // B 步：支付改为异步意图，pay 只记录 PaymentRequestedEvent，状态不变
+        assertThat(agg.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        assertThat(agg.flushPendingEvents().get(0)).isInstanceOf(PaymentRequestedEvent.class);
+    }
+
+    @Test
+    void completePayment_should_transition_to_paid() {
+        OrderAggregate agg = newOrder();
+        agg.handle(new PayOrderCommand(UUID.randomUUID(), agg.getAggregateId(), "pay-1"));
+        agg.flushPendingEvents();
+        agg.handle(new CompletePaymentCommand(UUID.randomUUID(), agg.getAggregateId(), "gw-pay-1"));
         assertThat(agg.getStatus()).isEqualTo(OrderStatus.PAID);
     }
 
@@ -56,6 +68,8 @@ class OrderAggregateTest {
         OrderAggregate agg = newOrder();
         agg.handle(new PayOrderCommand(UUID.randomUUID(), agg.getAggregateId(), "pay-1"));
         agg.flushPendingEvents();
+        // 已完成支付（PAID）后再次发起支付应抛错
+        agg.handle(new CompletePaymentCommand(UUID.randomUUID(), agg.getAggregateId(), "gw-pay-1"));
         assertThatThrownBy(() -> agg.handle(
                 new PayOrderCommand(UUID.randomUUID(), agg.getAggregateId(), "pay-2")))
                 .isInstanceOf(IllegalStateException.class);
@@ -76,6 +90,7 @@ class OrderAggregateTest {
         UUID orderId = agg.getAggregateId();
 
         agg.handle(new PayOrderCommand(UUID.randomUUID(), orderId, "pay-1"));
+        agg.handle(new CompletePaymentCommand(UUID.randomUUID(), orderId, "gw-pay-1"));
         agg.handle(new ReserveInventoryCommand(UUID.randomUUID(), orderId, "sku-1", 1));
         agg.handle(new ConfirmOrderCommand(UUID.randomUUID(), orderId));
         agg.handle(new ShipOrderCommand(UUID.randomUUID(), orderId, "trk-1"));
@@ -83,7 +98,8 @@ class OrderAggregateTest {
         agg.handle(new CloseOrderCommand(UUID.randomUUID(), orderId));
 
         assertThat(agg.getStatus()).isEqualTo(OrderStatus.CLOSED);
-        assertThat(agg.flushPendingEvents()).hasSize(6);
+        // requested + completed + reserve + confirm + ship + deliver + close = 7（create 已在 newOrder 中 flush）
+        assertThat(agg.flushPendingEvents()).hasSize(7);
     }
 
     @Test
@@ -123,6 +139,7 @@ class OrderAggregateTest {
     void refund_from_paid_should_transition_to_refunded() {
         OrderAggregate agg = newOrder();
         agg.handle(new PayOrderCommand(UUID.randomUUID(), agg.getAggregateId(), "pay-1"));
+        agg.handle(new CompletePaymentCommand(UUID.randomUUID(), agg.getAggregateId(), "gw-pay-1"));
         agg.flushPendingEvents();
         agg.handle(new RefundOrderCommand(UUID.randomUUID(), agg.getAggregateId(), new BigDecimal("99.00")));
         assertThat(agg.getStatus()).isEqualTo(OrderStatus.REFUNDED);
@@ -133,6 +150,7 @@ class OrderAggregateTest {
         OrderAggregate agg = newOrder();
         UUID id = agg.getAggregateId();
         agg.handle(new PayOrderCommand(UUID.randomUUID(), id, "p"));
+        agg.handle(new CompletePaymentCommand(UUID.randomUUID(), id, "gw-p"));
         agg.handle(new ReserveInventoryCommand(UUID.randomUUID(), id, "s", 1));
         agg.handle(new ConfirmOrderCommand(UUID.randomUUID(), id));
         agg.handle(new ShipOrderCommand(UUID.randomUUID(), id, "t"));
