@@ -1,0 +1,43 @@
+# 后端热更新开发环境（仅开发者本地/调试使用，不影响生产配置 docker-compose.yml / Dockerfile）。
+#
+# 本文件不会被 `docker compose up` 自动合并，必须显式指定才生效：
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d eventguard-server eventguard-ai
+#
+# 行为：
+#   - 后端改代码即自动重新编译/重启，无需重建镜像；前端仍用 Vite dev server（见 scripts/）。
+#   - 服务名、端口、网络、依赖、环境变量均继承自 docker-compose.yml（同服务名合并），
+#     因此 Vite 的代理目标（eventguard-server:8080 / eventguard-ai:8000）与生产一致。
+#   - 生产部署仍只跑 `docker compose up -d`，本文件对它无任何影响。
+#
+# 注意（小内存机器）：dev 版 Java 服务内存占用高于生产 jar，若 OOM 可适当下调下方 mem_limit / 堆。
+
+services:
+  # Java：用 Dockerfile.dev 构建薄开发镜像（仅换启动方式，不重新打应用），
+  # 后台持续增量编译，spring-boot:run + devtools 在类路径变化后自动重启。
+  eventguard-server:
+    build:
+      context: ./eventguard-server
+      dockerfile: Dockerfile.dev
+    working_dir: /app
+    volumes:
+      - ./eventguard-server:/app
+      - maven-cache:/root/.m2
+    environment:
+      MAVEN_OPTS: "-Xmx512m"
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx384m"
+    mem_limit: 1.2g
+
+  # Python：用 Dockerfile.dev（复用已构建 AI 镜像，依赖已装），仅开 uvicorn --reload，
+  # 挂载源码后文件变化即自动重启。
+  eventguard-ai:
+    build:
+      context: ./eventguard-ai
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./eventguard-ai:/app
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    mem_limit: 800m
+
+volumes:
+  maven-cache:

@@ -1,0 +1,5 @@
+# 开发态镜像（仅 docker-compose.dev.yml 使用，不影响生产 Dockerfile）。
+# 复用已构建的 AI 镜像（依赖已安装），仅覆盖启动命令开启 uvicorn --reload，
+# 挂载源码后文件变化即自动重启。
+FROM eventguard-eventguard-ai
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

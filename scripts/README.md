@@ -110,6 +110,37 @@ Windows 默认把 `.ps1` 关联记事本。不要用 cmd 或双击运行，必�
 “建立 SSH 转发”之后、且该窗口保持打开，再去浏览器访问。若 3000 被占用会自动顺延到 3001，
 按提示访问对应端口即可。
 
+## 后端热更新（Java / Python）
+
+前端用 Vite dev server 热更新；后端（`eventguard-server` Java、`eventguard-ai` Python）也可用
+独立开发配置实现**改代码即重载，无需重建镜像**。
+
+- 配置隔离在 `docker-compose.dev.yml` + 各服务的 `Dockerfile.dev`，**不修改生产
+  `docker-compose.yml` / `Dockerfile`**，生产部署（`docker compose up -d`）完全无感知。
+- 服务名、端口、网络、依赖、环境变量均与生产一致，因此 Vite 代理
+  （`eventguard-server:8080` / `eventguard-ai:8000`）照常工作。
+
+### 用法
+
+```bash
+# 首次：构建薄开发镜像（仅换启动方式，不重新打应用，很快；若从未构建过生产镜像，先跑一次
+# docker compose build eventguard-ai eventguard-server）
+docker compose -f docker-compose.yml -f docker-compose.dev.yml build eventguard-server eventguard-ai
+
+# 启动后端开发模式（会替换正在运行的 prod 后端容器，端口不变）
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d eventguard-server eventguard-ai
+```
+
+- **Java**：容器后台持续增量编译，Spring Boot DevTools 在类路径变化后自动重启——改 `.java` 保存即生效。
+- **Python**：uvicorn `--reload`，改 `.py` 保存即重启。
+
+### 说明
+
+- 仅开发调试用；上线仍跑 `docker compose up -d`（不含 dev 文件），行为与之前完全一致。
+- 小内存机器注意：dev 版 Java 服务内存占用高于生产 jar，如 OOM 可适当下调
+  `docker-compose.dev.yml` 中 `mem_limit` / 堆。
+- 后端改完**无需重建前端**；前端 dev server（见上）代理自动指向重载后的后端。
+
 ## 原理
 
 - 开发态前端由 Vite dev server 提供（非生产 nginx 构建），`vite.config.ts` 已将
