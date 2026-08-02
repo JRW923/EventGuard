@@ -74,6 +74,11 @@ powershell -ExecutionPolicy Bypass -File .\dev-tunnel.ps1 root@服务器IP
 | `EG_SSH_USER` | 登录用户（方式二） | `root` |
 | `EG_UI_DIR` | 服务器上前端目录 | `/opt/EventGuard/eventguard-ui` |
 | `EG_LOCAL_PORT` | 本地监听端口 | `3000` |
+| `EG_SSH_KEY` / `--key <文件>`（bash）<br>`-IdentityFile <文件>`（PowerShell） | 指定私钥文件（服务器禁用密码登录时必须） | — |
+
+> 注：本服务器 `root` 禁止密码登录（`PermitRootLogin prohibit-password`），只能用密钥。
+> 本地需持有已在服务器 `authorized_keys` 登记的公钥对应的私钥；可用 `--key ~/.ssh/事件卫士`
+> 指定，或把公钥发管理员追加到 `/root/.ssh/authorized_keys`。
 
 本地 `3000` 端口被占用时，脚本会自动顺延到 `3001` 并提示，避免 Vite 自行跳端口造成混淆。
 

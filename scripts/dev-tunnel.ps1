@@ -20,6 +20,7 @@ param(
     [string]$SshUser = "root",
     [string]$UiDir = "/opt/EventGuard/eventguard-ui",
     [int]$LocalPort = 3000,
+    [string]$IdentityFile = "",
     [switch]$NoStart
 )
 
@@ -39,6 +40,10 @@ if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+# 拼装 ssh 选项（指定私钥时加 -i）
+$SshOpts = @()
+if ($IdentityFile) { $SshOpts += "-i", $IdentityFile }
+
 # 本地端口被占用则顺延一位，避免 Vite 自行跳端口造成困惑
 $occupied = Get-NetTCPConnection -LocalPort $LocalPort -ErrorAction SilentlyContinue
 if ($occupied) {
@@ -53,11 +58,11 @@ if (-not $NoStart) {
         "if pgrep -f vite >/dev/null 2>&1; then echo 'dev server 已在运行，跳过启动'; " +
         "else setsid nohup npm run dev >/tmp/vite-dev.log 2>&1 & sleep 3; " +
         "if pgrep -f vite >/dev/null 2>&1; then echo 'dev server 已启动'; else echo '启动失败，查看服务器 /tmp/vite-dev.log'; fi; fi"
-    ssh $Target $remoteCmd
+    ssh @SshOpts $Target $remoteCmd
 }
 
 Write-Host ""
 Write-Host "建立 SSH 转发: 本机 ${LocalPort} -> ${Target}:localhost:3000"
 Write-Host "转发建立后，浏览器打开 http://localhost:${LocalPort}"
 Write-Host "按 Ctrl-C 断开。"
-& ssh -N -L "${LocalPort}:localhost:3000" $Target
+& ssh @SshOpts -N -L "${LocalPort}:localhost:3000" $Target

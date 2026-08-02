@@ -11,6 +11,7 @@
 #   ./scripts/dev-tunnel.sh user@host
 #   EG_SSH_HOST=1.2.3.4 EG_SSH_USER=root ./scripts/dev-tunnel.sh
 #   ./scripts/dev-tunnel.sh user@host --no-start   # 不自动起服务器，只做转发
+#   ./scripts/dev-tunnel.sh user@host --key ~/.ssh/eventguard   # 指定私钥文件
 #
 # 按 Ctrl-C 断开转发（服务器侧的 dev server 不受影响，继续后台跑）。
 set -euo pipefail
@@ -19,15 +20,19 @@ UI_DIR="${EG_UI_DIR:-/opt/EventGuard/eventguard-ui}"
 LOCAL_PORT="${EG_LOCAL_PORT:-3000}"
 REMOTE_ADDR="localhost:3000"
 START_SERVER=1
+IDENTITY="${EG_SSH_KEY:-}"
 
-# 解析参数
+# 解析参数（--key 需带下一个参数）
 TARGET=""
-for arg in "$@"; do
-  case "$arg" in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --no-start) START_SERVER=0 ;;
-    -*) echo "未知参数: $arg" >&2; exit 1 ;;
-    *) TARGET="$arg" ;;
+    --key) IDENTITY="$2"; shift ;;
+    --key=*) IDENTITY="${1#--key=}" ;;
+    -*) echo "未知参数: $1" >&2; exit 1 ;;
+    *) TARGET="$1" ;;
   esac
+  shift
 done
 
 # 没给 user@host 时退回环境变量
@@ -48,11 +53,15 @@ if command -v ss >/dev/null 2>&1; then
   fi
 fi
 
+# 拼装 ssh 选项（指定私钥时加 -i）
+SSH_OPTS=()
+if [[ -n "$IDENTITY" ]]; then SSH_OPTS+=(-i "$IDENTITY"); fi
+
 # 服务器侧：确保 dev server 在跑（路径内联进远端命令，避免本地展开）
 if [[ "$START_SERVER" -eq 1 ]]; then
   echo "检查服务器侧 dev server（${UI_DIR}）..."
   # 单条远端命令：已在跑则跳过，否则后台拉起（setsid 使其脱离 ssh 会话存活）
-  ssh "$TARGET" "cd '${UI_DIR}' 2>/dev/null || exit 0; \
+  ssh "${SSH_OPTS[@]}" "$TARGET" "cd '${UI_DIR}' 2>/dev/null || exit 0; \
     if pgrep -f vite >/dev/null 2>&1; then echo 'dev server 已在运行，跳过启动'; \
     else setsid nohup npm run dev >/tmp/vite-dev.log 2>&1 & sleep 3; \
       if pgrep -f vite >/dev/null 2>&1; then echo 'dev server 已启动'; else echo '启动失败，查看服务器 /tmp/vite-dev.log'; fi; \
@@ -64,4 +73,4 @@ echo ""
 echo "建立 SSH 转发: 本机 ${LOCAL_PORT} -> ${TARGET}:${REMOTE_ADDR}"
 echo "转发建立后，浏览器打开 http://localhost:${LOCAL_PORT}"
 echo "按 Ctrl-C 断开。"
-exec ssh -N -L "${LOCAL_PORT}:${REMOTE_ADDR}" "$TARGET"
+exec ssh "${SSH_OPTS[@]}" -N -L "${LOCAL_PORT}:${REMOTE_ADDR}" "$TARGET"
