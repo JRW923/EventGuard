@@ -4,7 +4,9 @@ import com.eventguard.command.aggregate.AggregateRepository;
 import com.eventguard.command.aggregate.OrderAggregate;
 import com.eventguard.command.command.*;
 import com.eventguard.common.dto.CommandResult;
+import com.eventguard.common.metrics.EventGuardMetrics;
 import com.eventguard.gateway.InventoryGateway;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionCallback;
@@ -28,6 +30,10 @@ public class OrderCommandHandler {
     private final CommandRetryTemplate retryTemplate;
     private final TransactionTemplate transactionTemplate;
     private final InventoryGateway inventoryGateway;
+
+    // ponytail: 可观测指标为可选注入（EventGuardMetrics 是 @Component；单测 new 直构时为 null 走空操作）
+    @Autowired(required = false)
+    private EventGuardMetrics metrics;
 
     public OrderCommandHandler(AggregateRepository aggregateRepository,
                                CommandLogRepository commandLogRepository,
@@ -117,19 +123,42 @@ public class OrderCommandHandler {
         // 1. 幂等检查（事务外）
         Optional<CommandResult> existing = commandLogRepository.loadResult(cmd.getCommandId());
         if (existing.isPresent()) {
+            if (metrics != null) {
+                metrics.counter("eventguard.command.total", "command", cmd.getClass().getSimpleName(),
+                        "result", "idempotent");
+            }
             return existing.get();
         }
-        // 2. 事务内执行（含重试）：加载/处理/保存事件 + 写命令日志（同事务，保证原子性）
-        return retryTemplate.executeWithRetry(() -> transactionTemplate.execute((TransactionCallback<CommandResult>) status -> {
-            OrderAggregate order = aggregateRepository.load(cmd.getAggregateId());
-            action.accept(order);
-            aggregateRepository.save(order);
-            CommandResult result = error == null
-                    ? CommandResult.success(order.getVersion())
-                    : new CommandResult(true, order.getVersion(), error, cmd.getAggregateId());
-            commandLogRepository.save(cmd.getCommandId(), cmd.getAggregateId(),
-                    cmd.getClass().getSimpleName(), result);
+        long start = System.currentTimeMillis();
+        try {
+            // 2. 事务内执行（含重试）：加载/处理/保存事件 + 写命令日志（同事务，保证原子性）
+            CommandResult result = retryTemplate.executeWithRetry(() -> transactionTemplate.execute((TransactionCallback<CommandResult>) status -> {
+                OrderAggregate order = aggregateRepository.load(cmd.getAggregateId());
+                action.accept(order);
+                aggregateRepository.save(order);
+                CommandResult r = error == null
+                        ? CommandResult.success(order.getVersion())
+                        : new CommandResult(true, order.getVersion(), error, cmd.getAggregateId());
+                commandLogRepository.save(cmd.getCommandId(), cmd.getAggregateId(),
+                        cmd.getClass().getSimpleName(), r);
+                return r;
+            }));
+            if (metrics != null) {
+                metrics.counter("eventguard.command.total", "command", cmd.getClass().getSimpleName(),
+                        "result", "success");
+            }
             return result;
-        }));
+        } catch (Exception e) {
+            if (metrics != null) {
+                metrics.counter("eventguard.command.total", "command", cmd.getClass().getSimpleName(),
+                        "result", "failure");
+            }
+            throw e;
+        } finally {
+            if (metrics != null) {
+                metrics.record("eventguard.command.duration", System.currentTimeMillis() - start,
+                        "command", cmd.getClass().getSimpleName());
+            }
+        }
     }
 }

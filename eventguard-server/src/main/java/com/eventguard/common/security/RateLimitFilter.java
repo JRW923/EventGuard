@@ -1,5 +1,6 @@
 package com.eventguard.common.security;
 
+import com.eventguard.common.metrics.EventGuardMetrics;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -9,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -36,6 +38,9 @@ public class RateLimitFilter implements Filter {
     private final long windowMs;
     private final boolean enabled;
     private final ConcurrentHashMap<String, long[]> windows = new ConcurrentHashMap<>();
+
+    @Autowired(required = false)
+    private EventGuardMetrics metrics;
 
     public RateLimitFilter(
             @Value("${eg.rate-limit.enabled:true}") boolean enabled,
@@ -66,6 +71,9 @@ public class RateLimitFilter implements Filter {
             chain.doFilter(request, response);
         } else {
             log.warn("[限流] IP {} 请求过频，拒绝", ip);
+            if (metrics != null) {
+                metrics.counter("eventguard.ratelimit.rejected");
+            }
             HttpServletResponse res = (HttpServletResponse) response;
             res.setStatus(429); // HttpServletResponse.SC_TOO_MANY_REQUESTS（servlet 版本无此常量，用字面量）
             res.setContentType("application/json;charset=UTF-8");

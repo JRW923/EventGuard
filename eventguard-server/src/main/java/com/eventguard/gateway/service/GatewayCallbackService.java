@@ -4,10 +4,12 @@ import com.eventguard.command.command.CompletePaymentCommand;
 import com.eventguard.command.command.FailPaymentCommand;
 import com.eventguard.command.handler.OrderCommandHandler;
 import com.eventguard.common.dto.CommandResult;
+import com.eventguard.common.metrics.EventGuardMetrics;
 import com.eventguard.gateway.model.GatewayRequest;
 import com.eventguard.gateway.repository.GatewayRequestRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -29,6 +31,9 @@ public class GatewayCallbackService {
     private final GatewayRequestRepository gatewayRequestRepository;
     private final OrderCommandHandler orderCommandHandler;
 
+    @Autowired(required = false)
+    private EventGuardMetrics metrics;
+
     public GatewayCallbackService(GatewayRequestRepository gatewayRequestRepository,
                                   OrderCommandHandler orderCommandHandler) {
         this.gatewayRequestRepository = gatewayRequestRepository;
@@ -43,6 +48,18 @@ public class GatewayCallbackService {
      * @param error       失败原因（success=true 时可空）
      */
     public CommandResult process(String externalRef, UUID orderId, boolean success, String error) {
+        long start = System.currentTimeMillis();
+        try {
+            return doProcess(externalRef, orderId, success, error);
+        } finally {
+            if (metrics != null) {
+                metrics.record("eventguard.payment.callback.duration", System.currentTimeMillis() - start,
+                        "success", String.valueOf(success));
+            }
+        }
+    }
+
+    private CommandResult doProcess(String externalRef, UUID orderId, boolean success, String error) {
         Optional<GatewayRequest> reqOpt = gatewayRequestRepository.findByExternalRef(externalRef);
         if (reqOpt.isPresent()) {
             GatewayRequest req = reqOpt.get();

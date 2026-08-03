@@ -3,8 +3,11 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import Response
 from pydantic import BaseModel
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from app import metrics as egm
 from app.analyzer.root_cause import RootCauseAnalyzer, LLMResponseError
 from app.config import settings
 from app.detector.event_level import EventLevelService
@@ -45,12 +48,14 @@ async def lifespan(app: FastAPI):
         # EventKafkaConsumer 的 handler 参数是可调用对象：传 handler.handle 而非实例本身
         _consumer = EventKafkaConsumer(handler=handler.handle)
         _consumer.start()
+        egm.detector_running.set(1)
         logger.info("AI 检测管道已启动：消费 domain-events → 检测 → 发布 anomaly-alerts")
     except Exception as e:
         # ponytail: 检测管道启动失败不应拖垮 API（NL 查询 / 根因分析仍可用），降级为关闭状态
         logger.exception("AI 检测管道启动失败（降级：仅提供 API，不消费事件）: %s", e)
         _consumer = None
         _publisher = None
+        egm.detector_running.set(0)
     try:
         yield
     finally:
@@ -58,6 +63,7 @@ async def lifespan(app: FastAPI):
             _consumer.stop()
         if _publisher is not None:
             _publisher.close()
+        egm.detector_running.set(0)
         logger.info("AI 检测管道已停止")
 
 
@@ -98,6 +104,12 @@ def health():
             "group_id": _consumer.group_id if _consumer is not None else None,
         },
     }
+
+
+@app.get("/metrics")
+def metrics():
+    """Prometheus 抓取端点（prometheus.yml 已配置 eventguard-ai job）。"""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/anomalies/{anomaly_id}/analysis")

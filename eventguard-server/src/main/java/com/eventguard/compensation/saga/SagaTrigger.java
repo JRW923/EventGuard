@@ -1,5 +1,6 @@
 package com.eventguard.compensation.saga;
 
+import com.eventguard.common.metrics.EventGuardMetrics;
 import com.eventguard.event.model.DomainEvent;
 import com.eventguard.event.model.InventoryReservationFailedEvent;
 import com.eventguard.event.model.OrderCancelledEvent;
@@ -7,6 +8,7 @@ import com.eventguard.event.store.EventDeserializer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,6 +41,9 @@ public class SagaTrigger {
     private final EventDeserializer deserializer;
     private final JdbcTemplate jdbc;
 
+    @Autowired(required = false)
+    private EventGuardMetrics metrics;
+
     public SagaTrigger(CompensationSaga compensationSaga, EventDeserializer deserializer, JdbcTemplate jdbc) {
         this.compensationSaga = compensationSaga;
         this.deserializer = deserializer;
@@ -68,11 +73,17 @@ public class SagaTrigger {
             compensationSaga.start(e.getAggregateId(), List.of(
                     new SagaStep("REFUND", Map.of("amount", amount != null ? amount : BigDecimal.ZERO)),
                     new SagaStep("NOTIFY_DELAY", Map.of())));
+            if (metrics != null) {
+                metrics.counter("eventguard.saga.started", "trigger", "OrderCancelledEvent");
+            }
             log.info("[Saga] 支付重试超限 → REFUND+NOTIFY 自动补偿 order={}", e.getAggregateId());
         } else if (event instanceof InventoryReservationFailedEvent e) {
             compensationSaga.start(e.getAggregateId(), List.of(
                     new SagaStep("MARK_OUT_OF_STOCK", Map.of("sku", e.getSkuId())),
                     new SagaStep("NOTIFY_DELAY", Map.of())));
+            if (metrics != null) {
+                metrics.counter("eventguard.saga.started", "trigger", "InventoryReservationFailedEvent");
+            }
             log.info("[Saga] 库存预留失败 → MARK_OUT_OF_STOCK+NOTIFY 自动补偿 order={}", e.getAggregateId());
         }
     }

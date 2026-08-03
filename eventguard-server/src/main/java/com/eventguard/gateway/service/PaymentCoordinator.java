@@ -2,12 +2,14 @@ package com.eventguard.gateway.service;
 
 import com.eventguard.command.aggregate.AggregateRepository;
 import com.eventguard.command.aggregate.OrderAggregate;
+import com.eventguard.common.metrics.EventGuardMetrics;
 import com.eventguard.gateway.PaymentGateway;
 import com.eventguard.gateway.config.GatewayProperties;
 import com.eventguard.gateway.model.GatewayRequest;
 import com.eventguard.gateway.repository.GatewayRequestRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -38,6 +40,9 @@ public class PaymentCoordinator {
     private final GatewayProperties properties;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             r -> { Thread t = new Thread(r, "mock-gateway-callback"); t.setDaemon(true); return t; });
+
+    @Autowired(required = false)
+    private EventGuardMetrics metrics;
 
     public PaymentCoordinator(PaymentGateway paymentGateway,
                               GatewayRequestRepository gatewayRequestRepository,
@@ -81,8 +86,17 @@ public class PaymentCoordinator {
         if (!result.success()) {
             // 网关创建即失败（如失败率注入）：直接走失败回调，订单 → PAYMENT_FAILED
             log.warn("[支付] 网关创建支付失败 order={} reason={}", orderId, result.error());
+            if (metrics != null) {
+                metrics.counter("eventguard.payment.initiated", "provider", properties.getPaymentProvider(),
+                        "result", "FAILED");
+            }
             callbackService.process(result.paymentId(), orderId, false, result.error());
             return new InitiationResult(null, true, result.error());
+        }
+
+        if (metrics != null) {
+            metrics.counter("eventguard.payment.initiated", "provider", properties.getPaymentProvider(),
+                    "result", "PENDING");
         }
 
         // mock 异步：延时回调成功；真实网关由外部回调进入

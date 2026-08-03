@@ -5,8 +5,10 @@ import com.eventguard.compensation.model.CompensationRequest;
 import com.eventguard.compensation.model.CompensationResult;
 import com.eventguard.compensation.repository.ApprovalRepository;
 import com.eventguard.compensation.service.CompensationService;
+import com.eventguard.common.metrics.EventGuardMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -31,6 +33,9 @@ public class CompensationSaga {
     private final CompensationActionRegistry registry;
     private final ApprovalRepository approvalRepository;
     private final Map<UUID, SagaInstance> instances = new ConcurrentHashMap<>();
+
+    @Autowired(required = false)
+    private EventGuardMetrics metrics;
 
     public CompensationSaga(CompensationService compensationService,
                             CompensationActionRegistry registry,
@@ -84,6 +89,9 @@ public class CompensationSaga {
                 approvalRepository.insert(approvalId, saga.sagaId, step.actionType(), saga.aggregateId,
                         step.params(), "saga");
                 saga.status = SagaStatus.AWAITING_APPROVAL;
+                if (metrics != null) {
+                    metrics.counter("eventguard.saga.final_status", "status", "AWAITING_APPROVAL");
+                }
                 log.info("[Saga] {} 步骤 {} 需审批，挂起 approvalId={}", saga.sagaId, step.actionType(), approvalId);
                 return saga.status;
             }
@@ -92,14 +100,25 @@ public class CompensationSaga {
         }
         saga.status = SagaStatus.COMPLETED;
         instances.remove(saga.sagaId);
+        if (metrics != null) {
+            metrics.counter("eventguard.saga.final_status", "status", "COMPLETED");
+        }
         log.info("[Saga] {} 已完成", saga.sagaId);
         return saga.status;
     }
 
     private void executeStep(SagaInstance saga, SagaStep step) {
-        CompensationResult result = compensationService.execute(new CompensationRequest(
-                step.actionType(), saga.aggregateId, step.params()));
-        log.info("[Saga] 步骤 {} 执行结果 success={} {}", step.actionType(), result.isSuccess(), result.getMessage());
+        long start = System.currentTimeMillis();
+        try {
+            CompensationResult result = compensationService.execute(new CompensationRequest(
+                    step.actionType(), saga.aggregateId, step.params()));
+            log.info("[Saga] 步骤 {} 执行结果 success={} {}", step.actionType(), result.isSuccess(), result.getMessage());
+        } finally {
+            if (metrics != null) {
+                metrics.record("eventguard.saga.step.duration", System.currentTimeMillis() - start,
+                        "action", step.actionType());
+            }
+        }
     }
 
     /**
@@ -126,6 +145,9 @@ public class CompensationSaga {
         if (!approved) {
             saga.status = SagaStatus.FAILED;
             instances.remove(saga.sagaId);
+            if (metrics != null) {
+                metrics.counter("eventguard.saga.final_status", "status", "FAILED");
+            }
             log.info("[Saga] {} 被拒绝，标记 FAILED", saga.sagaId);
             return saga.status;
         }

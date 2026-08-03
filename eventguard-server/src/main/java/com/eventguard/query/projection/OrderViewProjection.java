@@ -1,11 +1,13 @@
 package com.eventguard.query.projection;
 
 import com.eventguard.common.idempotent.IdempotentConsumer;
+import com.eventguard.common.metrics.EventGuardMetrics;
 import com.eventguard.event.model.*;
 import com.eventguard.event.store.EventDeserializer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
@@ -26,6 +28,9 @@ public class OrderViewProjection implements Projection {
     private final JdbcTemplate jdbc;
     private final EventDeserializer deserializer;
     private final IdempotentConsumer idempotentConsumer;
+
+    @Autowired(required = false)
+    private EventGuardMetrics metrics;
 
     public OrderViewProjection(JdbcTemplate jdbc, EventDeserializer deserializer,
                                IdempotentConsumer idempotentConsumer) {
@@ -52,6 +57,9 @@ public class OrderViewProjection implements Projection {
         }
         try {
             handle(event);
+            if (metrics != null) {
+                metrics.counter("eventguard.projection.event.processed", "event_type", event.getEventType());
+            }
             idempotentConsumer.markProcessed(CONSUMER_GROUP, event.getEventId());
         } catch (Exception e) {
             log.error("[投影] 处理事件失败 eventId={}", event.getEventId(), e);

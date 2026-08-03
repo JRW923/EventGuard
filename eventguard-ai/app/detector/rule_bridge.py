@@ -6,6 +6,7 @@ from typing import Optional
 
 import httpx
 
+from app import metrics as egm
 from app.config import settings
 from app.model.anomaly import AnomalyResult
 
@@ -32,6 +33,7 @@ class RuleBridge:
                 resp.raise_for_status()
                 data = resp.json()
         except (httpx.HTTPError, ValueError) as e:  # ValueError 覆盖 200 但 body 非合法 JSON（JSONDecodeError）
+            egm.rule_bridge_errors.inc()
             logger.warning("规则引擎调用失败,降级跳过: %s", e)
             return None
 

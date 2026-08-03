@@ -3,9 +3,12 @@
 import json
 import logging
 import threading
+import time
 from typing import Callable, Optional
 
 from kafka import KafkaConsumer
+
+from app import metrics as egm
 
 logger = logging.getLogger(__name__)
 
@@ -121,15 +124,21 @@ class DetectionHandler:
 
     def handle(self, event: dict) -> None:
         """处理单条事件：事件级检测 + 流程级检测"""
+        egm.events_consumed.inc()
+        _t0 = time.time()
+        try:
+            self._detect_and_publish(event)
+        finally:
+            egm.detection_latency.observe(time.time() - _t0)
+
+    def _detect_and_publish(self, event: dict) -> None:
+        """事件级 + 流程级检测并发布异常。"""
         # 1. 事件级检测
         result = self.event_level_service.detect(event)
         if result.is_anomaly:
             anomaly = self._build_anomaly(event, result)
             anomaly_store.save(anomaly)
-            try:
-                self.publisher.publish(anomaly)
-            except Exception as e:  # ponytail: broker 不可达时丢告警但 store 已留痕;上限=无重试/无死信,升级路径=异步发送+失败回调
-                logger.error("发布异常失败(已存内存 store): %s", e)
+            self._publish(anomaly)
 
         # 2. 流程级检测（M3.6 接入）
         if self.process_level_detector is not None and self.event_window is not None:
@@ -142,10 +151,20 @@ class DetectionHandler:
             )
             for pa in process_anomalies:
                 anomaly_store.save(pa)
-                try:
-                    self.publisher.publish(pa)
-                except Exception as e:  # ponytail: broker 不可达时丢告警但 store 已留痕;升级路径=异步发送+失败回调
-                    logger.error("发布流程级异常失败(已存内存 store): %s", e)
+                self._publish(pa)
+
+    def _publish(self, anomaly) -> None:
+        """发布异常到 Kafka；失败时留痕并计数（broker 不可达丢告警但 store 已留痕）。"""
+        try:
+            self.publisher.publish(anomaly)
+            egm.anomalies_published.labels(
+                rule_id=anomaly.rule_id or anomaly.source or "unknown",
+                source=anomaly.source or "unknown",
+                level=anomaly.level or "unknown",
+            ).inc()
+        except Exception as e:  # ponytail: broker 不可达时丢告警但 store 已留痕;升级路径=异步发送+失败回调
+            egm.publish_errors.inc()
+            logger.error("发布异常失败(已存内存 store): %s", e)
 
     def _build_anomaly(self, event: dict, result: AnomalyResult) -> Anomaly:
         """从检测结果构建 Anomaly 模型"""

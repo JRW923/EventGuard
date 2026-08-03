@@ -1,8 +1,10 @@
 """NL 查询引擎：意图分类 → 模板执行 → LLM 润色回答。"""
 import json
 import logging
+import time
 from typing import Optional
 
+from app import metrics as egm
 from app.analyzer.llm_client import LLMClient
 from app.query.intent_classifier import IntentClassifier
 from app.query.prompts import NL_ANSWER_SYSTEM_PROMPT, NL_ANSWER_USER_TEMPLATE
@@ -34,18 +36,27 @@ class NLQueryEngine:
         intent = await self.intent_classifier.classify(question)
         logger.info("NL 查询意图：%s（问题：%s）", intent, question)
 
-        # 2. 模板路由（缺订单号/未知意图时返回友好结果而非 500）
+        _t0 = time.time()
+        fallback = "false"
         try:
-            data = await self._route_template(intent, question)
-        except ValueError as e:
-            # ponytail: MVP 不接 Text-to-SQL，无法从问题提取订单号时直接告知用户，避免裸异常 500
-            logger.warning("NL 路由失败：%s", e)
-            return QueryResult(intent=intent, data=None, answer=str(e))
+            # 2. 模板路由（缺订单号/未知意图时返回友好结果而非 500）
+            try:
+                data = await self._route_template(intent, question)
+            except ValueError as e:
+                # ponytail: MVP 不接 Text-to-SQL，无法从问题提取订单号时直接告知用户，避免裸异常 500
+                logger.warning("NL 路由失败：%s", e)
+                fallback = "true"
+                return QueryResult(intent=intent, data=None, answer=str(e))
 
-        # 3. LLM 润色回答
-        answer = await self._generate_answer(question, intent, data)
-
-        return QueryResult(intent=intent, data=data, answer=answer)
+            # 3. LLM 润色回答
+            answer = await self._generate_answer(question, intent, data)
+            # LLM 失败时 _generate_answer 内部已降级为数据摘要，这里据此标记 fallback
+            if answer == self._fallback_answer(intent, data):
+                fallback = "true"
+            return QueryResult(intent=intent, data=data, answer=answer)
+        finally:
+            egm.nl_query_duration.labels(intent=intent).observe(time.time() - _t0)
+            egm.nl_query_total.labels(intent=intent, fallback=fallback).inc()
 
     async def _route_template(self, intent: str, question: str):
         """根据意图路由到对应模板。"""

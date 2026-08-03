@@ -13,6 +13,12 @@ scrape_configs:
     static_configs:
       - targets: ["eventguard-server:8080"]
 
+  # 评测模块可观测数据：抓取 AI 服务的 prometheus_client 指标（检测吞吐/延迟、NL 查询等）
+  - job_name: "eventguard-ai"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["eventguard-ai:8000"]
+
   # 如需抓取 Postgres / 容器指标，取消注释并确保对应服务存在：
   # - job_name: "postgres"
   #   static_configs: [{ targets: ["postgres-exporter:9187"] }]
