@@ -1,0 +1,7 @@
+# EventGuard 评测器（bench）依赖
+requests==2.32.3
+kafka-python==2.0.2
+psycopg2-binary==2.9.9
+matplotlib==3.9.2
+websocket-client==1.8.0
+pytest==8.2.2

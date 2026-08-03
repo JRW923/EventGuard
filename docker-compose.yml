@@ -149,6 +149,52 @@ services:
     command: --random --interval 60s kill --signal SIGTERM
     profiles: ["chaos"]
 
+  # ===== 评测模块（bench）：docker compose --profile bench run --rm bench =====
+  # 栈内直连 Kafka/Postgres/Prometheus/server/AI，产出 out/benchmark-report.{md,json,html}。
+  # 混沌注入由宿主机 bash eventguard-benchmark/chaos_run.sh 完成（bench 容器无 docker.sock）。
+  bench:
+    build: { context: ./eventguard-benchmark }
+    profiles: ["bench"]
+    image: eventguard-eventguard-bench
+    working_dir: /app
+    environment:
+      SERVER_BASE_URL: http://eventguard-server:8080
+      AI_BASE_URL: http://eventguard-ai:8000
+      KAFKA_BOOTSTRAP: kafka:9092
+      PROMETHEUS_URL: http://prometheus:9090
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      EG_MACHINE_API_KEY: ${EG_MACHINE_API_KEY}
+      EG_JWT_SECRET: ${EG_JWT_SECRET}
+      EG_LLM_BASE_URL: ${EG_LLM_BASE_URL:-}
+      EG_LLM_API_KEY: ${EG_LLM_API_KEY:-}
+      BENCH_ADMIN_USER: admin
+      BENCH_ADMIN_PASSWORD: ${EG_ADMIN_PASSWORD:-admin123456}
+      BENCH_OPERATOR_USER: operator
+      BENCH_OPERATOR_PASSWORD: ${EG_OPERATOR_PASSWORD:-operator123456}
+      BENCH_VIEWER_USER: viewer
+      BENCH_VIEWER_PASSWORD: ${EG_VIEWER_PASSWORD:-viewer123456}
+      BENCH_PASSWORD: ${BENCH_PASSWORD:-bench123456}
+      EG_RATE_LIMIT_MAX: ${EG_RATE_LIMIT_MAX:-60}
+      EG_RATE_LIMIT_ENABLED: ${EG_RATE_LIMIT_ENABLED:-true}
+      EG_GATEWAY_MOCK_PAYMENT_DELAY_MS: ${EG_GATEWAY_MOCK_PAYMENT_DELAY_MS:-0}
+      EG_SAGA_ENABLED: ${EG_SAGA_ENABLED:-true}
+      BENCH_SUITES: ${BENCH_SUITES:-functional}
+      BENCH_OUT: /out
+    volumes:
+      - "./eventguard-benchmark/out:/out:rw"
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      eventguard-server: { condition: service_started }
+      eventguard-ai: { condition: service_started }
+      prometheus: { condition: service_started }
+    mem_limit: 512m
+    logging: *default-logging
+
   # ===== P0-2 监控告警（Prometheus + Alertmanager + Grafana）=====
   # 抓取 eventguard-server:8080/actuator/prometheus；告警转 webhook（ALERT_WEBHOOK_URL）。
   # Grafana 默认账号 admin/admin（首次登录可改），数据源 http://prometheus:9090。

@@ -136,6 +136,24 @@ Mock 网关行为可配：`EG_GATEWAY_MOCK_PAYMENT_FAILURE_RATE`（支付失败�
 - **CORS**：默认同源；`EG_CORS_ALLOWED_ORIGINS`（逗号分隔）开放跨域给第三方。
 - **PWA / 移动端**：可安装为 PWA（manifest.webmanifest）；窄屏自动换行、菜单横向滚动。
 
+## 评测模块（bench）
+
+内置一键评测器，逐功能驱动真实运行的全栈并产出**可观测、可复现、诚实标注**的量化报告
+（适合简历引用与工程验收）：`docker compose --profile bench run --rm bench`。
+
+- **覆盖**：事件溯源一致性/读己写/幂等、CDC→Kafka 管道延迟、AI 异常检测精度（R001–R005+P002/P003
+  的 P/R/F1 与检测延迟）、中文 NL 查询准确率、Saga 自动补偿成功率、网关异步支付回调、RBAC 矩阵、
+  限流正确性、50 并发负载吞吐、混沌韧性（PG 崩溃零丢失/恢复时间）。
+- **产物**：`benchmark-report.md` / `.json`（canonical schema）+ 自包含 `.html`（内嵌图表）
+  + Grafana dashboard 导入 JSON（`eventguard-benchmark/dashboard/`）。
+- **可观测数据**：server 新增 `eventguard.*` Micrometer 指标（命令延迟/吞吐、Saga、告警、支付回调、
+  限流拒绝、投影计数），AI 新增 `eventguard_ai_*` prometheus_client 指标（检测吞吐/延迟、NL 查询），
+  Prometheus 已抓取两端；Grafana 一块基准看板预览全部。
+- **诚实性**：每条断言标注驱动方式（`rest` / `kafka_inject` / `db_assert` / `chaos`）；聚合状态机
+  不可达的规则用合成事件注入并如实标注；HMM 未接线、LLM 缺失等运行条件写入报告。
+
+> 详见 [`eventguard-benchmark/README.md`](eventguard-benchmark/README.md)。
+
 ## 部署
 
 - [Cloudflare Tunnel 免备案 HTTPS 访问](docs/deploy-cloudflare-tunnel.md) —— 不迁服务器、不用备案，用自定义域名 + HTTPS 访问（推荐生产方案）。

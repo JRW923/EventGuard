@@ -364,3 +364,47 @@ git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时�
 - **P2-16 令牌管理**：登录拿 token → `/orders` 200 → `POST /auth/logout-all` → 同 token 访问 `/orders` 立即 401（token_version 递增吊销生效）；改密亦递增版本。
 - **P2-17 CORS**：未配置 `EG_CORS_ALLOWED_ORIGINS` 时预检请求不返回 allow-origin（保持同源）；配置后注册映射（构造冒烟测试 3 例）。
 - **P2-18 版本/健康**：`/health` 经 nginx 返回 `{"status":"UP","version":"0.1.0-SNAPSHOT","dependencies":{"db":"UP","kafka":"kafka:9092"}}`。
+
+---
+
+## 10. 评测模块（bench）验证（2026-08-03）
+
+### 10.1 单元测试
+
+| 套件 | 结果 |
+|------|------|
+| `mvn test`（server，含 OrderAggregate metadata 修复） | 150 通过 / 0 失败 / 4 跳过（Testcontainers 本机跳过） |
+| `pytest tests/`（AI，含 prometheus_client 埋点） | 59 通过 / 0 失败 |
+| `npm run test`（UI，未改动） | 24 通过 / 0 失败 |
+| `pytest eventguard-benchmark/tests/`（bench 纯函数） | 6 通过 / 0 失败 |
+
+### 10.2 埋点（可观测数据基础）
+
+- **server**：新增 `common/metrics/EventGuardMetrics`（null-safe MeterRegistry），13 处埋点：
+  `eventguard.command.duration/total`、`eventguard.saga.started/step.duration/final_status`、
+  `eventguard.anomaly.alert.received`、`eventguard.anomaly.ws.connections`、
+  `eventguard.ruleengine.evaluate.duration/hit`、`eventguard.payment.initiated/callback.duration`、
+  `eventguard.ratelimit.rejected`、`eventguard.projection.event.processed`。
+- **AI**：新增 `app/metrics.py`（prometheus_client）+ `GET /metrics` + 8 处埋点
+  （`eventguard_ai_events_consumed_total`、`detection_latency_seconds`、`anomalies_published_total`、
+  `publish_errors_total`、`rule_bridge_errors_total`、`nl_query_duration/total`、`detector_running`）。
+- **Prometheus**：`prometheus.yml` 增加 `eventguard-ai` 抓取 job（`/metrics`）。
+
+### 10.3 评测模块本身
+
+- **bench 服务**：docker-compose `profiles:["bench"]`，`docker compose --profile bench run --rm bench`，
+  产出 `eventguard-benchmark/out/benchmark-report.{md,json,html}` + `dashboard/eventguard-benchmark.json`（Grafana 导入）。
+- **10 个套件**：s01 事件溯源/CQRS、s02 CDC 管道、s03 异常检测精度、s04 NL 查询、s05 Saga 补偿、
+  s06 网关异步支付、s07 鉴权 RBAC、s08 限流、s09 负载、s10 韧性。
+- **注入诚实性**：R001/R004/R005 为 rest；R002/R003/P002/P003 为 kafka_inject（DB 追加 + Kafka 直发，
+  聚合状态机不可达），每条断言带 method 字段。
+- **韧性**：`eventguard-benchmark/chaos_run.sh` 宿主机执行（bench 容器无 docker.sock），
+  产出 `out/chaos-results.json` 供 s10 合并；已探测 bench 收敛密码与种子密码两种登录。
+
+### 10.4 评测模块勘察暴露并修复的问题
+
+- **R001/R004 规则上下文失效（既存 bug）**：`OrderCreatedEvent` metadata 为 null，
+  而 `RuleContextLoader` 按 `metadata->>'userId'` 聚合用户历史 → 金额偏离/高频规则永不触发。
+  修复：`OrderAggregate.handle(CreateOrderCommand)` 给事件补 `metadata={"userId":...}`。
+  150 个 server 测试全绿证明无回归；该问题由评测模块的 R001 rest 场景设计暴露。
+
