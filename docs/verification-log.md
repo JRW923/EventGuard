@@ -335,3 +335,32 @@ git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时�
 - **AnomalyAlertConsumer 消息转换失败**：全局 value-deserializer 为 String，但监听器接收 `AnomalyAlert` POJO → `MessageConversionException` 告警静默丢弃。修复：改收 String 手动反序列化。
 - **SagaTrigger 读金额竞态**：从 `order_view`（读模型）读金额，saga 消费组与投影消费组独立推进可能投影未跟上 → 读 0 → `requiresApproval(0)` 不触发。修复：改从 `domain_events` 事件库读 `OrderCreatedEvent.totalAmount`（事件库必然已落库）。
 - **P001 误报补偿事件**：`CompensationExecutedEvent` 未入 Python 状态表被 P001 判非法迁移。修复：`STATE_PRESERVING_EVENTS` 跳过状态保留事件。
+
+---
+
+## 9. 生产就绪基建 P0/P1/P2 验证（2026-08-03）
+
+### 9.1 P0 批次
+
+- **P0-1 备份**：`scripts/backup-db.sh` 实际执行生成 40K 备份，`pg_restore --list` 读出 80 个 TOC 条目（含全部表）；`backups/` 已 gitignore。
+- **P0-2 监控**：`/actuator/prometheus` 暴露 62 个 metric family；Prometheus target `eventguard-server` health=up；Grafana 数据源自动配置 Prometheus + Loki。
+- **P0-3 错误追踪**：以 Loki 集中日志替代（见 P1-13）；Sentry 精确堆栈上报留待。
+- **P0-5 404 页**：未知 hash 路由命中 catch-all 渲染 404（SPA hash 模式返回 index.html 200 属正常）。
+- **P0-6 密码找回**：登录页「忘记密码」引导 + 管理员重置接口（`POST /users/{id}/reset-password`）。
+- **P0-7 通用限流**：连续 65 次请求 `/orders` → 前 60 次 401、第 61–65 次 429（per-IP 滑动窗口生效）。
+- **P0-8 审计日志**：`GET /audit-logs` admin 返回记录、operator 403（`user:manage` 权限隔离）。
+
+### 9.2 P1 批次
+
+- **P1-9 安全头 + gzip**：`/` 返回 X-Frame-Options / X-Content-Type-Options / Referrer-Policy；JS 资产 `Content-Encoding: gzip`。
+- **P1-10 连接池**：HikariCP max=10 / min=2 / timeout=30s 显式声明（application.yml）。
+- **P1-11 数据保留**：`scripts/retain-events.sh` dry-run 输出待归档 0 行（数据新）；归档逻辑同事务 COPY→DELETE。
+- **P1-12 优雅停机**：Spring `server.shutdown=graceful` + compose `stop_grace_period` 35s/15s。
+- **P1-13 集中日志**：Loki `/loki/api/v1/labels` 返回 container/service 标签；promtail 已加 Docker target；Loki query_range 能查到 eventguard-server 日志流。
+
+### 9.3 P2 批次
+
+- **P2-15 PWA/移动端**：`/manifest.webmanifest` 经 nginx 返回合法 JSON；`/` 首页含 manifest 链接。
+- **P2-16 令牌管理**：登录拿 token → `/orders` 200 → `POST /auth/logout-all` → 同 token 访问 `/orders` 立即 401（token_version 递增吊销生效）；改密亦递增版本。
+- **P2-17 CORS**：未配置 `EG_CORS_ALLOWED_ORIGINS` 时预检请求不返回 allow-origin（保持同源）；配置后注册映射（构造冒烟测试 3 例）。
+- **P2-18 版本/健康**：`/health` 经 nginx 返回 `{"status":"UP","version":"0.1.0-SNAPSHOT","dependencies":{"db":"UP","kafka":"kafka:9092"}}`。

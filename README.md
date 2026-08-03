@@ -120,7 +120,7 @@ Mock 网关行为可配：`EG_GATEWAY_MOCK_PAYMENT_FAILURE_RATE`（支付失败�
 - 更丰富的自然语言能力与一致性验证。
 - 生产就绪基建：见 [`docs/gaps-prod-readiness.md`](docs/gaps-prod-readiness.md)（P0/P1 已落地，P2 待排期）。
 
-## 运维能力（P0/P1 已落地）
+## 运维能力（P0/P1/P2 已落地）
 
 - **监控告警**：Prometheus + Grafana（`http://<host>:3001`，默认 admin/admin）+ Alertmanager。
   指标来自 server 的 `/actuator/prometheus`；告警规则含 server-down / 5xx 错误率，
@@ -131,6 +131,10 @@ Mock 网关行为可配：`EG_GATEWAY_MOCK_PAYMENT_FAILURE_RATE`（支付失败�
 - **通用限流**：per-IP 滑动窗口（默认 60 次/10s，超限 429），`eg.rate-limit.*` 可配。
 - **审计日志**：登录/用户/角色操作写入 `auth_audit_log`，管理员在「系统管理 → 审计日志」查看。
 - **优雅停机**：Spring graceful shutdown + compose `stop_grace_period`。
+- **令牌管理**：JWT 带 token_version，「退出所有设备」/改密后旧 token 立即失效（个人中心 → 安全）。
+- **版本/健康**：页脚显示版本号与后端/数据库连通状态；`GET /health` 公开端点。
+- **CORS**：默认同源；`EG_CORS_ALLOWED_ORIGINS`（逗号分隔）开放跨域给第三方。
+- **PWA / 移动端**：可安装为 PWA（manifest.webmanifest）；窄屏自动换行、菜单横向滚动。
 
 ## 部署
 
