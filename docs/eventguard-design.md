@@ -550,7 +550,7 @@ eventguard/
 │   │   │   ├── controller/         # 查询 REST
 │   │   │   ├── projection/         # 事件投影 → 读模型
 │   │   │   └── model/              # 读模型 DTO
-│   │   ├── compensation/           # 补偿端 (V2)
+│   │   ├── compensation/           # 补偿端 (Saga 已实现 2026-08)
 │   │   │   ├── saga/               # Saga 编排器
 │   │   │   ├── action/             # 补偿动作
 │   │   │   └── approval/           # 审批流
@@ -1157,9 +1157,11 @@ class HealerAgent:
 
 ---
 
-### 7.4 补偿编排 Saga `[V2]`
+### 7.4 补偿编排 Saga `[已实现 2026-08]`
 
-> MVP 阶段补偿由人工触发（前端按钮 → REST → 命令端直接执行补偿命令）；V2 引入 Saga 编排与审批流。
+> 原 V2 项；现已落地：`compensation/saga/` 包提供 `CompensationSaga`（SagaStatus 状态机）、
+> `SagaTrigger`（消费 domain-events 自动触发）、`ApprovalController`（`POST /approvals/{id}/approve|reject`）。
+> 本文以下为设计蓝图，实现细节见代码与 `docs/verification-log.md` §8。
 
 #### 7.4.1 Saga 编排器
 
@@ -1273,9 +1275,10 @@ CREATE TABLE compensation_approval (
 | 前端 → 命令端 | REST | `POST /orders`、`POST /orders/{id}/pay` 等命令接口 | MVP |
 | 前端 → 查询端 | REST | `GET /orders/{id}`、`GET /orders?status=PAID` | MVP |
 | 前端 → AI NL查询 | REST | `POST /ai/query` (body: `{question: string}`) | MVP |
-| 前端 → 补偿执行 | REST | `POST /compensations` (人工触发) | MVP |
-| 前端 → 补偿审批 | REST | `POST /approvals/{id}/approve\|reject` | V2 |
+| 前端 → 补偿执行 | REST | `POST /compensations` (人工触发；动作经网关抽象层执行) | MVP |
+| 前端 → 补偿审批 | REST | `POST /approvals/{id}/approve\|reject`（已实现 2026-08） | MVP |
 | 事件表 → AI 服务 | Kafka | topic `domain-events`，payload = DomainEvent JSON | MVP |
+| 网关回调 → 命令端 | REST | `POST /gateway/callback/{provider}` (X-API-Key 校验) | MVP |
 | AI 服务 → 补偿端 | Kafka | topic `compensation-commands`，payload = `{actionType, aggId, params}` | V2 |
 | AI 服务 → 前端告警 | WebSocket | 推送异常告警到看板 | MVP |
 | 补偿端 → 命令端 | 进程内调用 | `commandBus.dispatch(...)`（同一 Spring Boot 进程） | MVP |

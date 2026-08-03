@@ -20,12 +20,14 @@
 - **V2 局部增强**：投影延迟 Micrometer `Timer`/`Counter`（读己写超时计入 `eventguard.projection.lag`）+ 时间线按 `upToVersion` 版本回放。
 
 ## 已知限制
-- 补偿为人工触发，不接真实支付/库存/通知网关，无 Saga 编排。
+- 网关默认走 mock（`EG_*_PROVIDER=mock`）；支付为异步回调形态，真实 Provider（支付宝/企业微信 webhook）需在 `.env`
+  配置凭证，未配置时优雅降级为失败原因。Saga 实例为内存态，重启即清。
 - 端到端 Testcontainers 测试默认跳过（需本地 Docker）。
 - AI 服务无历史告警列表接口，异常仅经 WebSocket 推送。
 
 ## 未做（V2 主线进阶，MVP 有意推迟）
-- Text-to-SQL 全量沙箱、ReAct Agent 自愈、Saga 编排、Jepsen 形式化验证。
+- Text-to-SQL 全量沙箱、ReAct Agent 自愈、Jepsen 形式化验证。
+- 网关真实 Provider 对接需外部凭证（沙箱/正式商户号），当前以 mock 演示 + HTTP 适配器示例提供接缝。
 
 ## 提交区间
 `8688d8d..f7e4a65`（8 个提交）：`fa0aca1` M3.9 · `8363a88` M5.3 · `c964230` M5.2 · `efc1551` M5.4 · `12aeaa0` M5.5 · `62bf239` M5.6 · `3f5eca6` V2 局部增强 · `f7e4a65` 文档状态回填。

@@ -77,6 +77,8 @@ EG_JWT_SECRET=换成强随机密钥(openssl rand -hex 32)    # 签发/校验用�
 EG_MACHINE_API_KEY=换成另一个强随机密钥                # AI→后端内部调用机器密钥
 ```
 `EG_LLM_*` 大模型配置可不填（AI 自动降级为关键词/摘要，不影响主流程）。
+`EG_PAYMENT_PROVIDER` / `EG_INVENTORY_PROVIDER` / `EG_NOTIFY_PROVIDER` 网关 Provider 默认 `mock`
+（无需凭证即可全流程演示，见 README「网关接入」）；接真实支付宝/企业微信时再填 `EG_ALIPAY_*` / `EG_NOTIFY_WECOM_WEBHOOK`。
 
 ### 2.4 启动
 > 不要带 `chaos` profile（随机杀容器的韧性演示，会搞挂生产）。
