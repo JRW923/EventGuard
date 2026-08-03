@@ -31,8 +31,10 @@ public class OrderAggregate extends AggregateRoot {
     public void handle(CreateOrderCommand cmd) {
         if (status != null) throw new IllegalStateException("订单已存在");
         setAggregateId(cmd.getAggregateId());
+        // metadata 携带 userId：R001/R004 规则上下文（RuleContextLoader）按 metadata->>'userId' 聚合用户历史，
+        // 此前 metadata 为 null 导致金额偏离/高频规则永不触发（评测模块勘察发现的既存问题）。
         raise(new OrderCreatedEvent(getAggregateId(), getVersion() + 1,
-                cmd.userId(), cmd.totalAmount(), null));
+                cmd.userId(), cmd.totalAmount(), Map.of("userId", cmd.userId())));
     }
 
     public void handle(PayOrderCommand cmd) {
