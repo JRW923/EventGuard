@@ -40,7 +40,7 @@
 
 ## 实施记录
 
-- [ ] P0-1 备份脚本
+- [x] P0-1 备份脚本（`scripts/backup-db.sh`：docker exec pg_dump custom 格式，保留 14 天，已验证 pg_restore --list 可读）
 - [ ] P0-2 Prometheus + Grafana
 - [ ] P0-3 错误追踪
 - [ ] P0-4 HTTPS/证书

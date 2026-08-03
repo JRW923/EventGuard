@@ -33,3 +33,4 @@ hs_err_pid*.log
 
 # Conversation dumps (personal logs, not project material)
 conversation-*.txt
+backups/
