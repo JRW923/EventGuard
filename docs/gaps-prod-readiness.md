@@ -42,11 +42,11 @@
 
 - [x] P0-1 备份脚本（`scripts/backup-db.sh`：docker exec pg_dump custom 格式，保留 14 天，已验证 pg_restore --list 可读）
 - [x] P0-2 Prometheus + Grafana（actuator 暴露 prometheus 端点 + micrometer 依赖；compose 加 prometheus/alertmanager/grafana；server target up，告警规则 server-down/5xx 就绪，webhook 见 alertmanager.yml）
-- [ ] P0-3 错误追踪
-- [ ] P0-4 HTTPS/证书
-- [ ] P0-5 前端 404 页
-- [ ] P0-6 密码找回引导
-- [ ] P0-7 通用限流
+- [ ] P0-3 错误追踪（Sentry/Loki）
+- [ ] P0-4 HTTPS/证书（隧道已有；直连需 certbot）
+- [x] P0-5 前端 404 页（catch-all 路由 + NotFound 视图）+ P1-9 gzip 与安全响应头（nginx）
+- [ ] P0-6 密码找回引导（管理员重置接口已有，补前端引导）
+- [x] P0-7 通用请求限流（RateLimitFilter：per-IP 滑动窗口，默认 60 次/10s，429；放行 actuator/gateway/ws/health；已实测 61 次起 429）
 - [ ] P0-8 审计日志页
 - [ ] P1-9 安全头 + gzip
 - [ ] P1-10 连接池参数
