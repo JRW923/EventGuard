@@ -24,8 +24,11 @@ public class UserRepository {
         u.setDisplayName(rs.getString("display_name"));
         u.setEnabled(rs.getBoolean("enabled"));
         u.setMustChangePassword(rs.getBoolean("must_change_password"));
+        u.setTokenVersion(rs.getInt("token_version"));
         return u;
     };
+
+    private static final String BASE_COLUMNS = "id, username, password_hash, display_name, enabled, must_change_password, token_version";
 
     private final JdbcTemplate jdbc;
 
@@ -34,20 +37,17 @@ public class UserRepository {
     }
 
     public Optional<AppUser> findByUsername(String username) {
-        return jdbc.query("SELECT id, username, password_hash, display_name, enabled, must_change_password "
-                        + "FROM auth_user WHERE username = ?", BASE_MAPPER, username)
+        return jdbc.query("SELECT " + BASE_COLUMNS + " FROM auth_user WHERE username = ?", BASE_MAPPER, username)
                 .stream().findFirst().map(this::loadRolesAndPermissions);
     }
 
     public Optional<AppUser> findById(long id) {
-        return jdbc.query("SELECT id, username, password_hash, display_name, enabled, must_change_password "
-                        + "FROM auth_user WHERE id = ?", BASE_MAPPER, id)
+        return jdbc.query("SELECT " + BASE_COLUMNS + " FROM auth_user WHERE id = ?", BASE_MAPPER, id)
                 .stream().findFirst().map(this::loadRolesAndPermissions);
     }
 
     public List<AppUser> findAll() {
-        return jdbc.query("SELECT id, username, password_hash, display_name, enabled, must_change_password "
-                + "FROM auth_user ORDER BY id", BASE_MAPPER)
+        return jdbc.query("SELECT " + BASE_COLUMNS + " FROM auth_user ORDER BY id", BASE_MAPPER)
                 .stream().peek(this::loadRolesAndPermissions).toList();
     }
 
@@ -87,6 +87,11 @@ public class UserRepository {
 
     public void setMustChangePassword(long id, boolean flag) {
         jdbc.update("UPDATE auth_user SET must_change_password = ?, updated_at = now() WHERE id = ?", flag, id);
+    }
+
+    /** P2-16 递增令牌版本：登出所有设备 / 改密时调用，使此前签发的 JWT 全部失效。 */
+    public void incrementTokenVersion(long id) {
+        jdbc.update("UPDATE auth_user SET token_version = token_version + 1, updated_at = now() WHERE id = ?", id);
     }
 
     /** 重置角色集合：先删后插，事务由调用方/单条执行保证（单表小规模，无需显式事务）。 */

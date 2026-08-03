@@ -1,5 +1,7 @@
 package com.eventguard.auth.security;
 
+import com.eventguard.auth.model.AppUser;
+import com.eventguard.auth.repository.UserRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.Filter;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.Optional;
 
 /**
  * 入站认证过滤器（替换原 ApiKeyAuthFilter）：
@@ -23,8 +26,13 @@ import java.util.HashSet;
  *  3. 均不合法 → 401。
  * 认证通过后把 AuthPrincipal 放入 request attribute，供 PermissionInterceptor / 控制器取用。
  *
- * /auth/login、/actuator、/health、/ws 放行：login 为公开端点，actuator/health 为运维端点，
- * /ws 交由 JwtHandshakeInterceptor 按 ?token= 校验（浏览器 WS 无法带自定义头）。
+ * P2-16 令牌吊销：JWT 带 tokenVersion（tv），与 auth_user.token_version 比对；
+ * 不一致（登出所有设备/改密后递增）则视为已吊销 → 401。
+ * ponytail: 每次请求多一次按主键查 token_version，管理台量级可接受；极端规模可缓存到本地 TTL。
+ *
+ * /auth/login、/actuator、/health、/ws、/gateway 放行：login 为公开端点，actuator/health 为运维端点，
+ * /ws 交由 JwtHandshakeInterceptor 按 ?token= 校验（浏览器 WS 无法带自定义头），
+ * /gateway 由回调端点内自行校验机器密钥。
  */
 @Component
 @Order(1)
@@ -32,10 +40,14 @@ public class AuthFilter implements Filter {
 
     private final JwtService jwtService;
     private final String machineApiKey;
+    private final UserRepository userRepository;
 
-    public AuthFilter(JwtService jwtService, @Value("${EG_MACHINE_API_KEY:dev-machine-key}") String machineApiKey) {
+    public AuthFilter(JwtService jwtService,
+                      @Value("${EG_MACHINE_API_KEY:dev-machine-key}") String machineApiKey,
+                      UserRepository userRepository) {
         this.jwtService = jwtService;
         this.machineApiKey = machineApiKey;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -66,8 +78,13 @@ public class AuthFilter implements Filter {
         if (auth != null && auth.startsWith("Bearer ")) {
             try {
                 Claims c = jwtService.parse(auth.substring(7));
+                Long uid = JwtService.uid(c);
+                // P2-16 令牌吊销校验：库中 token_version 与 JWT 携带的 tv 不一致 → 拒绝
+                if (!tokenVersionValid(uid, JwtService.tokenVersion(c))) {
+                    return null;
+                }
                 return AuthPrincipal.user(
-                        JwtService.uid(c),
+                        uid,
                         c.get("username", String.class),
                         new HashSet<>(JwtService.strings(c, "permissions")));
             } catch (JwtException | IllegalArgumentException e) {
@@ -79,5 +96,10 @@ public class AuthFilter implements Filter {
             return AuthPrincipal.machine();
         }
         return null;
+    }
+
+    private boolean tokenVersionValid(long uid, int jwtTokenVersion) {
+        Optional<AppUser> user = userRepository.findById(uid);
+        return user.isPresent() && user.get().getTokenVersion() == jwtTokenVersion;
     }
 }

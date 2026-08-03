@@ -42,6 +42,10 @@ export const AuthApi = {
     return http.post('/auth/logout').then(() => undefined)
   },
 
+  logoutAll(): Promise<void> {
+    return http.post('/auth/logout-all').then(() => undefined)
+  },
+
   changePassword(oldPassword: string, newPassword: string): Promise<void> {
     return http.post('/auth/password', { oldPassword, newPassword }).then(() => undefined)
   },

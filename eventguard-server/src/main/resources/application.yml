@@ -42,6 +42,7 @@ spring:
         - classpath:db/migration/V2__full_schema.sql
         - classpath:db/migration/V3__auth.sql
         - classpath:db/migration/V4__gateway.sql
+        - classpath:db/migration/V5__auth_token_version.sql
 
 management:
   endpoints:

@@ -11,6 +11,7 @@ public class AppUser {
     private String displayName;
     private boolean enabled = true;
     private boolean mustChangePassword;
+    private int tokenVersion;
     private List<String> roles = List.of();
     private List<String> permissions = List.of();
 
@@ -31,6 +32,9 @@ public class AppUser {
 
     public boolean isMustChangePassword() { return mustChangePassword; }
     public void setMustChangePassword(boolean mustChangePassword) { this.mustChangePassword = mustChangePassword; }
+
+    public int getTokenVersion() { return tokenVersion; }
+    public void setTokenVersion(int tokenVersion) { this.tokenVersion = tokenVersion; }
 
     public List<String> getRoles() { return roles; }
     public void setRoles(List<String> roles) { this.roles = roles; }

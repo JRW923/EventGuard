@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS auth_user (
     display_name          VARCHAR(64),
     enabled               BOOLEAN      NOT NULL DEFAULT TRUE,
     must_change_password  BOOLEAN      NOT NULL DEFAULT FALSE,
+    -- P2-16 令牌版本：登出所有设备/改密时递增，使旧 JWT 失效（AuthFilter 比对 claims.tv 与库中值）
+    token_version         INT          NOT NULL DEFAULT 0,
     created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at            TIMESTAMPTZ  NOT NULL DEFAULT now()
 );

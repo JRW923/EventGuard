@@ -40,6 +40,14 @@ public class AuthController {
         return ResponseEntity.ok().build();
     }
 
+    /** P2-16 登出所有设备：递增 token_version，使本账号所有已签发 JWT 失效。 */
+    @PostMapping("/logout-all")
+    public ResponseEntity<Void> logoutAll(HttpServletRequest request) {
+        AuthPrincipal p = AuthPrincipal.from(request);
+        authService.logoutAll(p.getUserId(), request.getRemoteAddr());
+        return ResponseEntity.ok().build();
+    }
+
     @GetMapping("/me")
     public UserView me(HttpServletRequest request) {
         return authService.me(AuthPrincipal.from(request).getUserId());

@@ -19,18 +19,19 @@ class JwtServiceTest {
     @Test
     void issueAndParse_roundtrip() {
         String token = jwt.issue(1L, "admin", "管理员",
-                List.of("ADMIN"), List.of("order:read", "anomaly:view"), true);
+                List.of("ADMIN"), List.of("order:read", "anomaly:view"), true, 3);
         Claims c = jwt.parse(token);
         assertEquals("admin", c.get("username", String.class));
         assertEquals(1L, JwtService.uid(c));
         assertEquals(List.of("ADMIN"), JwtService.strings(c, "roles"));
         assertTrue(JwtService.strings(c, "permissions").contains("anomaly:view"));
         assertTrue(c.get("mcp", Boolean.class));
+        assertEquals(3, JwtService.tokenVersion(c));
     }
 
     @Test
     void tamperedToken_rejected() {
-        String token = jwt.issue(1L, "admin", null, List.of(), List.of(), false);
+        String token = jwt.issue(1L, "admin", null, List.of(), List.of(), false, 0);
         String tampered = token.substring(0, token.length() - 4) + "AAAA";
         assertThrows(Exception.class, () -> jwt.parse(tampered));
     }
@@ -38,7 +39,7 @@ class JwtServiceTest {
     @Test
     void expiredToken_rejected() {
         JwtService shortLived = new JwtService(SECRET, 0); // 立即过期
-        String token = shortLived.issue(1L, "admin", null, List.of(), List.of(), false);
+        String token = shortLived.issue(1L, "admin", null, List.of(), List.of(), false, 0);
         assertThrows(Exception.class, () -> jwt.parse(token));
     }
 }

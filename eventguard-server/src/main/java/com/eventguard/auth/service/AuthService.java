@@ -55,8 +55,16 @@ public class AuthService {
         guard.onSuccess(username);
         audit.log(username, "LOGIN_OK", null, ip);
         String token = jwt.issue(user.getId(), user.getUsername(), user.getDisplayName(),
-                user.getRoles(), user.getPermissions(), user.isMustChangePassword());
+                user.getRoles(), user.getPermissions(), user.isMustChangePassword(), user.getTokenVersion());
         return new LoginResponse(token, UserView.from(user));
+    }
+
+    /** P2-16 登出所有设备：递增 token_version，使此前签发（含其他设备）的 JWT 全部失效。 */
+    public void logoutAll(long userId, String ip) {
+        users.findById(userId).ifPresent(user -> {
+            users.incrementTokenVersion(userId);
+            audit.log(user.getUsername(), "LOGOUT_ALL", "退出所有设备", ip);
+        });
     }
 
     /** /auth/me：重新从库加载以反映最新角色/权限（注：请求鉴权仍按 JWT claims 直到重新登录）。 */
@@ -73,6 +81,8 @@ public class AuthService {
         }
         validatePassword(newPassword);
         users.updatePassword(userId, encoder.encode(newPassword));
+        // 改密后使此前所有 JWT 失效（含其他设备），防旧 token 继续可用
+        users.incrementTokenVersion(userId);
         audit.log(user.getUsername(), "PASSWORD_CHANGE", null, ip);
     }
 

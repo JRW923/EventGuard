@@ -37,7 +37,7 @@ public class JwtService {
     }
 
     public String issue(long userId, String username, String displayName,
-                        List<String> roles, List<String> permissions, boolean mustChangePassword) {
+                        List<String> roles, List<String> permissions, boolean mustChangePassword, int tokenVersion) {
         Instant now = Instant.now();
         // ponytail: 显式固定 HS256——jjwt 会按密钥长度推断算法（32B→HS256/48B→HS384），
         // 而 AI 侧 PyJWT 固定校验 HS256，避免密钥变长后两端算法不一致
@@ -49,7 +49,8 @@ public class JwtService {
                         "displayName", displayName == null ? username : displayName,
                         "roles", roles,
                         "permissions", permissions,
-                        "mcp", mustChangePassword))
+                        "mcp", mustChangePassword,
+                        "tv", tokenVersion))
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusMillis(expireMillis)))
                 .signWith(key, Jwts.SIG.HS256)
@@ -71,5 +72,11 @@ public class JwtService {
     public static List<String> strings(Claims c, String name) {
         Object v = c.get(name);
         return v instanceof List<?> l ? (List<String>) l : List.of();
+    }
+
+    /** JWT 携带的令牌版本（P2-16）：与 auth_user.token_version 比对，不一致则视为已吊销。 */
+    public static int tokenVersion(Claims c) {
+        Object tv = c.get("tv");
+        return tv instanceof Number n ? n.intValue() : 0;
     }
 }

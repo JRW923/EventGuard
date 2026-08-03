@@ -38,14 +38,14 @@ class JwtHandshakeInterceptorTest {
     @Test
     void tokenWithAnomalyView_accepts() throws Exception {
         String token = jwt.issue(1L, "admin", null,
-                List.of("ADMIN"), List.of("anomaly:view"), false);
+                List.of("ADMIN"), List.of("anomaly:view"), false, 0);
         assertTrue(handshake("token=" + token));
     }
 
     @Test
     void tokenWithoutPermission_rejects() throws Exception {
         String token = jwt.issue(1L, "admin", null,
-                List.of("ADMIN"), List.of("order:read"), false);
+                List.of("ADMIN"), List.of("order:read"), false, 0);
         assertFalse(handshake("token=" + token));
     }
 
