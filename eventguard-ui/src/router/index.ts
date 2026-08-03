@@ -48,6 +48,8 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/admin/Roles.vue'),
     meta: { title: '角色管理', permission: 'role:manage' },
   },
+  // catch-all：未知地址 → 404 页（须放在最后）
+  { path: '/:pathMatch(.*)*', name: 'NotFound', component: () => import('../views/NotFound.vue'), meta: { title: '页面不存在', public: true } },
 ]
 
 export const router = createRouter({
