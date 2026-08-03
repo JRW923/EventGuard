@@ -41,6 +41,9 @@ import { EventItem } from '@/types/event'
 const route = useRoute()
 const orderId = route.params.id as string
 
+// 页面标签带订单号（简短展示前 8 位），便于多标签页区分
+document.title = `订单时间线 · ${orderId.slice(0, 8)} · EventGuard`
+
 const events = ref<EventItem[]>([])
 const loading = ref(false)
 const error = ref('')

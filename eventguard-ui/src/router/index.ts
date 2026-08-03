@@ -3,8 +3,8 @@ import { auth } from '@/stores/auth'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/orders' },
-  { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { public: true } },
-  { path: '/403', name: 'Forbidden', component: () => import('../views/Forbidden.vue'), meta: { public: true } },
+  { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { title: '登录', public: true } },
+  { path: '/403', name: 'Forbidden', component: () => import('../views/Forbidden.vue'), meta: { title: '无权限', public: true } },
   {
     path: '/orders',
     name: 'OrderList',
@@ -59,7 +59,9 @@ export const router = createRouter({
 
 // 全局前置守卫：未登录跳登录页；登录后按路由 meta.permission 校验权限
 router.beforeEach(async (to) => {
-  document.title = `${String(to.meta.title || 'EventGuard')} · EventGuard`
+  // 页面标签：有 meta.title 显示「页面 · EventGuard」，否则仅站点名（避免「EventGuard · EventGuard」）
+  const pageTitle = to.meta.title as string | undefined
+  document.title = pageTitle ? `${pageTitle} · EventGuard` : 'EventGuard'
 
   if (to.meta.public) {
     // 已登录用户访问登录页 → 直接进首页
