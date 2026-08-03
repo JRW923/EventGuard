@@ -31,6 +31,9 @@
         >
           登 录
         </el-button>
+        <div class="login-forgot">
+          忘记密码？请联系管理员在「用户管理」中为你重置
+        </div>
       </el-form>
 
       <el-alert v-if="error" :title="error" type="error" :closable="false" style="margin-top: 16px" />
@@ -160,5 +163,11 @@ function finishLogin() {
   color: #909399;
   font-size: 13px;
   margin: 0;
+}
+.login-forgot {
+  margin-top: 12px;
+  text-align: center;
+  color: #909399;
+  font-size: 13px;
 }
 </style>

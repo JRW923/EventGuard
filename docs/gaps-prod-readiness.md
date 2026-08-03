@@ -45,7 +45,7 @@
 - [ ] P0-3 错误追踪（Sentry/Loki）
 - [ ] P0-4 HTTPS/证书（隧道已有；直连需 certbot）
 - [x] P0-5 前端 404 页（catch-all 路由 + NotFound 视图）+ P1-9 gzip 与安全响应头（nginx）
-- [ ] P0-6 密码找回引导（管理员重置接口已有，补前端引导）
+- [x] P0-6 密码找回引导（登录页「忘记密码」提示联系管理员；管理员重置接口 + 前端「重置密码」对话框已就绪；真实邮件找回需邮件基础设施，见 P1 备注）
 - [x] P0-7 通用请求限流（RateLimitFilter：per-IP 滑动窗口，默认 60 次/10s，429；放行 actuator/gateway/ws/health；已实测 61 次起 429）
 - [x] P0-8 审计日志页（GET /audit-logs user:manage 权限；前端 admin/audit-logs 视图 + 系统管理菜单；已验证 admin 可查、operator 403）
 - [ ] P1-9 安全头 + gzip
