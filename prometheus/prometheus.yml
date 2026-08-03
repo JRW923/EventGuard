@@ -1,0 +1,20 @@
+# Prometheus 抓取配置（P0-2 监控告警）。
+# 当前抓取 eventguard-server 的 actuator /prometheus（health/info/metrics/prometheus 已暴露）。
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  - job_name: "eventguard-server"
+    metrics_path: "/actuator/prometheus"
+    static_configs:
+      - targets: ["eventguard-server:8080"]
+
+  # 如需抓取 Postgres / 容器指标，取消注释并确保对应服务存在：
+  # - job_name: "postgres"
+  #   static_configs: [{ targets: ["postgres-exporter:9187"] }]
+  # - job_name: "cadvisor"
+  #   static_configs: [{ targets: ["cadvisor:8080"] }]

@@ -146,6 +146,49 @@ services:
     command: --random --interval 60s kill --signal SIGTERM
     profiles: ["chaos"]
 
+  # ===== P0-2 监控告警（Prometheus + Alertmanager + Grafana）=====
+  # 抓取 eventguard-server:8080/actuator/prometheus；告警转 webhook（ALERT_WEBHOOK_URL）。
+  # Grafana 默认账号 admin/admin（首次登录可改），数据源 http://prometheus:9090。
+  prometheus:
+    <<: *default-restart
+    image: prom/prometheus:v2.53.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - "./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - "./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro"
+      - "prometheus-data:/prometheus"
+    mem_limit: 300m
+    logging: *default-logging
+    depends_on: [eventguard-server]
+
+  alertmanager:
+    <<: *default-restart
+    image: prom/alertmanager:v0.27.0
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes:
+      - "./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro"
+    mem_limit: 100m
+    logging: *default-logging
+
+  grafana:
+    <<: *default-restart
+    image: grafana/grafana:11.1.0
+    ports: ["3001:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://localhost:3001
+    volumes:
+      - "grafana-data:/var/lib/grafana"
+    mem_limit: 300m
+    logging: *default-logging
+    depends_on: [prometheus]
+
 volumes:
   pgdata:
   debezium-data:
+  prometheus-data:
+  grafana-data:

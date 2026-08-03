@@ -41,7 +41,7 @@
 ## 实施记录
 
 - [x] P0-1 备份脚本（`scripts/backup-db.sh`：docker exec pg_dump custom 格式，保留 14 天，已验证 pg_restore --list 可读）
-- [ ] P0-2 Prometheus + Grafana
+- [x] P0-2 Prometheus + Grafana（actuator 暴露 prometheus 端点 + micrometer 依赖；compose 加 prometheus/alertmanager/grafana；server target up，告警规则 server-down/5xx 就绪，webhook 见 alertmanager.yml）
 - [ ] P0-3 错误追踪
 - [ ] P0-4 HTTPS/证书
 - [ ] P0-5 前端 404 页

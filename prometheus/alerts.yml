@@ -1,0 +1,24 @@
+# 告警规则（P0-2）。告警由 Alertmanager 接收并转发到 webhook（如企业微信）。
+groups:
+  - name: eventguard
+    rules:
+      - alert: EventGuardServerDown
+        expr: up{job="eventguard-server"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "EventGuard server 不可达"
+          description: "Prometheus 已连续 1 分钟无法抓取 eventguard-server（{{ $labels.instance }}）"
+
+      - alert: EventGuardHighErrorRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) by (application)
+            / clamp_min(sum(rate(http_server_requests_seconds_count[5m])) by (application), 1)
+            > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "EventGuard 5xx 错误率偏高"
+          description: "过去 5 分钟 5xx 占比超过 5%（{{ $value | humanizePercentage }}）"

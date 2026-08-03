@@ -1,0 +1,16 @@
+# Alertmanager 配置：把 Prometheus 告警转发到 webhook（默认企业微信，可改钉钉/Slack）。
+# 注意：Alertmanager 不会展开环境变量，URL 直接写死。接入企业微信机器人时，
+# 把下面的 url 换成你的 webhook 地址即可（也可挂载自定义配置覆盖此文件）。
+route:
+  receiver: "webhook"
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: "webhook"
+    webhook_configs:
+      # 默认指向一个不存在的内部端点（仅记录不实际发送）；生产改成企业微信/钉钉 webhook。
+      - url: "http://127.0.0.1:65534/alert"
+        send_resolved: true
