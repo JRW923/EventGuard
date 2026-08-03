@@ -127,6 +127,33 @@ body {
   align-items: center;
   padding: 0 20px;
 }
+
+/* P2-15 移动端适配：窄屏时头部换行、菜单横向滚动，避免挤压 */
+@media (max-width: 768px) {
+  .app-header-inner {
+    flex-wrap: wrap;
+    padding: 0 10px;
+    gap: 4px;
+  }
+  .app-menu {
+    margin-left: 0;
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+  }
+  .app-menu .el-menu-item,
+  .app-menu .el-sub-menu__title {
+    height: 44px;
+    line-height: 44px;
+    margin: 0 2px;
+  }
+  .app-user {
+    margin-left: auto;
+  }
+  .app-content {
+    padding: 12px;
+  }
+}
 .app-brand {
   margin: 0;
   font-size: 18px;

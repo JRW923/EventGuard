@@ -1,0 +1,18 @@
+{
+  "name": "EventGuard 事件卫士",
+  "short_name": "EventGuard",
+  "description": "事件溯源 · 智能异常检测 · 自然语言查询",
+  "start_url": "/#/orders",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#409eff",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/brand/logo-2.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
