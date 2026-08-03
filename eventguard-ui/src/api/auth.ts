@@ -93,4 +93,20 @@ export const AuthApi = {
   listPermissions(): Promise<PermissionItem[]> {
     return http.get<PermissionItem[]>('/roles/permissions').then((r) => r.data)
   },
+
+  // —— 审计日志（user:manage）——
+  listAuditLogs(params: { page?: number; size?: number; username?: string }): Promise<AuditLogItem[]> {
+    return http
+      .get<AuditLogItem[]>('/audit-logs', { params: { page: params.page ?? 0, size: params.size ?? 50, username: params.username || undefined } })
+      .then((r) => r.data)
+  },
+}
+
+export interface AuditLogItem {
+  id: number
+  username: string
+  action: string
+  detail: string
+  ip: string
+  createdAt: string
 }

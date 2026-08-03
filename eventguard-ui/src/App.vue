@@ -20,6 +20,7 @@
             <template #title>系统管理</template>
             <el-menu-item v-if="auth.hasPermission('user:manage')" index="/admin/users">用户管理</el-menu-item>
             <el-menu-item v-if="auth.hasPermission('role:manage')" index="/admin/roles">角色管理</el-menu-item>
+            <el-menu-item v-if="auth.hasPermission('user:manage')" index="/admin/audit-logs">审计日志</el-menu-item>
           </el-sub-menu>
         </el-menu>
 
