@@ -6,18 +6,21 @@
 
 ## 1. 架构与端口速览
 
-容器间走 Docker 内部网络，**只有 UI 需要对外**。
+容器间走 Docker 内部网络，**只有 UI / Grafana 需要对外**。
 
 | 服务 | 容器内端口 | 宿主机映射 | 说明 |
 | --- | --- | --- | --- |
-| eventguard-ui（nginx） | 80 | `3000:80` | 唯一对外入口 |
+| eventguard-ui（nginx） | 80 | `80:80` | 唯一对外入口 |
 | eventguard-server（Java） | 8080 | 不映射 | 仅容器间调用 |
 | eventguard-ai（FastAPI） | 8000 | 不映射 | 仅容器间调用 |
 | postgres | 5432 | 不映射 | 数据库，严禁对外 |
 | kafka | 9092 | 不映射 | 消息队列，严禁对外 |
 | debezium | — | 无 | CDC 桥接 |
+| grafana（监控） | 3000 | `3001:3000` | 指标/日志看板（admin/admin，P0-2） |
+| prometheus / alertmanager / loki / promtail | — | 不映射 | 监控告警与集中日志（P0-2 / P1-13） |
 
-浏览器只访问 `http://<服务器IP>:3000`；`/orders`、`/compensations`、`/ai`、`/anomalies`、`/ws` 由 UI 的 nginx 反代到后端/AI。
+浏览器只访问 `http://<服务器IP>:80`（UI）；`/orders`、`/compensations`、`/ai`、`/anomalies`、`/ws` 由 UI 的 nginx 反代到后端/AI。
+监控看板 `http://<服务器IP>:3001`（Grafana，已自动配置 Prometheus + Loki 数据源）。
 
 依赖链路：**订单事件 → PostgreSQL → Debezium CDC → Kafka → AI 实时检测 / 查询投影 → 前端看板**。
 
@@ -26,8 +29,8 @@
 ## 2. 部署主流程（照做即可）
 
 ### 2.1 开放防火墙端口
-- **腾讯云控制台「防火墙」**：放行 `3000`（走域名+宝塔反代则放行 `80`/`443`）。**不要**放行 `5432`、`9092`、`8080`、`8000`。
-- **宝塔「安全」→「系统防火墙」**：同样放行 `3000`（或 `80`/`443`），其余保持封闭。
+- **腾讯云控制台「防火墙」**：放行 `80`（UI，走域名+宝塔反代则放行 `80`/`443`）；如需访问 Grafana 监控看板再放行 `3001`。**不要**放行 `5432`、`9092`、`8080`、`8000`。
+- **宝塔「安全」→「系统防火墙」**：同样放行 `80`（或 `80`/`443`）+ 可选 `3001`，其余保持封闭。
 
 ### 2.2 安装 Docker 与 Docker Compose
 SSH 登录后（国内请用镜像源，勿用 `get.docker.com` 脚本，原因见 Q1）：
@@ -89,9 +92,10 @@ docker compose up -d --build
 首次构建会拉镜像 + 编译 Java + 装 Python 依赖 + 构建前端，耗时几分钟。等待 PostgreSQL、Kafka 变 `healthy`（compose 已配健康检查与依赖顺序）。
 
 ### 2.5 访问
-浏览器打开 `http://<服务器公网IP>:3000`，应看到管理台。按 README「体验流程」走：订单列表 → 自然语言查询 → 异常看板 → 补偿执行。
+浏览器打开 `http://<服务器公网IP>:80`，应看到管理台。按 README「体验流程」走：订单列表 → 自然语言查询 → 异常看板 → 补偿执行。
+监控看板 `http://<服务器公网IP>:3001`（Grafana，默认 admin/admin，首次登录请改密）。
 
-**可选·域名 + HTTPS（推荐生产）**：宝塔「网站」→ 添加站点（纯静态）→「反向代理」目标 `http://127.0.0.1:3000` →「SSL」申请 Let's Encrypt 强制 HTTPS。随后可把 compose 里 ui 的 `ports` 改为 `127.0.0.1:3000:80`，让 UI 只监听本机。WebSocket（`/ws`）宝塔反代默认已支持 Upgrade，若告警推不动，确认站点配置含 `proxy_set_header Upgrade $http_upgrade;` 与 `Connection "upgrade";`。
+**可选·域名 + HTTPS（推荐生产）**：宝塔「网站」→ 添加站点（纯静态）→「反向代理」目标 `http://127.0.0.1:80` →「SSL」申请 Let's Encrypt 强制 HTTPS。随后可把 compose 里 ui 的 `ports` 改为 `127.0.0.1:80:80`，让 UI 只监听本机。WebSocket（`/ws`）宝塔反代默认已支持 Upgrade，若告警推不动，确认站点配置含 `proxy_set_header Upgrade $http_upgrade;` 与 `Connection "upgrade";`。
 
 ---
 
@@ -141,7 +145,7 @@ docker compose up -d --build
 
 **Q4：每次 `git pull` 后端口又全暴露了 / 前端 401 又出现。**
 - `git pull` 会用仓库新版覆盖服务器上的 `docker-compose.yml` 与各 Dockerfile，你之前的端口注释会丢失。每次拉取后补两件事：
-  1. **重做端口收紧**（见下方「生产端口收紧」）：注释掉 `postgres`/`kafka`/`eventguard-server`/`eventguard-ai` 的 `ports:`，只留 UI `3000`。
+  1. **重做端口收紧**（见下方「生产端口收紧」）：注释掉 `postgres`/`kafka`/`eventguard-server`/`eventguard-ai`/`grafana` 的 `ports:`，只留 UI `80`（Grafana 如需可留 `127.0.0.1:3001:3000`）。
   2. **并入 `.env` 新增字段**：`.env` 被 git 忽略、pull 不动它，但你可能缺后来加的键。
      - 手动：`diff .env.example .env`（以 `<` 开头=example 有、你缺），只把缺的键追加进 `.env`，**不要 `cp .env.example .env`**（会覆盖强密码）。
      - 更省事（一键合并缺失键，保留已有值，无需新依赖）：
@@ -166,11 +170,11 @@ docker compose up -d --build
   eventguard-ai:
     # ports: ["8000:8000"]
   eventguard-ui:
-    ports: ["3000:80"]   # 唯一对外
+    ports: ["80:80"]   # 唯一对外
 ```
 
 **Q5：在宿主机 `curl http://localhost:8080/actuator/health` 连不上（connection refused）。**
-- **预期行为，不是故障**：端口收紧后 8080 只在 compose 内部网络可见，宿主机无监听。actuator 明明开着（`application.yml` 配了 `exposure.include: health,info,metrics`），且 `AuthFilter` 对 `/actuator` 免鉴权。改在容器内探活：`docker compose exec eventguard-server curl -s localhost:8080/actuator/health` → `{"status":"UP",...}`。
+- **预期行为，不是故障**：端口收紧后 8080 只在 compose 内部网络可见，宿主机无监听。actuator 明明开着（`application.yml` 配了 `exposure.include: health,info,metrics,prometheus`），且 `AuthFilter` 对 `/actuator` 免鉴权。改在容器内探活：`docker compose exec eventguard-server curl -s localhost:8080/actuator/health` → `{"status":"UP",...}`。
 
 **Q6：前端订单列表报「加载失败：401」，无数据。**
 - 401 说明未带有效 JWT，按顺序排查：

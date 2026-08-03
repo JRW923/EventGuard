@@ -118,8 +118,19 @@ Mock 网关行为可配：`EG_GATEWAY_MOCK_PAYMENT_FAILURE_RATE`（支付失败�
 ## 后续计划
 
 - 更丰富的自然语言能力与一致性验证。
+- 生产就绪基建：见 [`docs/gaps-prod-readiness.md`](docs/gaps-prod-readiness.md)（P0/P1 已落地，P2 待排期）。
 
-详细设计与未做项见 [`docs/eventguard-plan.md`](docs/eventguard-plan.md)。
+## 运维能力（P0/P1 已落地）
+
+- **监控告警**：Prometheus + Grafana（`http://<host>:3001`，默认 admin/admin）+ Alertmanager。
+  指标来自 server 的 `/actuator/prometheus`；告警规则含 server-down / 5xx 错误率，
+  转发 webhook 见 `prometheus/alertmanager.yml`。
+- **集中日志**：Loki + promtail 采集各容器日志，Grafana 已自动配好 Prometheus + Loki 数据源。
+- **数据备份**：`scripts/backup-db.sh`（pg_dump custom 格式，保留 14 天，含 crontab 示例）。
+- **数据保留**：`scripts/retain-events.sh`（归档 90 天前事件到 `event_store_archive`，默认 dry-run）。
+- **通用限流**：per-IP 滑动窗口（默认 60 次/10s，超限 429），`eg.rate-limit.*` 可配。
+- **审计日志**：登录/用户/角色操作写入 `auth_audit_log`，管理员在「系统管理 → 审计日志」查看。
+- **优雅停机**：Spring graceful shutdown + compose `stop_grace_period`。
 
 ## 部署
 

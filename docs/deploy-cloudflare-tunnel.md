@@ -94,6 +94,10 @@ docker compose up -d --build cloudflared
 
 > ⚠️ **Worker Route 优先级高于隧道路由**：若之前建过 Worker Route，必须**删除**，否则请求被 Worker 拦截返回 1003。
 
+> **Grafana 监控看板**：隧道默认只转发 UI 的 80 端口；如需经隧道访问 Grafana（`:3001`），
+> 可加第二条 `tunnel route dns`（如 `grafana.域名`）并用 `--url http://grafana:3000` 的额外 tunnel 服务，
+> 或直接在宿主机经 SSH 端口转发访问 `localhost:3001`。
+
 ## 验证
 
 ```bash
