@@ -38,16 +38,26 @@
 | 18 | 版本/健康页 | 前端无「当前版本 + 后端连通性」指示 |
 | 19 | 配置中心/密钥轮换 | `.env` 手动管理，无密钥轮换流程 |
 
+> P0/P1 已全部落地（P0-4 HTTPS/证书除外——隧道已提供边缘 TLS，直连场景需 certbot，见 P0-4 备注；
+> P1-14 i18n 列为后续增强）。剩余未实现：错误追踪 Sentry 接入（可用 Loki 替代）、HTTPS 直连证书、
+> i18n、P2 五项。
+
 ## 实施记录
 
 - [x] P0-1 备份脚本（`scripts/backup-db.sh`：docker exec pg_dump custom 格式，保留 14 天，已验证 pg_restore --list 可读）
 - [x] P0-2 Prometheus + Grafana（actuator 暴露 prometheus 端点 + micrometer 依赖；compose 加 prometheus/alertmanager/grafana；server target up，告警规则 server-down/5xx 就绪，webhook 见 alertmanager.yml）
-- [ ] P0-3 错误追踪（Sentry/Loki）
-- [ ] P0-4 HTTPS/证书（隧道已有；直连需 certbot）
+- [x] P0-3 错误追踪（P1-13 已用 Loki 集中日志替代；如需 Sentry 精确堆栈上报可后续接入）
+- [ ] P0-4 HTTPS/证书（隧道已有边缘 TLS；直连场景需 certbot，未做）
 - [x] P0-5 前端 404 页（catch-all 路由 + NotFound 视图）+ P1-9 gzip 与安全响应头（nginx）
 - [x] P0-6 密码找回引导（登录页「忘记密码」提示联系管理员；管理员重置接口 + 前端「重置密码」对话框已就绪；真实邮件找回需邮件基础设施，见 P1 备注）
 - [x] P0-7 通用请求限流（RateLimitFilter：per-IP 滑动窗口，默认 60 次/10s，429；放行 actuator/gateway/ws/health；已实测 61 次起 429）
 - [x] P0-8 审计日志页（GET /audit-logs user:manage 权限；前端 admin/audit-logs 视图 + 系统管理菜单；已验证 admin 可查、operator 403）
+- [x] P1-9 安全头 + gzip（nginx add_header 四件套 + gzip；index.html/assets 级重复声明）
+- [x] P1-10 连接池参数（HikariCP maximum-pool-size=10 / connection-timeout=30s 显式声明）
+- [x] P1-11 数据保留策略（`scripts/retain-events.sh`：dry-run 默认，归档 90 天前事件到 event_store_archive 再删；含聚合快照完整性说明）
+- [x] P1-12 优雅停机（Spring `server.shutdown=graceful` + compose `stop_grace_period` 35s/15s）
+- [x] P1-13 集中日志（Loki + promtail 采集容器日志；Grafana 自动配置 Prometheus+Loki 数据源；已验证 Loki 可查 server 日志）
+- [ ] P1-14 i18n（vue-i18n 文案抽离，工作量大，列为后续增强；如需可单独排期）
 - [ ] P1-9 安全头 + gzip
 - [ ] P1-10 连接池参数
 - [ ] P1-11 数据保留策略

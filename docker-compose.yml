@@ -84,6 +84,8 @@ services:
     build: ./eventguard-server
     ports: ["8080:8080"]
     logging: *default-logging
+    # P1-12 优雅停机：给 server 最多 35s 处理完在途请求（Spring graceful shutdown 30s）
+    stop_grace_period: 35s
     # ponytail: JVM 堆封顶，避免 java -jar 按宿主机内存默认分配
     mem_limit: 800m
     env_file: .env
@@ -103,6 +105,7 @@ services:
     logging: *default-logging
     # ponytail: 开发期在宿主跑 Vite dev server 时，需经 localhost:8000 代理到 AI 服务（与 server 的 8080 同理）
     ports: ["8000:8000"]
+    stop_grace_period: 15s
     env_file: .env
     environment:
       TZ: Asia/Shanghai
@@ -183,12 +186,40 @@ services:
       GF_SERVER_ROOT_URL: http://localhost:3001
     volumes:
       - "grafana-data:/var/lib/grafana"
+      - "./prometheus/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro"
     mem_limit: 300m
     logging: *default-logging
     depends_on: [prometheus]
+
+  # ===== P1-13 集中日志（Loki + promtail）=====
+  # promtail 读各容器日志并转发 Loki；Grafana Explore 里选 Loki 数据源即可查日志。
+  # 对 3.6G 小机是可选增强；内存紧张时可移除这两个服务。
+  loki:
+    <<: *default-restart
+    image: grafana/loki:3.1.0
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - "./prometheus/loki-config.yml:/etc/loki/local-config.yaml:ro"
+      - "loki-data:/loki"
+    mem_limit: 200m
+    logging: *default-logging
+
+  promtail:
+    <<: *default-restart
+    image: grafana/promtail:3.1.0
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - "/var/log:/var/log:ro"
+      - "/var/lib/docker/containers:/var/lib/docker/containers:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./prometheus/promtail-config.yml:/etc/promtail/config.yml:ro"
+    mem_limit: 100m
+    logging: *default-logging
+    depends_on: [loki]
 
 volumes:
   pgdata:
   debezium-data:
   prometheus-data:
   grafana-data:
+  loki-data:

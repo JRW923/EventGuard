@@ -1,14 +1,26 @@
 server:
   port: 8080
+  # P1-12 优雅停机：收到 SIGTERM 后停止接收新请求，等待在途请求处理完再退出
+  shutdown: graceful
 
 spring:
   application:
     name: eventguard-server
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/eventguard}
     username: ${DB_USER:eventguard}
     password: ${DB_PASSWORD:eventguard}
     driver-class-name: org.postgresql.Driver
+    # P1-10 显式 HikariCP 连接池参数：小内存机 800m 堆封顶，连接池过大只会空占内存；
+    # 10 连接 + 30s 获取超时足够当前单实例吞吐，溢出时抛超时而非无限等待
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      validation-timeout: 5000
+      max-lifetime: 1800000
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP:kafka:9092}
     consumer:
