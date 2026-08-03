@@ -114,3 +114,15 @@ export interface AuditLogItem {
   ip: string
   createdAt: string
 }
+
+export interface HealthInfo {
+  status: string
+  version: string
+  dependencies: Record<string, string>
+}
+
+export const HealthApi = {
+  get(): Promise<HealthInfo> {
+    return http.get<HealthInfo>('/health').then((r) => r.data)
+  },
+}

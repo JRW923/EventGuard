@@ -22,6 +22,7 @@ export default defineConfig({
       '/roles': 'http://localhost:8080',
       '/audit-logs': 'http://localhost:8080',
       '/gateway': 'http://localhost:8080',
+      '/health': 'http://localhost:8080',
       '/ws': {
         target: 'ws://localhost:8080',
         ws: true,

@@ -43,17 +43,38 @@
         <router-view />
       </div>
     </el-main>
+    <el-footer class="app-footer" v-if="health">
+      <span>EventGuard {{ health.version }}</span>
+      <span class="app-footer-dot">·</span>
+      <span :class="health.status === 'UP' ? 'status-ok' : 'status-down'">
+        {{ health.status === 'UP' ? '后端正常' : '后端异常' }}
+      </span>
+      <span v-if="health.dependencies?.db" class="app-footer-dot">·</span>
+      <span v-if="health.dependencies?.db" :class="health.dependencies.db === 'UP' ? 'status-ok' : 'status-down'">
+        数据库{{ health.dependencies.db === 'UP' ? '正常' : '异常' }}
+      </span>
+    </el-footer>
   </el-container>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { auth } from '@/stores/auth'
-import { AuthApi } from '@/api/auth'
+import { AuthApi, HealthApi, type HealthInfo } from '@/api/auth'
 
 const router = useRouter()
+
+const health = ref<HealthInfo | null>(null)
+
+onMounted(async () => {
+  try {
+    health.value = await HealthApi.get()
+  } catch {
+    health.value = { status: 'DOWN', version: 'unknown', dependencies: {} }
+  }
+})
 
 const avatarText = computed(() => (auth.user?.displayName || auth.user?.username || '?').charAt(0).toUpperCase())
 
@@ -201,6 +222,25 @@ body {
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
+}
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #909399;
+  font-size: 12px;
+  background: #fff;
+  border-top: 1px solid #e4e7ed;
+}
+.app-footer-dot {
+  color: #dcdfe6;
+}
+.status-ok {
+  color: #67c23a;
+}
+.status-down {
+  color: #f56c6c;
 }
 
 /* 统一原生 select 视觉（状态筛选 / 动作类型），与 Element Plus 控件一致 */
