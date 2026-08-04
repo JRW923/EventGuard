@@ -41,11 +41,18 @@
 > P0/P1 已全部落地（P0-4 HTTPS/证书除外——隧道已提供边缘 TLS，直连场景需 certbot，见 P0-4 备注；
 > P1-14 i18n 列为后续增强）。P2 已实现 16/17/18/15（令牌管理、版本健康、CORS、PWA/移动端）；
 > 剩余：P1-14 i18n、P2-19 配置中心/密钥轮换。
+>
+> 各 P 项的效果可用**评测模块**量化验证：`docker compose --profile bench run --rm bench` 产出
+> `benchmark-report.{md,json,html}`（含监控埋点数据与 Grafana dashboard 导入 JSON），
+> 详见 [`eventguard-benchmark/README.md`](../eventguard-benchmark/README.md)。
 
 ## 实施记录
 
 - [x] P0-1 备份脚本（`scripts/backup-db.sh`：docker exec pg_dump custom 格式，保留 14 天，已验证 pg_restore --list 可读）
 - [x] P0-2 Prometheus + Grafana（actuator 暴露 prometheus 端点 + micrometer 依赖；compose 加 prometheus/alertmanager/grafana；server target up，告警规则 server-down/5xx 就绪，webhook 见 alertmanager.yml）
+  - 评测模块增强（2026-08）：server 新增 `eventguard.*` 业务指标（命令延迟/吞吐、Saga、告警、支付回调、限流拒绝、投影计数），
+    AI 新增 `eventguard_ai_*` prometheus_client 指标（检测吞吐/延迟、NL 查询）并暴露 `/metrics`，
+    prometheus.yml 增抓 `eventguard-ai`；Grafana 基准看板导入 JSON 见 `eventguard-benchmark/dashboard/`。
 - [x] P0-3 错误追踪（P1-13 已用 Loki 集中日志替代；如需 Sentry 精确堆栈上报可后续接入）
 - [ ] P0-4 HTTPS/证书（隧道已有边缘 TLS；直连场景需 certbot，未做）
 - [x] P0-5 前端 404 页（catch-all 路由 + NotFound 视图）+ P1-9 gzip 与安全响应头（nginx）

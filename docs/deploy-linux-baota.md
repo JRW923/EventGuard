@@ -21,6 +21,7 @@
 
 浏览器只访问 `http://<服务器IP>:80`（UI）；`/orders`、`/compensations`、`/ai`、`/anomalies`、`/ws` 由 UI 的 nginx 反代到后端/AI。
 监控看板 `http://<服务器IP>:3001`（Grafana，已自动配置 Prometheus + Loki 数据源）。
+预置的业务/评测看板可在 Grafana「Dashboards → Import」导入 `eventguard-benchmark/dashboard/eventguard-benchmark.json`。
 
 依赖链路：**订单事件 → PostgreSQL → Debezium CDC → Kafka → AI 实时检测 / 查询投影 → 前端看板**。
 

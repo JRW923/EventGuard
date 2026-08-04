@@ -140,6 +140,20 @@ echo "token=$TOKEN"
 | 3:40–4:20 | 场景 6 NL 查询 + 时间线 + 补偿 |
 | 4:20–5:00 | 场景 7 自动补偿（Saga 闭环） |
 
+## 量化证据（评测模块，面试加分）
+
+现场演示讲「能跑」，**评测模块**补「能量化」——逐功能产出可观测数据，可直接用于简历/作品集叙述：
+
+```bash
+docker compose --profile bench run --rm bench     # 功能评测：10 个套件（含异常检测 P/R/F1、CDC 延迟、
+                                                  # NL 查询准确率、Saga 成功率、限流、RBAC 矩阵）
+bash eventguard-benchmark/chaos_run.sh            # 韧性评测（宿主机）：PG 崩溃零丢失/恢复时间
+ls eventguard-benchmark/out/                      # benchmark-report.{md,json,html} + Grafana dashboard
+```
+
+讲解要点：每条断言标注驱动方式（rest / kafka_inject / db_assert / chaos），聚合状态机不可达的规则用
+合成事件注入并如实标注；报告含摘要 KPI 与逐功能「方法→断言→数据表→结论」，数字为实测非编造。
+
 ## 已知上限（ponytail，演示时如需诚实说明）
 
 - AI 无 `GET /anomalies` 历史列表接口，异常仅经 WebSocket 推送，根因走 `GET /anomalies/{id}/analysis`。
