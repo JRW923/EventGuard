@@ -95,10 +95,14 @@ public class RateLimitFilter implements Filter {
     }
 
     private String clientIp(HttpServletRequest req) {
-        String xff = req.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            return xff.split(",")[0].trim();
+        // 优先取 X-Real-IP：nginx 在每个反代 location 用 $remote_addr 覆盖写入，反代层内不可伪造。
+        // 不能读 X-Forwarded-For——nginx 未透传该头，读它会回退到 remoteAddr（nginx 容器 IP），
+        // 导致所有 UI 用户共享同一个 60/10s 窗口，限流退化为「全站单桶」（一人刷爆全站 429）。
+        String real = req.getHeader("X-Real-IP");
+        if (real != null && !real.isBlank()) {
+            return real;
         }
+        // 直接访问 server:8080（容器内网，未对外暴露）时无 X-Real-IP，用真实远端地址。
         return req.getRemoteAddr();
     }
 }
