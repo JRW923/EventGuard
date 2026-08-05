@@ -3,4 +3,6 @@
 # （挂载的源码 + maven 缓存），配合 spring-boot-devtools 实现改代码即热重载。
 FROM maven:3.9-eclipse-temurin-17
 WORKDIR /app
-CMD ["sh", "-c", "while true; do mvn -q -o compile -B || true; sleep 2; done & mvn spring-boot:run -B -Dspring-boot.run.fork=false"]
+# ponytail: 编译循环不用 -o（offline）——maven-cache 卷首次为空时离线模式会因缺插件/依赖而失败，
+# 导致 dev 环境首跑起不来。首次在线拉全后本地有缓存，后续联网开销极小。
+CMD ["sh", "-c", "while true; do mvn -q compile -B || true; sleep 2; done & mvn spring-boot:run -B -Dspring-boot.run.fork=false"]

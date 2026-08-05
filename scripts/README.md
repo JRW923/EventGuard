@@ -39,6 +39,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml build eventguard-
 
 # 启动后端开发模式（端口/服务名不变，Vite 代理照常工作）
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d eventguard-server eventguard-ai
+# 注：maven-cache 卷首次为空，首次启动会在线拉取 Maven 依赖，稍慢；拉全后走本地缓存，后续很快。
 ```
 
 > **开发镜像用独立 `-dev` 标签**（`eventguard-eventguard-server-dev` / `eventguard-eventguard-ai-dev`），
