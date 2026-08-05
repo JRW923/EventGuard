@@ -135,6 +135,10 @@ Mock 网关行为可配：`EG_GATEWAY_MOCK_PAYMENT_FAILURE_RATE`（支付失败�
 - **版本/健康**：页脚显示版本号与后端/数据库连通状态；`GET /health` 公开端点。
 - **CORS**：默认同源；`EG_CORS_ALLOWED_ORIGINS`（逗号分隔）开放跨域给第三方。
 - **PWA / 移动端**：可安装为 PWA（manifest.webmanifest）；窄屏自动换行、菜单横向滚动。
+- **四维加固（一致性/可用性/安全性/体验度）**：限流按真实用户 IP 分桶（反代后不再全站单桶）、
+  AI 告警发布失败退避重试、最近告警环形缓冲 + `GET /alerts/recent`（WS 断线补拉不丢告警）、
+  Debezium 健康检查、Saga 启动重放恢复（PENDING 审批单重启不中断补偿）、NL 查询 8s 超时自动降级。
+  详见 [`docs/gaps-prod-readiness.md`](docs/gaps-prod-readiness.md)「2026-08 二次加固」。
 
 ## 评测模块（bench）
 

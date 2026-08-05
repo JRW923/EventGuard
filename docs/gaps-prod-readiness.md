@@ -71,3 +71,18 @@
 - [ ] P1-12 优雅停机
 - [ ] P1-13 错误追踪接入
 - [ ] P1-14 i18n
+
+### 2026-08 二次加固（一致性/可用性/安全性/体验度，非原缺口清单）
+
+针对使用中暴露的 6 个真实缺口逐项加固（验证见 `verification-log.md` §11）：
+
+- [x] **限流按真实用户 IP 分桶**（安全/体验）：nginx 只设 `X-Real-IP`、不透传 XFF，原实现回退 `remoteAddr`
+  使全站共享一个 60/10s 窗口。`RateLimitFilter.clientIp()` 改为优先读 `X-Real-IP`，修掉「一人刷爆全站 429」。
+- [x] **AI 告警发布重试退避**（可用性）：`_publish` 3 次退避重试（0.3/0.9/1.8s），消除瞬时可修复的告警丢失。
+- [x] **最近告警历史 + WS 补拉**（可用性/一致性）：server `RecentAlertsBuffer`（100 条）+ `GET /alerts/recent`，
+  前端 WS 重连后按 `anomaly_id` 去重补拉；补掉「断线告警永久丢失、无历史列表」上限。
+- [x] **Debezium 健康检查**（可用性）：/proc 探测 JVM 存活，unhealthy 配合 restart 拉起，避免 CDC 静默停转。
+- [x] **Saga 启动重放恢复**（一致性）：审批落单存剩余步骤（`__saga_remaining_steps` 保留键），启动时
+  `SagaRecoveryRunner` 重建 PENDING 审批单对应的在途 saga → 重启后审批通过仍继续执行，不再 FAILED。
+- [x] **NL 查询超时降级**（体验）：NL 路径 8s `asyncio.wait_for` 上界（LLM 底层 30s > 前端 10s 的错配），
+  慢 LLM 自动降级为数据摘要；前端加「正在分析…（自动降级）」loading 文案 + 超时友好提示。

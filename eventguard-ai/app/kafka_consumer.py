@@ -12,6 +12,10 @@ from app import metrics as egm
 
 logger = logging.getLogger(__name__)
 
+# 告警发布重试：3 次，退避 0.3s/0.9s（顺序与次数对齐）；真宕机不无限阻塞消费线程
+PUBLISH_RETRIES = 3
+PUBLISH_BACKOFF_SECONDS = (0.3, 0.9, 1.8)
+
 
 class EventKafkaConsumer:
     """消费 domain-events 的后台线程消费者"""
@@ -154,17 +158,36 @@ class DetectionHandler:
                 self._publish(pa)
 
     def _publish(self, anomaly) -> None:
-        """发布异常到 Kafka；失败时留痕并计数（broker 不可达丢告警但 store 已留痕）。"""
-        try:
-            self.publisher.publish(anomaly)
-            egm.anomalies_published.labels(
-                rule_id=anomaly.rule_id or anomaly.source or "unknown",
-                source=anomaly.source or "unknown",
-                level=anomaly.level or "unknown",
-            ).inc()
-        except Exception as e:  # ponytail: broker 不可达时丢告警但 store 已留痕;升级路径=异步发送+失败回调
-            egm.publish_errors.inc()
-            logger.error("发布异常失败(已存内存 store): %s", e)
+        """发布异常到 Kafka；瞬时失败带退避重试，仍失败则留痕并计数。
+
+        broker 抖动（连接瞬时不可达）是发布失败的主因，重试可消除；真宕机时
+        3 次退避 ~3s 后放弃，不无限阻塞消费线程（消费背压由 Kafka 重平衡兜底）。
+        """
+        last_exc: Optional[Exception] = None
+        for attempt in range(PUBLISH_RETRIES):
+            try:
+                self.publisher.publish(anomaly)
+                egm.anomalies_published.labels(
+                    rule_id=anomaly.rule_id or anomaly.source or "unknown",
+                    source=anomaly.source or "unknown",
+                    level=anomaly.level or "unknown",
+                ).inc()
+                return
+            except Exception as e:
+                last_exc = e
+                if attempt < PUBLISH_RETRIES - 1:
+                    delay = PUBLISH_BACKOFF_SECONDS[attempt]
+                    logger.warning(
+                        "发布异常失败（第 %d/%d 次，%ss 后重试）: %s",
+                        attempt + 1, PUBLISH_RETRIES, delay, e,
+                    )
+                    time.sleep(delay)
+        # ponytail: 重试后仍失败——broker 持续不可达，告警暂存内存 store（升级路径：异步发送+死信）
+        egm.publish_errors.inc()
+        logger.error(
+            "发布异常失败（重试 %d 次后放弃，已存内存 store）: %s",
+            PUBLISH_RETRIES - 1, last_exc,
+        )
 
     def _build_anomaly(self, event: dict, result: AnomalyResult) -> Anomaly:
         """从检测结果构建 Anomaly 模型"""

@@ -75,6 +75,8 @@ echo "token=$TOKEN"
 - **讲解要点**：链路是 `domain_events → Debezium CDC → Kafka(domain-events) → AI 检测
   → Kafka(anomaly-alerts) → Spring 消费 → WebSocket(/ws/anomalies)` 推送前端。
   强调「事件驱动 + 实时推送」，而不是前端轮询。
+- **增强（断线补拉）**：WS 断线重连后，前端自动调 `GET /alerts/recent`（server 侧最近 100 条环形缓冲）
+  按 `anomaly_id` 去重补拉断线期间错过的告警——断网几秒不漏告警。
 
 ## 场景 5：点开根因报告（根因分析）
 
@@ -156,9 +158,10 @@ ls eventguard-benchmark/out/                      # benchmark-report.{md,json,ht
 
 ## 已知上限（ponytail，演示时如需诚实说明）
 
-- AI 无 `GET /anomalies` 历史列表接口，异常仅经 WebSocket 推送，根因走 `GET /anomalies/{id}/analysis`。
-- LLM 根因为可选增强，无 Ollama 时走兜底。
+- 异常历史经 `GET /alerts/recent` 提供最近 100 条（WS 断线补拉用）；完整历史检索接口未做。
+- LLM 根因为可选增强，无 Ollama 时走兜底；NL 查询对慢 LLM 有 8s 超时自动降级为数据摘要。
 - 网关默认走 mock（`EG_*_PROVIDER=mock`）；支付为异步回调形态，真实 Provider（支付宝/企业微信）需在 `.env`
-  配置凭证（未配置时优雅降级为失败原因）。Saga 实例为内存态，重启即清。
+  配置凭证（未配置时优雅降级为失败原因）。Saga 实例为内存态，重启即清（PENDING 审批单经 `SagaRecoveryRunner`
+  启动重放恢复，重启不丢在途补偿）。
 - 端点鉴权为登录 JWT（`Authorization: Bearer` / WS `?token=`），按角色授权（OPERATOR 可下单/补偿，
   VIEWER 只读）；演示用种子账号首次登录会强制改密。生产务必设置强随机 `EG_JWT_SECRET` 与 `EG_MACHINE_API_KEY`。

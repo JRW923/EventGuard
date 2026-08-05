@@ -1,4 +1,5 @@
 """NL 查询引擎：意图分类 → 模板执行 → LLM 润色回答。"""
+import asyncio
 import json
 import logging
 import time
@@ -12,6 +13,11 @@ from app.query.query_result import QueryResult
 from app.query.template_executor import TemplateExecutor
 
 logger = logging.getLogger(__name__)
+
+# LLM 润色回答的超时上界：LLM 底层 httpx 超时 30s，但前端 axios 只等 10s——
+# 不加这个上界，慢 LLM 会让前端先中止、用户看到「查询失败」而非降级摘要。
+# 8s 内 LLM 无响应 → _generate_answer 捕获超时 → 返回数据摘要，保证 10s 内必有回答。
+LLM_ANSWER_TIMEOUT_SECONDS = 8.0
 
 
 class NLQueryEngine:
@@ -76,7 +82,8 @@ class NLQueryEngine:
             prompt = NL_ANSWER_SYSTEM_PROMPT + "\n" + NL_ANSWER_USER_TEMPLATE.format(
                 question=question, intent=intent, result=result_str
             )
-            return (await self.llm_client.generate(prompt)).strip()
+            return (await asyncio.wait_for(
+                self.llm_client.generate(prompt), timeout=LLM_ANSWER_TIMEOUT_SECONDS)).strip()
         except Exception as e:
             logger.warning("LLM 润色失败，返回数据摘要：%s", e)
             return self._fallback_answer(intent, data)

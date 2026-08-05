@@ -2,6 +2,7 @@
 
 mock IntentClassifier + TemplateExecutor + LLMClient，验证路由与回答生成。
 """
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -104,3 +105,34 @@ class TestNLQueryEngine:
         assert result.intent == "event_lookup"
         # answer 应含原始数据摘要，不抛异常
         assert "abc" in result.answer or "PAID" in result.answer
+
+    @pytest.mark.asyncio
+    async def test_query_llm_timeout_falls_back_to_summary(self, monkeypatch):
+        """LLM 响应超时（超过 LLM_ANSWER_TIMEOUT_SECONDS）时降级为数据摘要，而非让前端等超时。
+
+        对应加固项：LLM 底层 httpx 超时 30s > 前端 axios 10s，必须由 NL 路径单独 8s 上界兜底。
+        """
+        monkeypatch.setattr("app.query.nl_query_engine.LLM_ANSWER_TIMEOUT_SECONDS", 0.05)
+        mock_classifier = AsyncMock()
+        mock_classifier.classify.return_value = "event_lookup"
+        mock_executor = AsyncMock()
+        mock_executor.execute_event_lookup.return_value = {"orderId": "abc", "status": "PAID"}
+        mock_llm = AsyncMock()
+
+        async def slow_generate(_prompt: str):
+            await asyncio.sleep(1.0)  # 远超 0.05s 上界，应被 wait_for 取消
+            return "太慢的回答"
+
+        mock_llm.generate.side_effect = slow_generate
+
+        engine = NLQueryEngine(
+            intent_classifier=mock_classifier,
+            template_executor=mock_executor,
+            llm_client=mock_llm,
+        )
+
+        result = await engine.query("订单 abc 状态？")
+
+        assert result.intent == "event_lookup"
+        # 返回降级摘要而非抛出超时异常
+        assert "PAID" in result.answer or "abc" in result.answer

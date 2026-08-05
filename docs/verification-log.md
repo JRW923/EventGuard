@@ -408,3 +408,40 @@ git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时�
   修复：`OrderAggregate.handle(CreateOrderCommand)` 给事件补 `metadata={"userId":...}`。
   150 个 server 测试全绿证明无回归；该问题由评测模块的 R001 rest 场景设计暴露。
 
+## 11. 一致性/可用性/安全性/体验度强化（2026-08-04）
+
+四维加固（非业务复杂度），针对勘察发现的 6 个真实缺口逐项落地。
+
+### 11.1 改动清单
+
+| 项 | 维度 | 改动 | 关键文件 |
+|---|---|---|---|
+| RateLimitFilter 信任 X-Real-IP | 安全/体验 | nginx 只设 `X-Real-IP`、不透传 `X-Forwarded-For` → 原实现读 XFF 落空后回退 `remoteAddr`（nginx 容器 IP），**所有走 UI 的请求共享一个 60/10s 窗口**（一人刷爆全站 429，per-IP 假隔离）。改为优先读 `X-Real-IP`。 | `RateLimitFilter.java` + 2 测试 |
+| AI 发布重试退避 | 可用性 | `_publish` 失败只 `inc()` 计数即丢告警；加 3 次退避重试（0.3/0.9/1.8s），broker 真宕机时不无限阻塞消费线程。 | `kafka_consumer.py` |
+| 最近告警历史 + WS 补拉 | 可用性/一致性 | server 加 `RecentAlertsBuffer`（有界 100，最新在前）+ `GET /alerts/recent`（AuthFilter 鉴权）；nginx 加 `/alerts/` 反代；前端 WS 每次 open 后按 `anomaly_id` 去重补拉断线期间错过的告警。**补掉「无历史列表、断线告警永久丢失」已知上限。** | `RecentAlertsBuffer`、`AlertHistoryController`、nginx.conf、`useAnomalyWebSocket.ts` |
+| Debezium 健康检查 | 可用性 | `/proc` 扫描探测 JVM 存活（纯 sh，不依赖镜像内 pgrep）；unhealthy 配合 `restart: unless-stopped` 拉起，避免 CDC 静默停转无人知。 | docker-compose.yml |
+| Saga 启动重放恢复 | 一致性 | 审批落单时把「剩余步骤」写进 params 保留键 `__saga_remaining_steps`；`SagaRecoveryRunner` 启动时从 PENDING 审批单重建内存 saga 实例 → **重启后审批通过仍继续执行，不再因实例丢失 FAILED**。 | `CompensationSaga`、`SagaRecoveryRunner`、`ApprovalController`（视图过滤 `__` 键） |
+| NL 查询超时降级 | 体验 | LLM httpx 超时 30s > 前端 axios 10s → 慢 LLM 时前端先中止显示「查询失败」。NL 回答路径加 8s `asyncio.wait_for` 上界，超时自动降级为数据摘要；前端加「正在分析…（自动降级）」loading 文案 + 超时友好提示。 | `nl_query_engine.py`、`NLQuery.vue` |
+
+### 11.2 验证
+
+| 套件 | 结果 |
+|------|------|
+| `mvn test`（server，含新增 8 个测试） | **158 通过 / 0 失败** / 4 跳过 |
+| `pytest tests/`（AI，新增超时降级测试） | **60 通过 / 0 失败** |
+| `npm run test`（UI） | **24 通过 / 0 失败** |
+| `docker compose config`（debezium healthcheck） | 通过（`$$p` 转义正确，容器内解析为 `$p`） |
+
+新增测试：`RateLimitFilterTest` 5→7、`RecentAlertsBufferTest` 新增 3、`AnomalyAlertConsumerTest` 3→4、
+`CompensationSagaTest` 5→7、`test_nl_query_engine` 4→5。
+
+### 11.3 说明
+
+- **限流语义**：按 `X-Real-IP` 分桶（nginx 每请求覆盖写入，反代层内不可伪造）；server:8080 未对外暴露，伪造面可控。
+  直接访问 8080 的内部服务（bench 等）无 X-Real-IP 时回退 `remoteAddr`。
+- **告警补拉**：`/alerts/recent` 需有效 JWT；容量默认 100，可配 `eg.alerts.recent-capacity`。
+- **Saga 恢复**：只重建「PENDING 审批单」对应的在途实例——这是重启唯一会丢的状态；已完成/已拒绝不受影响。
+  `__saga_remaining_steps` 为保留键，`GET /approvals` 视图已过滤，不外泄给前端。
+- **NL 降级**：无 Ollama 时 LLMClient 秒失败走摘要（原本就快）；有 Ollama 但响应 >8s 也走摘要，保证 10s 内必有回答。
+
+
