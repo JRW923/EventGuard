@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -37,8 +38,22 @@ public class ApprovalController {
                                Object params, String status, String requestedBy, String requestedAt) {
         static ApprovalView from(ApprovalRepository.Approval a) {
             return new ApprovalView(a.approvalId(), a.sagaId(), a.actionType(), a.aggregateId(),
-                    a.params(), a.status(), a.requestedBy(),
+                    cleanParams(a.params()), a.status(), a.requestedBy(),
                     a.requestedAt() != null ? a.requestedAt().toString() : null);
+        }
+
+        /** 过滤保留键（__ 前缀，如 saga 剩余步骤）：只把业务参数暴露给前端。 */
+        private static Object cleanParams(Object params) {
+            if (!(params instanceof Map<?, ?> m)) {
+                return params;
+            }
+            Map<String, Object> filtered = new java.util.HashMap<>();
+            m.forEach((k, v) -> {
+                if (!(k instanceof String s) || !s.startsWith("__")) {
+                    filtered.put(String.valueOf(k), v);
+                }
+            });
+            return filtered;
         }
     }
 

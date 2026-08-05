@@ -24,4 +24,8 @@ export const AnomalyApi = {
   getAnalysis(anomalyId: string): Promise<AnalysisReport> {
     return http.get<AnalysisReport>(`/anomalies/${anomalyId}/analysis`).then((r) => r.data)
   },
+  // 最近告警历史（server 侧环形缓冲，最新在前）：WS 重连后补拉断线期间错过的告警
+  getRecentAlerts(): Promise<AnomalyAlert[]> {
+    return http.get<AnomalyAlert[]>('/alerts/recent').then((r) => r.data)
+  },
 }

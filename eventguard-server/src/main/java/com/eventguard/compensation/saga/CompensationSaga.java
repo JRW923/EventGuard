@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -23,11 +24,18 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * ponytail: saga 实例保存在内存 Map（单实例上限）；审批请求持久化到 compensation_approval 表，
  * 审批后按 sagaId 恢复继续执行。MVP 不做多实例 saga 存储，升级路径=落库 saga 状态机。
+ * <p>
+ * 崩溃恢复：审批落单时把「剩余步骤」写进审批单 params 的保留键 {@link #SAGA_STEPS_KEY}，
+ * server 重启后由 {@code SagaRecoveryRunner} 用 {@link #recoverPending} 重建内存实例，
+ * 审批通过仍能继续执行——解决「审批单在、实例丢，重启后审批即 FAILED」的补偿中断。
  */
 @Component
 public class CompensationSaga {
 
     private static final Logger log = LoggerFactory.getLogger(CompensationSaga.class);
+
+    /** 审批单 params 中保存剩余步骤的保留键（带 __ 前缀，前端视图会过滤）。 */
+    public static final String SAGA_STEPS_KEY = "__saga_remaining_steps";
 
     private final CompensationService compensationService;
     private final CompensationActionRegistry registry;
@@ -84,10 +92,12 @@ public class CompensationSaga {
             SagaStep step = saga.steps.get(saga.index);
             if (registry.get(step.actionType()) != null
                     && registry.get(step.actionType()).requiresApproval(saga.aggregateId, step.params())) {
-                // 挂起等审批：落审批单，返回等待
+                // 挂起等审批：落审批单，返回等待。审批单 params 附上剩余步骤，供重启后恢复内存实例。
                 UUID approvalId = UUID.randomUUID();
+                Map<String, Object> approvalParams = new HashMap<>(step.params() != null ? step.params() : Map.of());
+                approvalParams.put(SAGA_STEPS_KEY, remainingStepsJson(saga));
                 approvalRepository.insert(approvalId, saga.sagaId, step.actionType(), saga.aggregateId,
-                        step.params(), "saga");
+                        approvalParams, "saga");
                 saga.status = SagaStatus.AWAITING_APPROVAL;
                 if (metrics != null) {
                     metrics.counter("eventguard.saga.final_status", "status", "AWAITING_APPROVAL");
@@ -156,6 +166,47 @@ public class CompensationSaga {
         executeStep(saga, step);
         saga.index++;
         return run(saga);
+    }
+
+    /** 把 saga 剩余步骤（含待审批步骤）序列化为可 JSON 化的 List<Map>，存进审批单 params。 */
+    private List<Map<String, Object>> remainingStepsJson(SagaInstance saga) {
+        List<Map<String, Object>> json = new ArrayList<>();
+        for (SagaStep s : saga.steps.subList(saga.index, saga.steps.size())) {
+            json.add(Map.of("actionType", s.actionType(), "params", s.params()));
+        }
+        return json;
+    }
+
+    /**
+     * 启动恢复：从 PENDING 审批单重建内存实例（剩余步骤读取 params 保留键 {@link #SAGA_STEPS_KEY}）。
+     * <p>
+     * 恢复后 index=0 即待审批步骤；审批通过时 {@link #onApproved} 继续执行，不因重启而中断补偿。
+     */
+    public void recoverPending(ApprovalRepository.Approval approval) {
+        Object raw = approval.params().get(SAGA_STEPS_KEY);
+        if (!(raw instanceof List<?> rawList) || rawList.isEmpty()) {
+            log.warn("[Saga] 审批单缺少剩余步骤信息，无法恢复 sagaId={}", approval.sagaId());
+            return;
+        }
+        List<SagaStep> steps = new ArrayList<>();
+        for (Object item : rawList) {
+            if (!(item instanceof Map<?, ?> m)) {
+                continue;
+            }
+            Object actionType = m.get("actionType");
+            Object params = m.get("params");
+            if (actionType instanceof String at) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> p = params instanceof Map ? (Map<String, Object>) params : Map.of();
+                steps.add(new SagaStep(at, p));
+            }
+        }
+        SagaInstance saga = new SagaInstance(approval.sagaId(), approval.aggregateId(), steps);
+        saga.index = 0; // 剩余步骤从待审批步骤开始
+        saga.status = SagaStatus.AWAITING_APPROVAL;
+        instances.put(saga.sagaId, saga);
+        log.info("[Saga] 启动恢复 sagaId={} aggregateId={}（剩余 {} 步，待审批 {}）",
+                saga.sagaId, saga.aggregateId, steps.size(), approval.actionType());
     }
 
     public SagaStatus status(UUID sagaId) {

@@ -1,5 +1,6 @@
 package com.eventguard.anomaly.consumer;
 
+import com.eventguard.anomaly.history.RecentAlertsBuffer;
 import com.eventguard.anomaly.model.AnomalyAlert;
 import com.eventguard.common.websocket.AnomalyWebSocketHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -7,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -16,7 +18,8 @@ class AnomalyAlertConsumerTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final AnomalyWebSocketHandler handler = mock(AnomalyWebSocketHandler.class);
-    private final AnomalyAlertConsumer consumer = new AnomalyAlertConsumer(handler, objectMapper);
+    private final RecentAlertsBuffer buffer = new RecentAlertsBuffer(100);
+    private final AnomalyAlertConsumer consumer = new AnomalyAlertConsumer(handler, objectMapper, buffer);
 
     private String alertJson(String anomalyId, String ruleId, String source, String priority) throws Exception {
         return objectMapper.writeValueAsString(new AnomalyAlert(
@@ -30,6 +33,14 @@ class AnomalyAlertConsumerTest {
         consumer.on(alertJson("a-1", "R001", "RULE", "HIGH"));
 
         verify(handler).broadcast(any(AnomalyAlert.class));
+    }
+
+    @Test
+    void on_alert_is_saved_to_recent_buffer_for_ws_backfill() throws Exception {
+        consumer.on(alertJson("a-buf", "R002", "RULE", "HIGH"));
+
+        assertEquals(1, buffer.recent().size(), "告警应先入环形缓冲");
+        assertEquals("a-buf", buffer.recent().get(0).getAnomalyId());
     }
 
     @Test

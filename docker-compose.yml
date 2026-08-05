@@ -64,6 +64,14 @@ services:
     logging: *default-logging
     # ponytail: JVM 堆封顶，防止 CDC 连接器失控吃光内存
     mem_limit: 800m
+    healthcheck:
+      # 探测 Debezium JVM 存活：/proc 扫描含 "debezium" 的进程 cmdline（纯 sh，不依赖镜像内 pgrep）。
+      # JVM 崩溃（如 OOM）→ unhealthy → 配合 restart: unless-stopped 自动拉起，避免 CDC 静默停转无人知。
+      test: ["CMD-SHELL", "for p in /proc/[0-9]*; do grep -q debezium \"$$p/cmdline\" 2>/dev/null && exit 0; done; exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     volumes:
       - "./debezium/conf:/debezium/conf:ro"
       - "debezium-data:/debezium/data"

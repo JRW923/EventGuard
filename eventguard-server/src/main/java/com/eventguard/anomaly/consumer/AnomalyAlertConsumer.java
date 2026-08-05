@@ -1,6 +1,7 @@
 package com.eventguard.anomaly.consumer;
 
 import com.eventguard.anomaly.model.AnomalyAlert;
+import com.eventguard.anomaly.history.RecentAlertsBuffer;
 import com.eventguard.common.metrics.EventGuardMetrics;
 import com.eventguard.common.websocket.AnomalyWebSocketHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,13 +24,16 @@ public class AnomalyAlertConsumer {
 
     private final AnomalyWebSocketHandler webSocketHandler;
     private final ObjectMapper objectMapper;
+    private final RecentAlertsBuffer recentAlertsBuffer;
 
     @Autowired(required = false)
     private EventGuardMetrics metrics;
 
-    public AnomalyAlertConsumer(AnomalyWebSocketHandler webSocketHandler, ObjectMapper objectMapper) {
+    public AnomalyAlertConsumer(AnomalyWebSocketHandler webSocketHandler, ObjectMapper objectMapper,
+                                RecentAlertsBuffer recentAlertsBuffer) {
         this.webSocketHandler = webSocketHandler;
         this.objectMapper = objectMapper;
+        this.recentAlertsBuffer = recentAlertsBuffer;
     }
 
     @KafkaListener(topics = "anomaly-alerts", groupId = "anomaly-ws")
@@ -43,6 +47,8 @@ public class AnomalyAlertConsumer {
                         alert.getRuleId() != null ? alert.getRuleId() : "unknown",
                         "level", alert.getLevel() != null ? alert.getLevel() : "unknown");
             }
+            // 先入环形缓冲再广播：WS 会话断开时告警仍被保留，前端重连后经 /alerts/recent 补拉
+            recentAlertsBuffer.add(alert);
             webSocketHandler.broadcast(alert);
         } catch (Exception e) {
             log.error("反序列化/推送异常告警失败: {}", e.getMessage(), e);

@@ -87,6 +87,50 @@ class CompensationSagaTest {
     }
 
     @Test
+    void approval_insert_stores_remaining_steps_for_recovery() {
+        when(registry.get("RISKY")).thenReturn(action(true));
+        when(compensationService.execute(any(CompensationRequest.class)))
+                .thenReturn(CompensationResult.success("ok"));
+
+        saga.begin(UUID.randomUUID(), List.of(
+                new SagaStep("RISKY", Map.of("amount", BigDecimal.valueOf(200))),
+                new SagaStep("NOTIFY", Map.of())));
+
+        ArgumentCaptor<Map<String, Object>> paramsCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(approvalRepository).insert(any(), any(), eq("RISKY"), any(), paramsCaptor.capture(), any());
+        assertThat(paramsCaptor.getValue()).containsKey(CompensationSaga.SAGA_STEPS_KEY);
+    }
+
+    @Test
+    void recovery_rebuilds_instance_and_approve_continues() {
+        // 模拟「重启前落库的 PENDING 审批单」：params 带剩余步骤（待审批步骤 + 后续步骤）
+        when(registry.get("RISKY")).thenReturn(action(true));
+        when(registry.get("NOTIFY")).thenReturn(action(false));
+        when(compensationService.execute(any(CompensationRequest.class)))
+                .thenReturn(CompensationResult.success("ok"));
+
+        UUID aggregateId = UUID.randomUUID();
+        UUID approvalId = UUID.randomUUID();
+        UUID sagaId = UUID.randomUUID();
+        Map<String, Object> params = new java.util.HashMap<>();
+        params.put(CompensationSaga.SAGA_STEPS_KEY, List.of(
+                Map.of("actionType", "RISKY", "params", Map.of("amount", BigDecimal.valueOf(200))),
+                Map.of("actionType", "NOTIFY", "params", Map.of())));
+        ApprovalRepository.Approval approval = new ApprovalRepository.Approval(
+                approvalId, sagaId, "RISKY", aggregateId, params, "PENDING", "saga", Instant.now(), null, null);
+        when(approvalRepository.findByApprovalId(approvalId)).thenReturn(Optional.of(approval));
+
+        // 启动恢复 → 实例回到内存，状态 AWAITING_APPROVAL
+        saga.recoverPending(approval);
+        assertThat(saga.status(sagaId)).isEqualTo(SagaStatus.AWAITING_APPROVAL);
+
+        // 审批通过 → 执行 RISKY + 继续 NOTIFY → COMPLETED（不再因实例丢失而 FAILED）
+        SagaStatus resumed = saga.onApproved(approvalId, true, "operator");
+        assertThat(resumed).isEqualTo(SagaStatus.COMPLETED);
+        verify(compensationService, times(2)).execute(any(CompensationRequest.class));
+    }
+
+    @Test
     void unknown_approval_returns_failed() {
         when(approvalRepository.findByApprovalId(any())).thenReturn(Optional.empty());
         assertThat(saga.onApproved(UUID.randomUUID(), true, "operator")).isEqualTo(SagaStatus.FAILED);
