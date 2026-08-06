@@ -123,7 +123,7 @@
             <div class="landing-about-info">
               <h3 class="landing-about-name">吴佳睿</h3>
               <p class="landing-about-roles">后端开发 · AI 应用开发 · Agent 开发</p>
-              <p class="landing-about-edu">🎓 东南大学 · 本科 + 硕士</p>
+              <p class="landing-about-edu">🎓 东南大学 · 本硕</p>
               <div class="landing-about-links">
               <a class="landing-about-link" href="https://github.com/JRW923" target="_blank" rel="noopener noreferrer">
                 <svg viewBox="0 0 16 16" class="landing-about-github" aria-hidden="true">

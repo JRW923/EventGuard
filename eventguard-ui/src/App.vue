@@ -26,7 +26,7 @@
           </el-sub-menu>
         </el-menu>
 
-        <el-dropdown class="app-user" @command="onUserCommand">
+        <el-dropdown v-if="auth.isAuthenticated" class="app-user" @command="onUserCommand">
           <span class="app-user-trigger">
             <span class="app-user-avatar">{{ avatarText }}</span>
             {{ auth.user?.displayName || auth.user?.username }}
@@ -34,7 +34,7 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="profile">修改密码</el-dropdown-item>
-              <el-dropdown-item v-if="auth.isAuthenticated" command="logout" divided>退出登录</el-dropdown-item>
+              <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -56,13 +56,20 @@
         数据库{{ health.dependencies.db === 'UP' ? '正常' : '异常' }}
       </span>
     </el-footer>
+    <!-- 边角返回欢迎页（不占主视觉，仅角落可回） -->
+    <button class="app-home-corner" title="返回欢迎页" aria-label="返回欢迎页" @click="goWelcome">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 10.5 12 3l9 7.5" />
+        <path d="M5 9.5V21h14V9.5" />
+      </svg>
+    </button>
   </el-container>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
 import { auth } from '@/stores/auth'
 import { AuthApi, HealthApi, type HealthInfo } from '@/api/auth'
 
@@ -85,11 +92,6 @@ const avatarText = computed(() => (auth.user?.displayName || auth.user?.username
 
 async function onUserCommand(command: string) {
   if (command === 'profile') {
-    // 未登录（如在登录页）点「修改密码」给出提示，而不是静默跳转（/profile 需登录态）
-    if (!auth.isAuthenticated) {
-      ElMessage.warning('请先登录后再修改密码')
-      return
-    }
     router.push('/profile')
   } else if (command === 'logout') {
     try {
@@ -105,6 +107,11 @@ async function onUserCommand(command: string) {
     auth.logout()
     router.push('/login')
   }
+}
+
+// 控制台各页边角返回欢迎页（/ 落地页）
+function goWelcome() {
+  router.push('/')
 }
 </script>
 
@@ -278,6 +285,32 @@ body {
 }
 .status-down {
   color: #f56c6c;
+}
+
+/* 边角返回欢迎页：低调小按钮，不占主视觉 */
+.app-home-corner {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 30;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(64, 158, 255, 0.35);
+  background: rgba(255, 255, 255, 0.88);
+  color: #409eff;
+  cursor: pointer;
+  opacity: 0.4;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.app-home-corner:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(64, 158, 255, 0.25);
 }
 
 /* 统一原生 select 视觉（状态筛选 / 动作类型），与 Element Plus 控件一致 */

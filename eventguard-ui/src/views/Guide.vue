@@ -314,7 +314,7 @@ body.eg-landing {
 
 /* ---------- 主体 ---------- */
 .guide-main {
-  max-width: 960px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: 120px 20px 60px;
 }
