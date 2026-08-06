@@ -13,7 +13,9 @@ import java.util.Map;
 
 /**
  * 认证种子数据（幂等）：权限目录 → 角色 → 角色-权限映射 → 默认用户 → 用户-角色映射。
- * BCrypt 哈希在运行时生成（避免在 SQL 中写死哈希）；默认账号首次登录强制改密。
+ * BCrypt 哈希在运行时生成（避免在 SQL 中写死哈希）。
+ * 演示账号（admin/operator/viewer）每次启动都会重置为配置的默认密码，且不要求首次登录强制改密；
+ * 这样多人/多轮体验时，展示页上的默认密码始终可用。
  */
 @Component
 public class AuthDataSeeder implements ApplicationRunner {
@@ -90,8 +92,14 @@ public class AuthDataSeeder implements ApplicationRunner {
     }
 
     private void seedUser(String username, String password, String displayName, String roleCode) {
+        // 演示账号幂等重置：不存在则创建；已存在则把密码重置回默认值并清 must_change_password，
+        // 确保展示页上的默认密码始终可用（改过/被别人改过也不影响）。同时递增 token_version 令旧 JWT 失效。
         jdbc.update("INSERT INTO auth_user(username, password_hash, display_name, enabled, must_change_password) "
-                        + "VALUES (?,?,?,TRUE,TRUE) ON CONFLICT (username) DO NOTHING",
+                        + "VALUES (?,?,?,TRUE,FALSE) "
+                        + "ON CONFLICT (username) DO UPDATE SET "
+                        + "  password_hash = EXCLUDED.password_hash, display_name = EXCLUDED.display_name, "
+                        + "  enabled = TRUE, must_change_password = FALSE, "
+                        + "  token_version = auth_user.token_version + 1, updated_at = now()",
                 username, encoder.encode(password), displayName);
         Long userId = jdbc.queryForObject("SELECT id FROM auth_user WHERE username = ?", Long.class, username);
         Long roleId = jdbc.queryForObject("SELECT id FROM auth_role WHERE code = ?", Long.class, roleCode);

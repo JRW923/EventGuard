@@ -110,7 +110,7 @@
           </p>
         </div>
       </div>
-      <p class="landing-account-note reveal">以上为默认演示密码，首次登录会强制修改密码。</p>
+      <p class="landing-account-note reveal">以上为演示账号的默认密码，可直接登录体验。</p>
     </section>
 
     <!-- 关于我 -->
