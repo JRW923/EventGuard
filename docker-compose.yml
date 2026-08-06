@@ -209,6 +209,8 @@ services:
   prometheus:
     <<: *default-restart
     image: prom/prometheus:v2.53.0
+    # ponytail: 仅映射供本地 SSH 隧道访问原始 UI；Grafana 仍经 3001 直连此服务
+    ports: ["9090:9090"]
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=15d"
@@ -223,6 +225,8 @@ services:
   alertmanager:
     <<: *default-restart
     image: prom/alertmanager:v0.27.0
+    # ponytail: 仅映射供本地 SSH 隧道访问；生产不直接暴露
+    ports: ["9093:9093"]
     command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
     volumes:
       - "./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro"
