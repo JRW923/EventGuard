@@ -11,7 +11,7 @@
         </div>
         <div class="landing-nav-links">
           <a href="#features" @click.prevent="scrollToSection('features')">核心能力</a>
-          <a href="#tech" @click.prevent="scrollToSection('tech')">技术栈</a>
+          <a href="#projtech" @click.prevent="scrollToSection('projtech')">项目技术栈</a>
           <a href="#accounts" @click.prevent="scrollToSection('accounts')">体验账号</a>
           <a href="#about" @click.prevent="scrollToSection('about')">关于我</a>
         </div>
@@ -31,7 +31,7 @@
         <h1 class="landing-title">EventGuard <span class="landing-title-cn">事件卫士</span></h1>
         <p class="landing-sub">
           一套面向电商订单的<strong>事件溯源 + 智能异常检测 + 中文自然语言查询</strong>平台 ——
-          让每一次业务变化都有据可查，让异常在第一时间被发现。
+          让每一次业务变化都有据可查，让异常能被及时识别。
         </p>
         <div class="landing-chips">
           <span class="landing-chip" v-for="chip in heroChips" :key="chip">{{ chip }}</span>
@@ -40,7 +40,7 @@
           <button class="landing-btn landing-btn--primary landing-btn--lg" @click="goEnter">🚀 进入系统</button>
           <router-link class="landing-btn landing-btn--glass landing-btn--lg" to="/guide">📖 体验指南</router-link>
         </div>
-        <p class="landing-hint">公开演示 · 免费体验 · 首次进入请用下方「体验账号」登录</p>
+        <p class="landing-hint">公开演示环境 · 使用下方「体验账号」即可登录体验</p>
       </div>
       <button class="landing-scroll" aria-label="向下浏览" @click="scrollToSection('features')">
         <span class="landing-scroll-chevron"></span>
@@ -50,7 +50,6 @@
     <!-- 核心能力 -->
     <section id="features" class="landing-section">
       <h2 class="landing-h2 reveal">核心能力</h2>
-      <p class="landing-sec-sub reveal">从订单写入到异常发现，每一步都有据可查、实时可感</p>
       <div class="landing-cards">
         <div
           v-for="f in features"
@@ -73,39 +72,14 @@
     <!-- 项目技术栈 -->
     <section id="projtech" class="landing-section landing-section--thin">
       <h2 class="landing-h2 reveal">项目技术栈</h2>
-      <p class="landing-sec-sub reveal">这套系统前后端全链路自研，一键容器化部署</p>
       <div class="landing-projtech-chips reveal">
         <span class="landing-tech-item" v-for="t in projectStack" :key="t">{{ t }}</span>
-      </div>
-    </section>
-
-    <!-- 技术栈 -->
-    <section id="tech" class="landing-section">
-      <h2 class="landing-h2 reveal">技术栈</h2>
-      <p class="landing-sec-sub reveal">个人技能树 · 五大方向 —— 语言、后端、数据与中间件、AI 工程、部署与运维</p>
-      <div class="landing-tech">
-        <div
-          v-for="g in techGroups"
-          :key="g.title"
-          class="landing-tech-group reveal"
-          :style="{ '--accent': g.accent }"
-        >
-          <div class="landing-tech-group-head">
-            <span class="landing-tech-group-icon">{{ g.icon }}</span>
-            <span class="landing-tech-group-title">{{ g.title }}</span>
-            <span class="landing-tech-group-count">{{ g.items.length }} 项</span>
-          </div>
-          <div class="landing-tech-group-items">
-            <span class="landing-tech-item" v-for="t in g.items" :key="t">{{ t }}</span>
-          </div>
-        </div>
       </div>
     </section>
 
     <!-- 体验账号 -->
     <section id="accounts" class="landing-section">
       <h2 class="landing-h2 reveal">体验账号</h2>
-      <p class="landing-sec-sub reveal">三种角色随心选 —— 密码默认模糊，点击即可查看 / 复制</p>
       <div class="landing-accounts">
         <div
           v-for="acc in accounts"
@@ -136,10 +110,7 @@
           </p>
         </div>
       </div>
-      <p class="landing-account-note reveal">
-        以上为<strong>默认演示密码</strong>，可用 .env 中 <code>EG_ADMIN_PASSWORD</code> 等变量覆盖；
-        首次登录会强制修改密码，改后请用自己的密码登录。
-      </p>
+      <p class="landing-account-note reveal">以上为默认演示密码，首次登录会强制修改密码。</p>
     </section>
 
     <!-- 关于我 -->
@@ -147,19 +118,38 @@
       <h2 class="landing-h2 reveal">关于我</h2>
       <div class="landing-about reveal">
         <div class="landing-about-card">
-          <div class="landing-about-avatar">吴</div>
-          <div class="landing-about-info">
-            <h3 class="landing-about-name">吴佳睿</h3>
-            <p class="landing-about-roles">后端开发 · AI 应用开发 · Agent 开发</p>
-            <a class="landing-about-link" href="https://github.com/JRW923" target="_blank" rel="noopener noreferrer">
-              <svg viewBox="0 0 16 16" class="landing-about-github" aria-hidden="true">
-                <path
-                  fill="currentColor"
-                  d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
-                />
-              </svg>
-              GitHub · JRW923
-            </a>
+          <div class="landing-about-head">
+            <div class="landing-about-avatar">吴</div>
+            <div class="landing-about-info">
+              <h3 class="landing-about-name">吴佳睿</h3>
+              <p class="landing-about-roles">后端开发 · AI 应用开发 · Agent 开发</p>
+              <a class="landing-about-link" href="https://github.com/JRW923" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 16 16" class="landing-about-github" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+                  />
+                </svg>
+                GitHub · JRW923
+              </a>
+            </div>
+          </div>
+          <div class="landing-about-groups">
+            <div
+              v-for="g in techGroups"
+              :key="g.title"
+              class="landing-tech-group reveal"
+              :class="{ 'landing-tech-group--wide': g.wide }"
+              :style="{ '--accent': g.accent }"
+            >
+              <div class="landing-tech-group-head">
+                <span class="landing-tech-group-icon">{{ g.icon }}</span>
+                <span class="landing-tech-group-title">{{ g.title }}</span>
+              </div>
+              <div class="landing-tech-group-items">
+                <span class="landing-tech-item" v-for="t in g.items" :key="t">{{ t }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -204,14 +194,14 @@ const features: Feature[] = [
   {
     icon: '🧾',
     title: '事件溯源 + 回放',
-    desc: '订单每一步状态变更都作为不可变事件落库，可随时回放任意历史时刻，审计与排障一目了然。',
+    desc: '订单每一步状态变更都作为不可变事件落库，可随时回放任意历史时刻，审计与排障更清晰。',
     tags: ['Event Sourcing', 'CQRS', '乐观锁'],
     accent: '#6366f1',
   },
   {
     icon: '⚡',
     title: 'CDC 实时管道',
-    desc: 'Debezium 捕获事件库变更，经 Kafka 实时流入检测侧，订单提交到异常发现端到端毫秒级可见。',
+    desc: 'Debezium 捕获事件库变更，经 Kafka 实时流入检测侧，订单提交到异常发现端到端近实时可见。',
     tags: ['Debezium', 'Kafka', 'CDC'],
     accent: '#8b5cf6',
   },
@@ -250,6 +240,7 @@ interface TechGroup {
   title: string
   items: string[]
   accent: string
+  wide?: boolean
 }
 const techGroups: TechGroup[] = [
   {
@@ -269,6 +260,7 @@ const techGroups: TechGroup[] = [
     title: '数据库与中间件',
     items: ['MySQL', 'PostgreSQL', 'Redis', 'Kafka'],
     accent: '#06b6d4',
+    wide: true,
   },
   {
     icon: '🤖',
@@ -312,12 +304,12 @@ interface Account {
   accent: string
 }
 const accounts = ref<Account[]>([
-  { username: 'admin', role: '管理员', desc: '全部权限，含用户 / 角色 / 审计管理', password: 'admin123456', revealed: false, copied: false, accent: '#818cf8' },
-  { username: 'operator', role: '运营', desc: '下单、状态操作、异常处理、补偿执行', password: 'operator123456', revealed: false, copied: false, accent: '#22d3ee' },
-  { username: 'viewer', role: '只读', desc: '查看订单、异常看板、自然语言查询', password: 'viewer123456', revealed: false, copied: false, accent: '#c084fc' },
+  { username: 'admin', role: '管理员', desc: '用户 / 角色 / 审计全权限', password: 'admin123456', revealed: false, copied: false, accent: '#818cf8' },
+  { username: 'operator', role: '运营', desc: '下单 · 状态 · 异常 · 补偿', password: 'operator123456', revealed: false, copied: false, accent: '#22d3ee' },
+  { username: 'viewer', role: '只读', desc: '订单 / 看板 / NL 查询', password: 'viewer123456', revealed: false, copied: false, accent: '#c084fc' },
 ])
 
-// 个人技能见上方「技术栈」板块（按 语言/后端/数据库与中间件/AI工程/部署运维 分类）
+// 个人技能见「关于我」板块（按 语言/后端/数据库与中间件/AI工程/部署运维 分类）
 function goEnter() {
   if (auth.isAuthenticated) {
     router.push('/orders')
@@ -668,7 +660,7 @@ body.eg-landing {
 .landing-section {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 80px 20px 40px;
+  padding: 52px 20px 36px;
   scroll-margin-top: 70px;
 }
 .landing-h2 {
@@ -760,13 +752,7 @@ body.eg-landing {
   border: 1px solid rgba(129, 140, 248, 0.22);
 }
 
-/* ---------- 技术栈 ---------- */
-.landing-tech {
-  margin-top: 40px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
+/* ---------- 技能分组（关于我内） ---------- */
 .landing-tech-group {
   --accent: #6366f1;
   padding: 20px 24px;
@@ -796,14 +782,8 @@ body.eg-landing {
   font-weight: 700;
   color: #f1f5f9;
 }
-.landing-tech-group-count {
-  margin-left: auto;
-  padding: 2px 10px;
-  font-size: 12px;
-  border-radius: 999px;
-  color: #64748b;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+.landing-tech-group--wide {
+  grid-column: 1 / -1;
 }
 .landing-tech-group-items {
   margin-top: 14px;
@@ -861,10 +841,9 @@ body.eg-landing {
   color: #f1f5f9;
 }
 .landing-account-desc {
-  margin: 12px 0 16px;
+  margin: 12px 0 14px;
   font-size: 13px;
   color: #94a3b8;
-  min-height: 38px;
 }
 .landing-account-pwd {
   display: flex;
@@ -933,21 +912,27 @@ body.eg-landing {
 /* ---------- 关于我 ---------- */
 .landing-about {
   margin-top: 40px;
-  display: flex;
-  justify-content: center;
 }
 .landing-about-card {
-  display: flex;
-  gap: 24px;
-  align-items: flex-start;
-  max-width: 720px;
-  width: 100%;
-  padding: 28px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 30px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+.landing-about-head {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.landing-about-groups {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
 }
 .landing-about-avatar {
   flex-shrink: 0;
@@ -1048,10 +1033,12 @@ body.eg-landing {
   .landing-nav-actions .landing-btn--ghost {
     display: none;
   }
-  .landing-about-card {
+  .landing-about-head {
     flex-direction: column;
-    align-items: center;
     text-align: center;
+  }
+  .landing-about-groups {
+    grid-template-columns: 1fr;
   }
 }
 

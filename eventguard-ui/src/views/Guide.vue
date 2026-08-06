@@ -43,7 +43,7 @@
       <!-- 你能玩到的亮点 -->
       <section class="guide-section reveal">
         <h2 class="guide-h2">你能亲手玩到这些</h2>
-        <p class="guide-h2-sub">每个亮点背后，都有一段真实的后端能力在支撑</p>
+        <p class="guide-h2-sub">以下能力均可直接登录系统体验</p>
         <div class="guide-highlights">
           <div
             v-for="h in highlights"
