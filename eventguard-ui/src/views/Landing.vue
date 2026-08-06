@@ -922,14 +922,22 @@ body.eg-landing {
 }
 
 /* ---------- 滚动浮现 ---------- */
+/* 内容默认可见：浮现动画是“增强”而非“开关”，JS/IO 异常时也不会把内容永久隐藏 */
 .reveal {
-  opacity: 0;
-  transform: translateY(26px);
-  transition: opacity 0.7s ease, transform 0.7s ease;
+  opacity: 1;
 }
 .landing-revealed {
-  opacity: 1;
-  transform: none;
+  animation: landing-fade-up 0.7s ease both;
+}
+@keyframes landing-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ---------- 响应式 ---------- */
@@ -952,10 +960,8 @@ body.eg-landing {
   .landing-scroll {
     animation: none;
   }
-  .reveal {
-    opacity: 1;
-    transform: none;
-    transition: none;
+  .landing-revealed {
+    animation: none;
   }
   .landing-card {
     transition: none;

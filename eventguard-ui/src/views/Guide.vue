@@ -419,20 +419,25 @@ body.eg-landing {
 }
 
 .reveal {
-  opacity: 0;
-  transform: translateY(24px);
-  transition: opacity 0.7s ease, transform 0.7s ease;
+  opacity: 1;
 }
 .landing-revealed {
-  opacity: 1;
-  transform: none;
+  animation: landing-fade-up 0.7s ease both;
+}
+@keyframes landing-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .reveal {
-    opacity: 1;
-    transform: none;
-    transition: none;
+  .landing-revealed {
+    animation: none;
   }
   .guide-step {
     transition: none;
