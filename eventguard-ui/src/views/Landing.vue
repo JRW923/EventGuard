@@ -123,6 +123,8 @@
             <div class="landing-about-info">
               <h3 class="landing-about-name">吴佳睿</h3>
               <p class="landing-about-roles">后端开发 · AI 应用开发 · Agent 开发</p>
+              <p class="landing-about-edu">🎓 东南大学 · 本科 + 硕士</p>
+              <div class="landing-about-links">
               <a class="landing-about-link" href="https://github.com/JRW923" target="_blank" rel="noopener noreferrer">
                 <svg viewBox="0 0 16 16" class="landing-about-github" aria-hidden="true">
                   <path
@@ -132,6 +134,8 @@
                 </svg>
                 GitHub · JRW923
               </a>
+              <span class="landing-about-qq">💬 QQ · 471464213</span>
+              </div>
             </div>
           </div>
           <div class="landing-about-groups">
@@ -139,7 +143,6 @@
               v-for="g in techGroups"
               :key="g.title"
               class="landing-tech-group reveal"
-              :class="{ 'landing-tech-group--wide': g.wide }"
               :style="{ '--accent': g.accent }"
             >
               <div class="landing-tech-group-head">
@@ -240,7 +243,6 @@ interface TechGroup {
   title: string
   items: string[]
   accent: string
-  wide?: boolean
 }
 const techGroups: TechGroup[] = [
   {
@@ -260,12 +262,11 @@ const techGroups: TechGroup[] = [
     title: '数据库与中间件',
     items: ['MySQL', 'PostgreSQL', 'Redis', 'Kafka'],
     accent: '#06b6d4',
-    wide: true,
   },
   {
     icon: '🤖',
     title: 'AI 工程',
-    items: ['LLM 应用开发', 'Prompt Engineering', 'RAG', 'Agent Harness', 'Proficient with Coding Agents'],
+    items: ['Prompt Engineering', 'RAG', 'Agent Harness', 'Workflow', 'Proficient with Coding Agents'],
     accent: '#ec4899',
   },
   {
@@ -752,41 +753,32 @@ body.eg-landing {
   border: 1px solid rgba(129, 140, 248, 0.22);
 }
 
-/* ---------- 技能分组（关于我内） ---------- */
+/* ---------- 技能分组（关于我内，行式） ---------- */
 .landing-tech-group {
   --accent: #6366f1;
-  padding: 20px 24px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-.landing-tech-group:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
-  box-shadow: 0 12px 34px -10px color-mix(in srgb, var(--accent) 35%, transparent);
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
 }
 .landing-tech-group-head {
+  flex-shrink: 0;
+  width: 150px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding-top: 6px;
 }
 .landing-tech-group-icon {
-  font-size: 22px;
+  font-size: 16px;
   line-height: 1;
 }
 .landing-tech-group-title {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
-  color: #f1f5f9;
-}
-.landing-tech-group--wide {
-  grid-column: 1 / -1;
+  color: #c7d2fe;
 }
 .landing-tech-group-items {
-  margin-top: 14px;
+  flex: 1;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -929,9 +921,9 @@ body.eg-landing {
   gap: 24px;
 }
 .landing-about-groups {
-  margin-top: 28px;
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
   gap: 16px;
 }
 .landing-about-avatar {
@@ -959,11 +951,22 @@ body.eg-landing {
   font-size: 14px;
   color: #a5b4fc;
 }
+.landing-about-edu {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #94a3b8;
+}
+.landing-about-links {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
 .landing-about-link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-top: 18px;
   font-size: 14px;
   color: #a5b4fc;
   text-decoration: none;
@@ -971,6 +974,13 @@ body.eg-landing {
 }
 .landing-about-link:hover {
   color: #c7d2fe;
+}
+.landing-about-qq {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #94a3b8;
 }
 .landing-about-github {
   width: 18px;
@@ -1037,8 +1047,12 @@ body.eg-landing {
     flex-direction: column;
     text-align: center;
   }
-  .landing-about-groups {
-    grid-template-columns: 1fr;
+  .landing-tech-group {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .landing-tech-group-head {
+    width: auto;
   }
 }
 

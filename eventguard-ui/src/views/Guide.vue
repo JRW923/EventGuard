@@ -314,7 +314,7 @@ body.eg-landing {
 
 /* ---------- 主体 ---------- */
 .guide-main {
-  max-width: 820px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 120px 20px 60px;
 }
@@ -338,7 +338,7 @@ body.eg-landing {
 /* ---------- 核心链路 ---------- */
 .guide-flow {
   margin-top: 40px;
-  padding: 20px 22px;
+  padding: 18px 20px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.045);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -352,12 +352,12 @@ body.eg-landing {
   color: #64748b;
 }
 .guide-flow-track {
-  margin-top: 18px;
+  margin-top: 16px;
   display: flex;
   align-items: stretch;
   justify-content: center;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-wrap: nowrap;
+  gap: 4px;
 }
 .guide-flow-node {
   display: flex;
@@ -365,8 +365,8 @@ body.eg-landing {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 88px;
-  padding: 12px 10px;
+  min-width: 78px;
+  padding: 10px 8px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -706,6 +706,16 @@ body.eg-landing {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* 窄屏：核心链路允许换行，避免横向溢出 */
+@media (max-width: 820px) {
+  .guide-flow-track {
+    flex-wrap: wrap;
+  }
+  .guide-flow-node {
+    min-width: 96px;
   }
 }
 
