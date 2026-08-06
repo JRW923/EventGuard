@@ -141,6 +141,7 @@ body.eg-landing {
   min-height: 100vh;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* ---------- 顶栏 ---------- */
