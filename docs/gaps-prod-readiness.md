@@ -65,12 +65,6 @@
 - [x] P1-12 优雅停机（Spring `server.shutdown=graceful` + compose `stop_grace_period` 35s/15s）
 - [x] P1-13 集中日志（Loki + promtail 采集容器日志；Grafana 自动配置 Prometheus+Loki 数据源；已验证 Loki 可查 server 日志）
 - [ ] P1-14 i18n（vue-i18n 文案抽离，工作量大，列为后续增强；如需可单独排期）
-- [ ] P1-9 安全头 + gzip
-- [ ] P1-10 连接池参数
-- [ ] P1-11 数据保留策略
-- [ ] P1-12 优雅停机
-- [ ] P1-13 错误追踪接入
-- [ ] P1-14 i18n
 
 ### 2026-08 二次加固（一致性/可用性/安全性/体验度，非原缺口清单）
 
