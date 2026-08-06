@@ -134,7 +134,8 @@ async function onChangePwd() {
 }
 
 function finishLogin() {
-  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
+  // 默认进控制台首页（/orders）；如带 ?redirect= 则优先
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/orders'
   router.push(redirect)
 }
 </script>

@@ -51,7 +51,7 @@ describe('Login.vue', () => {
     await flushPromises()
 
     expect(auth.login).toHaveBeenCalledWith('admin', 'admin123456')
-    expect(pushMock).toHaveBeenCalledWith('/')
+    expect(pushMock).toHaveBeenCalledWith('/orders')
   })
 
   it('mustChangePassword 用户登录后弹出改密框，改密成功登出重登', async () => {

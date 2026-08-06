@@ -2,7 +2,10 @@ import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-rou
 import { auth } from '@/stores/auth'
 
 const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: '/orders' },
+  // 登录前的公开欢迎页（standalone：不套控制台壳）
+  { path: '/', name: 'Welcome', component: () => import('../views/Landing.vue'), meta: { title: '欢迎', public: true, standalone: true } },
+  // 登录前的「体验指南」页
+  { path: '/guide', name: 'Guide', component: () => import('../views/Guide.vue'), meta: { title: '体验指南', public: true, standalone: true } },
   { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { title: '登录', public: true } },
   { path: '/403', name: 'Forbidden', component: () => import('../views/Forbidden.vue'), meta: { title: '无权限', public: true } },
   {
@@ -72,8 +75,8 @@ router.beforeEach(async (to) => {
   document.title = pageTitle ? `${pageTitle} · EventGuard` : 'EventGuard'
 
   if (to.meta.public) {
-    // 已登录用户访问登录页 → 直接进首页
-    if (to.path === '/login' && auth.isAuthenticated) return { path: '/' }
+    // 已登录用户访问登录页或欢迎页 → 直接进控制台首页（/orders），不再看到落地页
+    if ((to.path === '/login' || to.path === '/') && auth.isAuthenticated) return { path: '/orders' }
     return true
   }
 

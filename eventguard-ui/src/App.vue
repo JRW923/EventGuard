@@ -1,5 +1,7 @@
 <template>
-  <el-container style="min-height: 100vh">
+  <!-- standalone 页面（欢迎页/体验指南）裸渲染，不套控制台壳 -->
+  <router-view v-if="route.meta.standalone" />
+  <el-container v-else style="min-height: 100vh">
     <el-header class="app-header">
       <div class="app-header-inner">
         <h1 class="app-brand">EventGuard 控制台</h1>
@@ -59,16 +61,19 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { auth } from '@/stores/auth'
 import { AuthApi, HealthApi, type HealthInfo } from '@/api/auth'
 
 const router = useRouter()
+const route = useRoute()
 
 const health = ref<HealthInfo | null>(null)
 
 onMounted(async () => {
+  // 落地页/指南页不拉健康状态（也无 footer 展示它）
+  if (route.meta.standalone) return
   try {
     health.value = await HealthApi.get()
   } catch {

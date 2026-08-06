@@ -2,10 +2,10 @@
   "name": "EventGuard 事件卫士",
   "short_name": "EventGuard",
   "description": "事件溯源 · 智能异常检测 · 自然语言查询",
-  "start_url": "/#/orders",
+  "start_url": "/#/",
   "display": "standalone",
-  "background_color": "#f5f7fa",
-  "theme_color": "#409eff",
+  "background_color": "#070b1a",
+  "theme_color": "#070b1a",
   "lang": "zh-CN",
   "icons": [
     {
