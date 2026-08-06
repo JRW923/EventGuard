@@ -70,10 +70,19 @@
       </div>
     </section>
 
+    <!-- 项目技术栈 -->
+    <section id="projtech" class="landing-section landing-section--thin">
+      <h2 class="landing-h2 reveal">项目技术栈</h2>
+      <p class="landing-sec-sub reveal">这套系统前后端全链路自研，一键容器化部署</p>
+      <div class="landing-projtech-chips reveal">
+        <span class="landing-tech-item" v-for="t in projectStack" :key="t">{{ t }}</span>
+      </div>
+    </section>
+
     <!-- 技术栈 -->
     <section id="tech" class="landing-section">
       <h2 class="landing-h2 reveal">技术栈</h2>
-      <p class="landing-sec-sub reveal">五大类技能树 —— 从语言到 AI 工程，再到部署运维，全链路自研落地</p>
+      <p class="landing-sec-sub reveal">个人技能树 · 五大方向 —— 语言、后端、数据与中间件、AI 工程、部署与运维</p>
       <div class="landing-tech">
         <div
           v-for="g in techGroups"
@@ -264,7 +273,7 @@ const techGroups: TechGroup[] = [
   {
     icon: '🤖',
     title: 'AI 工程',
-    items: ['LLM 应用开发', 'Prompt Engineering', 'RAG', 'Agent Harness', '熟练使用 Coding Agent'],
+    items: ['LLM 应用开发', 'Prompt Engineering', 'RAG', 'Agent Harness', 'Proficient with Coding Agents'],
     accent: '#ec4899',
   },
   {
@@ -273,6 +282,24 @@ const techGroups: TechGroup[] = [
     items: ['Git', 'Linux', 'Docker + Nginx', 'Prometheus + Grafana', 'ELK + Loki'],
     accent: '#22c55e',
   },
+]
+
+// 项目技术栈（EventGuard 这套系统实际用到的技术）
+const projectStack = [
+  'Java 21',
+  'Spring Boot',
+  'PostgreSQL',
+  'Debezium',
+  'Kafka',
+  'Vue 3',
+  'TypeScript',
+  'Element Plus',
+  'Python',
+  'WebSocket',
+  'Prometheus',
+  'Grafana',
+  'Docker',
+  'PWA',
 ]
 
 interface Account {
@@ -665,6 +692,19 @@ body.eg-landing {
   text-align: center;
   color: #94a3b8;
   font-size: 15px;
+}
+
+/* 项目技术栈：紧贴上一板块的窄区块 */
+.landing-section--thin {
+  padding-top: 24px;
+}
+.landing-projtech-chips {
+  --accent: #a5b4fc;
+  margin-top: 30px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
 }
 
 /* ---------- 核心能力卡片 ---------- */
