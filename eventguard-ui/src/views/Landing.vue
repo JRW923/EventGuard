@@ -73,9 +73,23 @@
     <!-- 技术栈 -->
     <section id="tech" class="landing-section">
       <h2 class="landing-h2 reveal">技术栈</h2>
-      <p class="landing-sec-sub reveal">前后端全链路自研，一键容器化部署</p>
-      <div class="landing-tech reveal">
-        <span class="landing-tech-item" v-for="t in techStack" :key="t">{{ t }}</span>
+      <p class="landing-sec-sub reveal">五大类技能树 —— 从语言到 AI 工程，再到部署运维，全链路自研落地</p>
+      <div class="landing-tech">
+        <div
+          v-for="g in techGroups"
+          :key="g.title"
+          class="landing-tech-group reveal"
+          :style="{ '--accent': g.accent }"
+        >
+          <div class="landing-tech-group-head">
+            <span class="landing-tech-group-icon">{{ g.icon }}</span>
+            <span class="landing-tech-group-title">{{ g.title }}</span>
+            <span class="landing-tech-group-count">{{ g.items.length }} 项</span>
+          </div>
+          <div class="landing-tech-group-items">
+            <span class="landing-tech-item" v-for="t in g.items" :key="t">{{ t }}</span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -122,16 +136,12 @@
     <!-- 关于我 -->
     <section id="about" class="landing-section">
       <h2 class="landing-h2 reveal">关于我</h2>
-      <p class="landing-sec-sub reveal">一个对「全链路工程质量」和「AI 落地」同样着迷的开发者</p>
       <div class="landing-about reveal">
         <div class="landing-about-card">
           <div class="landing-about-avatar">吴</div>
           <div class="landing-about-info">
             <h3 class="landing-about-name">吴佳睿</h3>
             <p class="landing-about-roles">后端开发 · AI 应用开发 · Agent 开发</p>
-            <div class="landing-about-skills">
-              <span class="landing-about-skill" v-for="s in mySkills" :key="s">{{ s }}</span>
-            </div>
             <a class="landing-about-link" href="https://github.com/JRW923" target="_blank" rel="noopener noreferrer">
               <svg viewBox="0 0 16 16" class="landing-about-github" aria-hidden="true">
                 <path
@@ -226,21 +236,43 @@ const features: Feature[] = [
   },
 ]
 
-const techStack = [
-  'Java 21',
-  'Spring Boot',
-  'PostgreSQL',
-  'Debezium',
-  'Kafka',
-  'Vue 3',
-  'TypeScript',
-  'Element Plus',
-  'Python',
-  'WebSocket',
-  'Prometheus',
-  'Grafana',
-  'Docker',
-  'PWA',
+interface TechGroup {
+  icon: string
+  title: string
+  items: string[]
+  accent: string
+}
+const techGroups: TechGroup[] = [
+  {
+    icon: '⌨️',
+    title: '语言',
+    items: ['Java', 'Python'],
+    accent: '#6366f1',
+  },
+  {
+    icon: '🧩',
+    title: '后端基础',
+    items: ['Spring Boot', 'Spring MVC', 'MyBatis', 'MyBatis-Plus', 'Spring Security / JWT', 'RESTful API'],
+    accent: '#8b5cf6',
+  },
+  {
+    icon: '🗄️',
+    title: '数据库与中间件',
+    items: ['MySQL', 'PostgreSQL', 'Redis', 'Kafka'],
+    accent: '#06b6d4',
+  },
+  {
+    icon: '🤖',
+    title: 'AI 工程',
+    items: ['LLM 应用开发', 'Prompt Engineering', 'RAG', 'Agent Harness', '熟练使用 Coding Agent'],
+    accent: '#ec4899',
+  },
+  {
+    icon: '🚀',
+    title: '部署与运维',
+    items: ['Git', 'Linux', 'Docker + Nginx', 'Prometheus + Grafana', 'ELK + Loki'],
+    accent: '#22c55e',
+  },
 ]
 
 interface Account {
@@ -258,9 +290,7 @@ const accounts = ref<Account[]>([
   { username: 'viewer', role: '只读', desc: '查看订单、异常看板、自然语言查询', password: 'viewer123456', revealed: false, copied: false, accent: '#c084fc' },
 ])
 
-// 个人技能标签：占位，待本人补充后替换
-const mySkills = ['Java', 'Spring Boot', 'Python', 'AI / LLM 应用', 'Vue 3', 'PostgreSQL', 'Kafka', 'Docker']
-
+// 个人技能见上方「技术栈」板块（按 语言/后端/数据库与中间件/AI工程/部署运维 分类）
 function goEnter() {
   if (auth.isAuthenticated) {
     router.push('/orders')
@@ -692,24 +722,68 @@ body.eg-landing {
 
 /* ---------- 技术栈 ---------- */
 .landing-tech {
-  margin-top: 34px;
+  margin-top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.landing-tech-group {
+  --accent: #6366f1;
+  padding: 20px 24px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.landing-tech-group:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: 0 12px 34px -10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.landing-tech-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.landing-tech-group-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+.landing-tech-group-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+.landing-tech-group-count {
+  margin-left: auto;
+  padding: 2px 10px;
+  font-size: 12px;
+  border-radius: 999px;
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.landing-tech-group-items {
+  margin-top: 14px;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  justify-content: center;
+  gap: 10px;
 }
 .landing-tech-item {
-  padding: 8px 16px;
+  padding: 6px 14px;
   font-size: 14px;
   border-radius: 999px;
   color: #cbd5e1;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  transition: transform 0.15s ease, border-color 0.2s ease;
+  transition: transform 0.15s ease, border-color 0.2s ease, background 0.2s ease;
 }
 .landing-tech-item:hover {
   transform: translateY(-3px);
-  border-color: rgba(165, 180, 252, 0.5);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* ---------- 体验账号 ---------- */
@@ -859,20 +933,6 @@ body.eg-landing {
   margin: 6px 0 0;
   font-size: 14px;
   color: #a5b4fc;
-}
-.landing-about-skills {
-  margin-top: 14px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.landing-about-skill {
-  padding: 4px 12px;
-  font-size: 13px;
-  border-radius: 999px;
-  color: #cbd5e1;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 .landing-about-link {
   display: inline-flex;

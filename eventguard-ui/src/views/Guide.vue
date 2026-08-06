@@ -13,6 +13,20 @@
       <h1 class="guide-title reveal">如何体验 EventGuard</h1>
       <p class="guide-sub reveal">四步走完核心链路 —— 约 5 分钟，浏览器即可，无需安装任何东西</p>
 
+      <!-- 核心链路 -->
+      <div class="guide-flow reveal">
+        <div class="guide-flow-title">📡 你会看到的完整链路</div>
+        <div class="guide-flow-track">
+          <template v-for="(n, i) in flow" :key="n.label">
+            <div class="guide-flow-node">
+              <span class="guide-flow-icon">{{ n.icon }}</span>
+              <span class="guide-flow-label">{{ n.label }}</span>
+            </div>
+            <span v-if="i < flow.length - 1" class="guide-flow-arrow">→</span>
+          </template>
+        </div>
+      </div>
+
       <ol class="guide-steps">
         <li v-for="(s, i) in steps" :key="i" class="guide-step reveal" :style="{ '--accent': s.accent }">
           <div class="guide-step-num">{{ i + 1 }}</div>
@@ -25,6 +39,36 @@
           </div>
         </li>
       </ol>
+
+      <!-- 你能玩到的亮点 -->
+      <section class="guide-section reveal">
+        <h2 class="guide-h2">你能亲手玩到这些</h2>
+        <p class="guide-h2-sub">每个亮点背后，都有一段真实的后端能力在支撑</p>
+        <div class="guide-highlights">
+          <div
+            v-for="h in highlights"
+            :key="h.title"
+            class="guide-highlight"
+            :style="{ '--accent': h.accent }"
+          >
+            <span class="guide-highlight-icon">{{ h.icon }}</span>
+            <h3 class="guide-highlight-title">{{ h.title }}</h3>
+            <p class="guide-highlight-desc">{{ h.desc }}</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 按角色体验建议 -->
+      <section class="guide-section reveal">
+        <h2 class="guide-h2">按角色体验</h2>
+        <p class="guide-h2-sub">三个账号，三条不同的体验路径</p>
+        <div class="guide-roles">
+          <div v-for="r in roleSuggs" :key="r.role" class="guide-role" :style="{ '--accent': r.accent }">
+            <h3 class="guide-role-name">{{ r.role }}</h3>
+            <p class="guide-role-desc">{{ r.desc }}</p>
+          </div>
+        </div>
+      </section>
 
       <!-- 演示账号速查 -->
       <section class="guide-accounts reveal">
@@ -48,6 +92,17 @@
         <p class="guide-account-note">
           以上为默认演示密码，可用 .env 的 <code>EG_*_PASSWORD</code> 覆盖；首次登录会强制修改密码。
         </p>
+      </section>
+
+      <!-- 常见问题 -->
+      <section class="guide-section reveal">
+        <h2 class="guide-h2">常见问题</h2>
+        <div class="guide-faq">
+          <div v-for="f in faqs" :key="f.q" class="guide-faq-item">
+            <div class="guide-faq-q">Q：{{ f.q }}</div>
+            <div class="guide-faq-a">{{ f.a }}</div>
+          </div>
+        </div>
       </section>
 
       <!-- CTA -->
@@ -117,6 +172,71 @@ const accounts = ref<Account[]>([
   { username: 'operator', role: '运营', password: 'operator123456', revealed: false, accent: '#22d3ee' },
   { username: 'viewer', role: '只读', password: 'viewer123456', revealed: false, accent: '#c084fc' },
 ])
+
+// 核心链路（一次体验看到的数据流动）
+const flow = [
+  { icon: '🧾', label: '创建订单' },
+  { icon: '🗄️', label: '事件入库' },
+  { icon: '⚡', label: 'CDC 实时管道' },
+  { icon: '🤖', label: '规则 / AI 检测' },
+  { icon: '🚨', label: '异常告警推送' },
+  { icon: '🔁', label: '查询 / 补偿闭环' },
+]
+
+// 亮点清单
+const highlights = [
+  {
+    icon: '🕰️',
+    title: '事件时间线回放',
+    desc: '打开任意订单的时间线，回放每一步状态变更 —— 像看录像一样复盘一笔订单的完整一生。',
+    accent: '#818cf8',
+  },
+  {
+    icon: '🚨',
+    title: '实时异常看板',
+    desc: '提交一笔金额偏离的订单，几秒内告警经 WebSocket 实时推送到看板，并被自动分类标注。',
+    accent: '#ec4899',
+  },
+  {
+    icon: '🛰️',
+    title: 'AI 根因分析',
+    desc: '点开任意告警，查看 LLM 给出的根因判断与建议动作 —— 而不是一条冷冰冰的日志。',
+    accent: '#22d3ee',
+  },
+  {
+    icon: '💬',
+    title: '中文自然语言查询',
+    desc: '直接输入“最近 7 天金额大于 1000 的订单有哪些”，系统用中文回答，无需写 SQL。',
+    accent: '#06b6d4',
+  },
+  {
+    icon: '🔁',
+    title: 'Saga 自动补偿',
+    desc: '对异常订单执行退款 / 通知等补偿动作，高风险操作自动挂起，等待人工审批后继续。',
+    accent: '#f59e0b',
+  },
+  {
+    icon: '🔐',
+    title: '多角色权限体验',
+    desc: '用 admin / operator / viewer 三个账号切换登录，感受同一系统下的不同视野与边界。',
+    accent: '#22c55e',
+  },
+]
+
+// 按角色建议的体验路径
+const roleSuggs = [
+  { role: '👑 管理员 admin', desc: '进入「系统管理」查看用户、角色与权限分配，体会 RBAC 的设计粒度与审计日志。', accent: '#818cf8' },
+  { role: '🛠️ 运营 operator', desc: '创建订单、推进状态、处理异常并执行补偿 —— 走完整的一条业务闭环。', accent: '#22d3ee' },
+  { role: '👁️ 只读 viewer', desc: '以只读视角看订单与异常看板，体验 NL 查询，感受权限边界下的受限视野。', accent: '#c084fc' },
+]
+
+// 常见问题
+const faqs = [
+  { q: '默认密码是什么？', a: '三种角色均使用下方「演示账号」中展示的默认密码，点击模糊密码即可查看；首次登录会强制修改密码。' },
+  { q: '里面的数据是真实的吗？', a: '系统内置演示数据与异常注入脚本，专为体验设计；每笔订单的异常识别都由规则引擎与 AI 模型实时完成。' },
+  { q: '这是不是一个可运行的真实项目？', a: '是的 —— 一个事件溯源 + 异常检测的完整可运行系统，源码与架构见作者 GitHub：github.com/JRW923。' },
+  { q: '改密后还能继续体验吗？', a: '可以。改密后系统会要求你用新密码重新登录；三个演示账号互不影响，可随时切换。' },
+]
 
 function goEnter() {
   if (auth.isAuthenticated) {
@@ -213,6 +333,160 @@ body.eg-landing {
   color: #94a3b8;
   font-size: 15px;
   line-height: 1.7;
+}
+
+/* ---------- 核心链路 ---------- */
+.guide-flow {
+  margin-top: 40px;
+  padding: 20px 22px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.guide-flow-title {
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: #64748b;
+}
+.guide-flow-track {
+  margin-top: 18px;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.guide-flow-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 88px;
+  padding: 12px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.guide-flow-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+.guide-flow-label {
+  font-size: 12px;
+  text-align: center;
+  color: #cbd5e1;
+}
+.guide-flow-arrow {
+  align-self: center;
+  font-size: 16px;
+  color: #475569;
+}
+
+/* ---------- 通用章节 ---------- */
+.guide-section {
+  margin-top: 56px;
+  text-align: center;
+}
+
+/* ---------- 亮点 ---------- */
+.guide-highlights {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  text-align: left;
+}
+.guide-highlight {
+  --accent: #818cf8;
+  padding: 20px 20px 18px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.guide-highlight:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: 0 12px 32px -10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.guide-highlight-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+.guide-highlight-title {
+  margin: 12px 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+.guide-highlight-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #94a3b8;
+}
+
+/* ---------- 按角色体验 ---------- */
+.guide-roles {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  text-align: left;
+}
+.guide-role {
+  --accent: #818cf8;
+  padding: 20px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid var(--accent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.guide-role-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+.guide-role-desc {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #94a3b8;
+}
+
+/* ---------- FAQ ---------- */
+.guide-faq {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+.guide-faq-item {
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+.guide-faq-q {
+  font-size: 14px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+.guide-faq-a {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #94a3b8;
 }
 
 /* ---------- 步骤 ---------- */

@@ -34,7 +34,7 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="profile">修改密码</el-dropdown-item>
-              <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+              <el-dropdown-item v-if="auth.isAuthenticated" command="logout" divided>退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -62,7 +62,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { auth } from '@/stores/auth'
 import { AuthApi, HealthApi, type HealthInfo } from '@/api/auth'
 
@@ -85,6 +85,11 @@ const avatarText = computed(() => (auth.user?.displayName || auth.user?.username
 
 async function onUserCommand(command: string) {
   if (command === 'profile') {
+    // 未登录（如在登录页）点「修改密码」给出提示，而不是静默跳转（/profile 需登录态）
+    if (!auth.isAuthenticated) {
+      ElMessage.warning('请先登录后再修改密码')
+      return
+    }
     router.push('/profile')
   } else if (command === 'logout') {
     try {
