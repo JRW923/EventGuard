@@ -403,6 +403,8 @@ body.eg-landing {
   position: relative;
   z-index: 1;
   min-height: 100vh;
+  /* 根元素自带暗底：即使 body.eg-landing 尚未挂载，首帧也是深空背景而非灰底 */
+  background: #070b1a;
   /* 用 clip 而非 hidden：hidden 会把元素变成滚动容器，干扰 window 滚动事件与滚动浮现；clip 只裁剪不滚动（老浏览器回退 hidden） */
   overflow-x: hidden;
   overflow-x: clip;

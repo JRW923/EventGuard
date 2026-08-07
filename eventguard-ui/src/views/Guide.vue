@@ -259,6 +259,8 @@ body.eg-landing {
   position: relative;
   z-index: 1;
   min-height: 100vh;
+  /* 根元素自带暗底：即使 body.eg-landing 尚未挂载，首帧也是深空背景而非灰底 */
+  background: #070b1a;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   overflow-x: hidden;
   overflow-x: clip;
