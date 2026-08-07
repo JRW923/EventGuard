@@ -23,8 +23,8 @@
         </el-table-column>
         <el-table-column label="操作" width="150">
           <template #default="{ row }">
-            <el-button size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" type="danger" :disabled="row.code === 'ADMIN'" @click="onDelete(row)">删除</el-button>
+            <el-button size="small" @click="openEdit(row as RoleItem)">编辑</el-button>
+            <el-button size="small" type="danger" :disabled="row.code === 'ADMIN'" @click="onDelete(row as RoleItem)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -61,7 +61,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { AuthApi, type RoleItem, type PermissionItem } from '@/api/auth'
 
 const roles = ref<RoleItem[]>([])

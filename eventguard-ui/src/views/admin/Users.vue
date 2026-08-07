@@ -25,9 +25,9 @@
         </el-table-column>
         <el-table-column label="操作" width="220">
           <template #default="{ row }">
-            <el-button size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button size="small" type="warning" @click="openReset(row)">重置密码</el-button>
-            <el-button size="small" type="danger" :disabled="row.username === auth.user?.username" @click="onDelete(row)">
+            <el-button size="small" @click="openEdit(row as UserInfo)">编辑</el-button>
+            <el-button size="small" type="warning" @click="openReset(row as UserInfo)">重置密码</el-button>
+            <el-button size="small" type="danger" :disabled="row.username === auth.user?.username" @click="onDelete(row as UserInfo)">
               删除
             </el-button>
           </template>
@@ -80,7 +80,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { AuthApi, type UserInfo, type RoleItem } from '@/api/auth'
 import { auth } from '@/stores/auth'
 
