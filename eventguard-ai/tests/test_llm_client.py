@@ -8,6 +8,15 @@ import httpx
 import pytest
 
 from app.analyzer.llm_client import DEFAULT_SYSTEM, LLMClient
+from app.cache.llm_cache import LLMCache, llm_cache as default_llm_cache
+
+
+@pytest.fixture(autouse=True)
+def _clear_llm_cache():
+    """LLMClient 默认用进程内缓存单例，测试间隔离。"""
+    default_llm_cache.clear()
+    yield
+    default_llm_cache.clear()
 
 
 def _client(responses, base_url="https://api.deepseek.com/anthropic"):
@@ -258,3 +267,72 @@ async def test_openai_tool_call_parse_and_result_roundtrip():
     assert tool_calls == [{"id": "call_1", "name": "query_order", "input": {"order_id": "x"}}]
     assert captured["body"]["tools"] == ANTHROPIC_TOOLS
     assert captured["body"]["tool_choice"] == "auto"
+
+
+# ---------------- Item 4：缓存 + trace ----------------
+
+@pytest.mark.asyncio
+async def test_generate_caches_second_call():
+    """generate 幂等读场景：相同 prompt 第二次命中缓存，不再发 HTTP 请求。"""
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "answer"}}]}, request=request
+        )
+
+    client = LLMClient(
+        base_url="http://ollama:11434/v1", api_key="k",
+        transport=httpx.MockTransport(handler), cache=LLMCache(),
+    )
+    r1 = await client.generate("同一个问题")
+    r2 = await client.generate("同一个问题")
+    assert r1 == r2 == "answer"
+    assert call_count["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_json_not_cached():
+    """generate_json（可解释性场景）默认不缓存。"""
+    call_count = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": '{"ok": 1}'}}]}, request=request
+        )
+
+    client = LLMClient(
+        base_url="http://ollama:11434/v1", api_key="k",
+        transport=httpx.MockTransport(handler), cache=LLMCache(),
+    )
+    await client.generate_json("同一次分析")
+    await client.generate_json("同一次分析")
+    assert call_count["n"] == 2  # 不缓存
+
+
+@pytest.mark.asyncio
+async def test_generate_records_trace_and_metrics(monkeypatch):
+    """LLM 调用写入 trace 环形缓冲（可观测性）。"""
+    from app.trace.trace_log import trace_log
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 3, "completion_tokens": 2}},
+            request=request,
+        )
+
+    trace_log.clear()
+    client = LLMClient(
+        base_url="http://ollama:11434/v1", api_key="k",
+        transport=httpx.MockTransport(handler), cache=LLMCache(),
+    )
+    await client.generate("可观测性问题", trace_id="trace-1")
+
+    entries = [e for e in trace_log.recent() if e["operation"] == "llm_call"]
+    assert entries, "应有一条 llm_call trace"
+    assert entries[0]["trace_id"] == "trace-1"
+    assert entries[0]["tokens"] == 5
+    assert entries[0]["ok"] is True

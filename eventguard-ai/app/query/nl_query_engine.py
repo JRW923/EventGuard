@@ -13,6 +13,7 @@ from app.query.intent_classifier import IntentClassifier
 from app.query.prompts import NL_ANSWER_SYSTEM_PROMPT, NL_ANSWER_USER_TEMPLATE
 from app.query.query_result import QueryResult
 from app.query.template_executor import TemplateExecutor
+from app.trace.trace_log import trace_log
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class NLQueryEngine:
         self.conversation_store = conversation_store or default_conversation_store
 
     async def query(
-        self, question: str, conversation_id: Optional[str] = None
+        self, question: str, conversation_id: Optional[str] = None, trace_id: Optional[str] = None
     ) -> QueryResult:
         """处理用户问题（可携带会话 id 续聊），返回 QueryResult。"""
         # 1. 取/建会话（无 conversation_id 即开新会话）
@@ -74,7 +75,7 @@ class NLQueryEngine:
                 )
 
             # 4. LLM 润色回答
-            answer = await self._generate_answer(question, intent, data)
+            answer = await self._generate_answer(question, intent, data, trace_id=trace_id)
             # LLM 失败时 _generate_answer 内部已降级为数据摘要，这里据此标记 fallback
             if answer == self._fallback_answer(intent, data):
                 fallback = "true"
@@ -85,6 +86,11 @@ class NLQueryEngine:
         finally:
             egm.nl_query_duration.labels(intent=intent).observe(time.time() - _t0)
             egm.nl_query_total.labels(intent=intent, fallback=fallback).inc()
+            trace_log.record(
+                "nl_query", intent=intent, conversation_id=conv.conversation_id,
+                latency_ms=round((time.time() - _t0) * 1000, 1), fallback=fallback,
+                trace_id=trace_id,
+            )
 
     async def _route(self, intent: str, question: str, conv: Conversation):
         """模板路由；缺 order_id 时若会话上下文已有订单号则补参重试一次。"""
@@ -143,7 +149,9 @@ class NLQueryEngine:
         else:
             raise ValueError(f"未知意图：{intent}")
 
-    async def _generate_answer(self, question: str, intent: str, data) -> str:
+    async def _generate_answer(
+        self, question: str, intent: str, data, trace_id: Optional[str] = None
+    ) -> str:
         """LLM 润色回答，失败时返回数据摘要。"""
         try:
             result_str = json.dumps(data, ensure_ascii=False, default=str)
@@ -151,7 +159,9 @@ class NLQueryEngine:
                 question=question, intent=intent, result=result_str
             )
             return (await asyncio.wait_for(
-                self.llm_client.generate(prompt), timeout=LLM_ANSWER_TIMEOUT_SECONDS)).strip()
+                self.llm_client.generate(prompt, operation="nl_answer", trace_id=trace_id),
+                timeout=LLM_ANSWER_TIMEOUT_SECONDS,
+            )).strip()
         except Exception as e:
             logger.warning("LLM 润色失败，返回数据摘要：%s", e)
             return self._fallback_answer(intent, data)

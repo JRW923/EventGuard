@@ -53,3 +53,23 @@ nl_query_total = Counter(
     "NL 查询次数（fallback=true 表示 LLM 润色失败走数据摘要兜底）",
     ["intent", "fallback"],
 )
+
+# ===== LLM 层（Item 4：app/analyzer/llm_client.py + app/cache/llm_cache.py）=====
+llm_cache_hits = Counter(
+    "eventguard_ai_llm_cache_hits_total",
+    "LLM 响应缓存命中次数",
+)
+llm_cache_misses = Counter(
+    "eventguard_ai_llm_cache_misses_total",
+    "LLM 响应缓存未命中次数",
+)
+llm_tokens = Counter(
+    "eventguard_ai_llm_tokens_total",
+    "LLM 消耗 token 数（含输入+输出）",
+    ["model", "operation"],
+)
+llm_calls = Counter(
+    "eventguard_ai_llm_calls_total",
+    "LLM 调用次数（ok=true 成功 / false 失败）",
+    ["provider", "operation", "ok"],
+)

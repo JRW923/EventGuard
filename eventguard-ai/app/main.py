@@ -1,4 +1,5 @@
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -20,6 +21,7 @@ from app.query.nl_query_engine import NLQueryEngine
 from app.query.query_result import QueryResult
 from app.security import require_permission
 from app.store.anomaly_store import anomaly_store
+from app.trace.trace_log import trace_log
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +93,18 @@ def _get_nl_query_engine() -> NLQueryEngine:
 
 
 @app.post("/ai/query", response_model=QueryResult)
-async def ai_query(req: NLQueryRequest, _: dict = Depends(require_permission("ai:query"))):
+async def ai_query(req: NLQueryRequest, response: Response, _: dict = Depends(require_permission("ai:query"))):
     """自然语言查询：意图分类 + 模板查询 + LLM 润色；缺参时反问（多轮对话）。"""
+    trace_id = str(uuid.uuid4())
+    response.headers["X-Trace-Id"] = trace_id
     engine = _get_nl_query_engine()
-    return await engine.query(req.question, req.conversation_id)
+    return await engine.query(req.question, req.conversation_id, trace_id=trace_id)
+
+
+@app.get("/ai/traces/recent")
+async def ai_traces_recent(limit: int = 100, _: dict = Depends(require_permission("ai:query"))):
+    """AI 可观测性：最近 N 条操作 trace（llm_call / nl_query / root_cause / llm_cache）。"""
+    return trace_log.recent(limit=limit)
 
 
 @app.get("/health")
@@ -116,14 +126,18 @@ def metrics():
 
 
 @app.get("/anomalies/{anomaly_id}/analysis")
-async def get_analysis(anomaly_id: str, _: dict = Depends(require_permission("anomaly:view"))):
+async def get_analysis(
+    anomaly_id: str, response: Response, _: dict = Depends(require_permission("anomaly:view"))
+):
     """根因分析：通过 anomaly_id 查找异常并生成分析报告"""
+    trace_id = str(uuid.uuid4())
+    response.headers["X-Trace-Id"] = trace_id
     anomaly = anomaly_store.get(anomaly_id)
     if anomaly is None:
         raise HTTPException(status_code=404, detail=f"异常 {anomaly_id} 不存在")
 
     try:
-        report = await _analyzer.analyze(anomaly)
+        report = await _analyzer.analyze(anomaly, trace_id=trace_id)
     except LLMResponseError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except httpx.HTTPError as e:

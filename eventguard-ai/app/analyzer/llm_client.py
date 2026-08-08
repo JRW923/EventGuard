@@ -11,11 +11,15 @@ anthropic，其余视为 openai（/chat/completions）。
 
 import json
 import logging
+import time
 from typing import Any, Optional
 
 import httpx
 
+from app import metrics as egm
+from app.cache.llm_cache import LLMCache, llm_cache as default_llm_cache
 from app.config import settings
+from app.trace.trace_log import trace_log
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +42,7 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         transport: Optional[httpx.AsyncBaseTransport] = None,
+        cache: Optional[LLMCache] = None,
     ):
         self.base_url = (base_url or settings.llm_base_url).rstrip("/")
         self.api_key = api_key or settings.llm_api_key
@@ -46,6 +51,7 @@ class LLMClient:
         self.temperature = temperature if temperature is not None else settings.llm_temperature
         self.provider = self._detect_provider()
         self.transport = transport  # 测试注入 httpx.MockTransport，离线验证请求/响应形状
+        self.cache = cache or default_llm_cache  # Item 4：幂等读场景响应缓存
 
     # ---------------- provider 探测 ----------------
 
@@ -61,25 +67,51 @@ class LLMClient:
 
     # ---------------- 公共 API ----------------
 
-    async def generate(self, prompt: str) -> str:
-        """单轮生成纯文本（保持原签名）。"""
+    async def generate(
+        self,
+        prompt: str,
+        use_cache: bool = True,
+        operation: str = "generate",
+        trace_id: Optional[str] = None,
+    ) -> str:
+        """单轮生成纯文本（保持原签名）。
+
+        Item 4：幂等读场景（意图分类 / NL 润色）默认走响应缓存；可解释性场景传 use_cache=False。
+        """
+        if use_cache:
+            hit = self.cache.get(self.provider, self.model, self.temperature, prompt)
+            if hit is not None:
+                egm.llm_cache_hits.inc()
+                trace_log.record("llm_cache", provider=self.provider, label=operation,
+                                 hit=True, trace_id=trace_id)
+                return hit
+            egm.llm_cache_misses.inc()
         text, _, _ = await self._complete(
-            [{"role": "user", "content": prompt}], system=DEFAULT_SYSTEM
+            [{"role": "user", "content": prompt}], system=DEFAULT_SYSTEM,
+            operation=operation, trace_id=trace_id,
         )
+        if use_cache:
+            self.cache.set(self.provider, self.model, self.temperature, prompt, text)
         return text
 
-    async def generate_json(self, prompt: str) -> str:
+    async def generate_json(
+        self,
+        prompt: str,
+        operation: str = "generate_json",
+        trace_id: Optional[str] = None,
+    ) -> str:
         """请求 JSON 输出，返回原始文本（调用方负责解析；JSON 解析失败时由调用方重试/降级）。
 
         openai 用 response_format={"type":"json_object"} 强制 JSON；anthropic 用强约束 system prompt，
-        结果经代码围栏抽取（部分模型会包 ```json ... ```）。
+        结果经代码围栏抽取（部分模型会包 ```json ... ```）。可解释性场景，默认不缓存。
         """
         system = (
             DEFAULT_SYSTEM
             + " 你的输出必须是严格的单个 JSON 对象，不要包含任何解释文字、Markdown 代码块或额外字段。"
         )
         text, _, _ = await self._complete(
-            [{"role": "user", "content": prompt}], system=system, json_mode=True
+            [{"role": "user", "content": prompt}], system=system, json_mode=True,
+            operation=operation, trace_id=trace_id,
         )
         return self._strip_code_fence(text)
 
@@ -88,6 +120,8 @@ class LLMClient:
         messages: list[dict],
         tools: list[dict],
         tool_choice: Any = "auto",
+        operation: str = "generate_with_tools",
+        trace_id: Optional[str] = None,
     ) -> tuple[str, list[dict]]:
         """ReAct 工具调用。
 
@@ -102,7 +136,10 @@ class LLMClient:
         Returns:
             (text, tool_calls)：tool_calls 统一为 [{"id","name","input"}]，input 为已解析 dict。
         """
-        text, tool_calls, _ = await self._complete(messages, tools=tools, tool_choice=tool_choice)
+        text, tool_calls, _ = await self._complete(
+            messages, tools=tools, tool_choice=tool_choice,
+            operation=operation, trace_id=trace_id,
+        )
         return text, tool_calls
 
     # ---------------- 核心请求 ----------------
@@ -114,13 +151,42 @@ class LLMClient:
         tools: Optional[list[dict]] = None,
         tool_choice: Any = None,
         json_mode: bool = False,
+        operation: str = "llm",
+        trace_id: Optional[str] = None,
     ) -> tuple[str, list[dict], dict]:
-        """统一请求入口，返回 (text, tool_calls, usage)。"""
-        if self.is_anthropic:
-            resp = await self._post_anthropic(messages, system, tools, tool_choice, json_mode)
-        else:
-            resp = await self._post_openai(messages, system, tools, tool_choice, json_mode)
-        return self._parse_response(resp)
+        """统一请求入口，返回 (text, tool_calls, usage)。统一埋点 llm_call 指标与 trace。"""
+        _t0 = time.time()
+        try:
+            if self.is_anthropic:
+                resp = await self._post_anthropic(messages, system, tools, tool_choice, json_mode)
+            else:
+                resp = await self._post_openai(messages, system, tools, tool_choice, json_mode)
+            text, tool_calls, usage = self._parse_response(resp)
+            self._record_llm(operation, _t0, usage, ok=True, trace_id=trace_id)
+            return text, tool_calls, usage
+        except Exception as e:
+            self._record_llm(operation, _t0, {}, ok=False, trace_id=trace_id)
+            raise
+
+    def _record_llm(
+        self,
+        operation: str,
+        start: float,
+        usage: dict,
+        ok: bool,
+        trace_id: Optional[str] = None,
+    ) -> None:
+        """LLM 调用埋点：调用计数 + token 消耗 + trace。"""
+        latency_ms = (time.time() - start) * 1000
+        egm.llm_calls.labels(provider=self.provider, operation=operation, ok="true" if ok else "false").inc()
+        tokens = (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0)
+        if tokens:
+            egm.llm_tokens.labels(model=self.model, operation=operation).inc(tokens)
+        trace_log.record(
+            "llm_call",
+            provider=self.provider, model=self.model, label=operation,
+            latency_ms=round(latency_ms, 1), tokens=int(tokens), ok=ok, trace_id=trace_id,
+        )
 
     async def _post_openai(
         self,

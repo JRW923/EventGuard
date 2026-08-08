@@ -10,6 +10,7 @@
 import json
 import logging
 import re
+import time
 from typing import Optional
 
 from pydantic import ValidationError
@@ -19,6 +20,7 @@ from app.analyzer.prompt_builder import PromptBuilder
 from app.model.anomaly import Anomaly
 from app.model.analysis_report import AnalysisReport
 from app.store.event_store_client import EventStoreClient
+from app.trace.trace_log import trace_log
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +43,15 @@ class RootCauseAnalyzer:
         self.llm_client = llm_client or LLMClient()
         self.event_store_client = event_store_client or EventStoreClient()
 
-    async def analyze(self, anomaly: Anomaly) -> AnalysisReport:
+    async def analyze(
+        self, anomaly: Anomaly, trace_id: Optional[str] = None
+    ) -> AnalysisReport:
         """
         分析异常根因。
 
         Args:
             anomaly: 异常对象
+            trace_id: 可观测性 trace id（可选）
 
         Returns:
             AnalysisReport 根因分析报告
@@ -54,6 +59,8 @@ class RootCauseAnalyzer:
         Raises:
             LLMResponseError: LLM 输出无法解析 / 校验失败 / 证据核验不通过
         """
+        _t0 = time.time()
+
         # 1. 加载事件历史
         events = self.event_store_client.load_events(anomaly.aggregate_id)
 
@@ -69,10 +76,13 @@ class RootCauseAnalyzer:
         # 4. LLM 结构化输出 + 错误反馈重试 + 证据核验
         feedback: Optional[str] = None
         last_error: Optional[Exception] = None
+        attempts = 0
         for _ in range(MAX_ATTEMPTS):
+            attempts += 1
             try:
                 raw_response = await self.llm_client.generate_json(
-                    prompt if feedback is None else prompt + "\n\n## 修正要求\n" + feedback
+                    prompt if feedback is None else prompt + "\n\n## 修正要求\n" + feedback,
+                    operation="root_cause", trace_id=trace_id,
                 )
             except Exception as e:  # 网络故障 + 响应结构异常统一归一口径
                 logger.error("LLM 调用/响应异常: %s", e)
@@ -104,8 +114,16 @@ class RootCauseAnalyzer:
                 )
                 continue
 
+            trace_log.record(
+                "root_cause", anomaly_id=anomaly.anomaly_id, attempts=attempts,
+                latency_ms=round((time.time() - _t0) * 1000, 1), ok=True, trace_id=trace_id,
+            )
             return report
 
+        trace_log.record(
+            "root_cause", anomaly_id=anomaly.anomaly_id, attempts=attempts,
+            latency_ms=round((time.time() - _t0) * 1000, 1), ok=False, trace_id=trace_id,
+        )
         raise LLMResponseError(f"LLM 输出不可用：{last_error}")
 
     @staticmethod
