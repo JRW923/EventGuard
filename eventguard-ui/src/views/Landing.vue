@@ -91,7 +91,18 @@
         <p class="landing-sec-sub">围绕可靠交付、可观测性与 AI 工程组织技术选型。</p>
       </div>
       <div class="landing-projtech-chips reveal">
-        <span class="landing-tech-item" v-for="t in projectStack" :key="t">{{ t }}</span>
+        <div v-for="group in projectStackGroups" :key="group.title" class="landing-stack-group" :style="{ '--accent': group.accent }">
+          <div class="landing-stack-group-head">
+            <span class="landing-stack-group-index">{{ group.index }}</span>
+            <div>
+              <h3>{{ group.title }}</h3>
+              <p>{{ group.description }}</p>
+            </div>
+          </div>
+          <div class="landing-stack-items">
+            <span class="landing-tech-item" v-for="item in group.items" :key="item">{{ item }}</span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -149,7 +160,12 @@
             <div class="landing-about-info">
               <h3 class="landing-about-name">吴佳睿</h3>
               <p class="landing-about-roles">后端开发 · AI 应用开发 · Agent 开发</p>
-              <p class="landing-about-edu">东南大学 · 本硕</p>
+              <p class="landing-about-edu">
+                <span class="landing-about-school-mark" aria-hidden="true">
+                  <img src="/brand/seu-logo.png" alt="" />
+                </span>
+                <span>东南大学 · 本硕</span>
+              </p>
               <div class="landing-about-links">
               <a class="landing-about-link" href="https://github.com/JRW923" target="_blank" rel="noopener noreferrer">
                 <svg viewBox="0 0 16 16" class="landing-about-github" aria-hidden="true">
@@ -279,7 +295,7 @@ const techGroups: TechGroup[] = [
   {
     icon: '🗄️',
     title: '数据库与中间件',
-    items: ['MySQL', 'PostgreSQL', 'Redis', 'Kafka'],
+    items: ['MySQL', 'PostgreSQL', 'Redis', 'Kafka', 'Milvus'],
     accent: '#06b6d4',
   },
   {
@@ -296,22 +312,13 @@ const techGroups: TechGroup[] = [
   },
 ]
 
-// 项目技术栈（EventGuard 这套系统实际用到的技术）
-const projectStack = [
-  'Java 21',
-  'Spring Boot',
-  'PostgreSQL',
-  'Debezium',
-  'Kafka',
-  'Vue 3',
-  'TypeScript',
-  'Element Plus',
-  'Python',
-  'WebSocket',
-  'Prometheus',
-  'Grafana',
-  'Docker',
-  'PWA',
+// 项目实际技术栈，按系统模块组织，方便快速理解架构职责。
+const projectStackGroups = [
+  { index: '01', title: 'Java 服务端', description: '命令处理、权限控制与补偿编排', items: ['Java 17', 'Spring Boot 3', 'Spring JDBC', 'JWT / RBAC'], accent: '#5b8def' },
+  { index: '02', title: '事件与数据', description: '事件落库、变更捕获与异步投影', items: ['PostgreSQL', 'Debezium', 'Kafka', 'Event Sourcing', 'CQRS'], accent: '#45b8a3' },
+  { index: '03', title: 'AI 服务', description: '异常识别、自然语言查询与根因分析', items: ['Python', 'FastAPI', 'LLM API', 'Rule Engine', 'WebSocket'], accent: '#e17865' },
+  { index: '04', title: '前端体验', description: '管理控制台与实时交互界面', items: ['Vue 3', 'TypeScript', 'Element Plus', 'ECharts', 'Vite'], accent: '#5fb7ce' },
+  { index: '05', title: '交付与观测', description: '容器化部署、指标监控与日志聚合', items: ['Docker Compose', 'Nginx', 'Prometheus', 'Grafana', 'Loki'], accent: '#d8a445' },
 ]
 
 interface Account {
@@ -590,14 +597,17 @@ body.eg-landing {
 }
 .landing-eyebrow-dot { width: 7px; height: 7px; border-radius: 50%; background: #42c2a8; box-shadow: 0 0 0 5px rgba(66, 194, 168, .12); }
 .landing-logo-wrap {
-  display: inline-block;
+  display: block;
+  width: max-content;
+  margin: 0 auto;
   animation: landing-float 5s ease-in-out infinite;
   filter: drop-shadow(0 8px 26px rgba(69, 126, 211, 0.36));
 }
 .landing-logo {
-  width: 88px;
-  height: 88px;
-  border-radius: 22px;
+  display: block;
+  width: 120px;
+  height: 120px;
+  border-radius: 24px;
 }
 @keyframes landing-float {
   0%,
@@ -738,13 +748,28 @@ body.eg-landing {
   padding-top: 42px;
 }
 .landing-projtech-chips {
-  --accent: #a5b4fc;
   margin-top: 30px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  text-align: left;
 }
+.landing-stack-group {
+  --accent: #5b8def;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-top: 2px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(255,255,255,.035);
+}
+.landing-stack-group:last-child { grid-column: 1 / -1; }
+.landing-stack-group-head { display: flex; align-items: flex-start; gap: 12px; }
+.landing-stack-group-index { flex: 0 0 auto; color: var(--accent); font-size: 11px; font-weight: 800; line-height: 24px; }
+.landing-stack-group h3 { margin: 0; color: #e6efee; font-size: 16px; }
+.landing-stack-group p { margin: 5px 0 0; color: #71878d; font-size: 12px; line-height: 1.6; }
+.landing-stack-items { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.landing-stack-items .landing-tech-item { padding: 5px 10px; font-size: 12px; }
 
 /* ---------- 核心能力卡片 ---------- */
 .landing-cards {
@@ -1007,10 +1032,23 @@ body.eg-landing {
   color: #a5b4fc;
 }
 .landing-about-edu {
-  margin: 6px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 0 0;
   font-size: 14px;
   color: #94a3b8;
 }
+.landing-about-school-mark {
+  display: inline-block;
+  width: 27px;
+  height: 27px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #10242b;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.18);
+}
+.landing-about-school-mark img { display: block; width: auto; max-width: none; height: 27px; }
 .landing-about-links {
   margin-top: 14px;
   display: flex;
@@ -1121,7 +1159,7 @@ body.eg-landing {
   .landing-nav-actions { gap: 6px; }
   .landing-btn { padding: 8px 12px; }
   .landing-hero { padding: 92px 16px 64px; }
-  .landing-logo { width: 72px; height: 72px; border-radius: 16px; }
+  .landing-logo { width: 92px; height: 92px; border-radius: 18px; }
   .landing-title { margin-top: 20px; font-size: 34px; line-height: 1.16; }
   .landing-title-cn { display: block; margin-top: 5px; }
   .landing-sub { font-size: 14px; line-height: 1.7; }
@@ -1129,6 +1167,8 @@ body.eg-landing {
   .landing-btn--lg { width: 100%; max-width: 300px; }
   .landing-section { padding: 52px 16px 30px; }
   .landing-cards { grid-template-columns: 1fr; }
+  .landing-projtech-chips { grid-template-columns: 1fr; }
+  .landing-stack-group:last-child { grid-column: auto; }
   .landing-account-pwd { flex-wrap: wrap; }
   .landing-account-pwd-value { min-width: 130px; }
   .landing-about-card { padding: 22px 18px; }

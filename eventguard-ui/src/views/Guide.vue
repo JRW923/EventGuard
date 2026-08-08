@@ -10,12 +10,12 @@
     </header>
 
     <main class="guide-main">
-      <h1 class="guide-title reveal">如何体验 EventGuard</h1>
-      <p class="guide-sub reveal">四步走完核心链路 —— 约 5 分钟，浏览器即可，无需安装任何东西</p>
+      <h1 class="guide-title reveal">EventGuard 项目体验指南</h1>
+      <p class="guide-sub reveal">建议用时约 5 分钟，可通过浏览器依次验证核心业务流程、系统架构与权限设计。</p>
 
       <!-- 核心链路 -->
       <div class="guide-flow reveal">
-        <div class="guide-flow-title">📡 你会看到的完整链路</div>
+        <div class="guide-flow-title">核心业务与数据链路</div>
         <div class="guide-flow-track">
           <template v-for="(n, i) in flow" :key="n.label">
             <div class="guide-flow-node">
@@ -40,10 +40,10 @@
         </li>
       </ol>
 
-      <!-- 你能玩到的亮点 -->
+      <!-- 可重点考察的系统能力 -->
       <section class="guide-section reveal">
-        <h2 class="guide-h2">你能亲手玩到这些</h2>
-        <p class="guide-h2-sub">以下能力均可直接登录系统体验</p>
+        <h2 class="guide-h2">可重点考察的系统能力</h2>
+        <p class="guide-h2-sub">以下模块均可在演示环境中直接验证</p>
         <div class="guide-highlights">
           <div
             v-for="h in highlights"
@@ -60,8 +60,8 @@
 
       <!-- 按角色体验建议 -->
       <section class="guide-section reveal">
-        <h2 class="guide-h2">按角色体验</h2>
-        <p class="guide-h2-sub">三个账号，三条不同的体验路径</p>
+        <h2 class="guide-h2">建议体验路径</h2>
+        <p class="guide-h2-sub">不同角色对应不同的业务权限和观察视角</p>
         <div class="guide-roles">
           <div v-for="r in roleSuggs" :key="r.role" class="guide-role" :style="{ '--accent': r.accent }">
             <h3 class="guide-role-name">{{ r.role }}</h3>
@@ -73,7 +73,7 @@
       <!-- 演示账号速查 -->
       <section class="guide-accounts reveal">
         <h2 class="guide-h2">演示账号</h2>
-        <p class="guide-h2-sub">三种角色任选 —— 密码默认模糊，点击即可查看</p>
+        <p class="guide-h2-sub">提供三种预设角色，便于快速验证权限边界</p>
         <div class="guide-accounts-grid">
           <div v-for="acc in accounts" :key="acc.username" class="guide-account" :style="{ '--accent': acc.accent }">
             <div class="guide-account-head">
@@ -107,7 +107,7 @@
 
       <!-- CTA -->
       <div class="guide-cta reveal">
-        <button class="guide-btn guide-btn--primary" @click="goEnter">🚀 现在就开始体验</button>
+        <button class="guide-btn guide-btn--primary" @click="goEnter">进入系统开始体验</button>
         <router-link class="guide-btn guide-btn--ghost" to="/">返回首页</router-link>
       </div>
     </main>
@@ -136,25 +136,25 @@ interface Step {
 const steps: Step[] = [
   {
     title: '登录系统',
-    desc: '在登录页用下方任一演示账号登录（admin / operator / viewer），即可直接进入控制台。',
-    tags: ['选择角色', '首次登录改密'],
+    desc: '在登录页使用下方任一演示账号登录（admin / operator / viewer），进入对应权限范围的控制台。',
+    tags: ['预设角色', 'RBAC 权限'],
     accent: '#818cf8',
   },
   {
     title: '创建一笔订单',
-    desc: '进入「订单列表」新建订单，然后在时间线里查看它从创建到关闭的每一步状态变更 —— 每一步都是不可变事件，可随时回放任意历史时刻。',
+    desc: '进入「订单列表」新建订单，并在时间线中查看从创建到关闭的状态变更。每一步均以不可变事件记录，可用于回放与审计。',
     tags: ['事件溯源', '时间线回放'],
     accent: '#22d3ee',
   },
   {
     title: '看异常如何被发现',
-    desc: '提交一笔金额偏离或异常流水的订单，规则引擎 / AI 模型命中后，告警经 WebSocket 实时推送到「异常看板」；点开任意告警可查看 AI 给出的根因分析与建议动作。',
+    desc: '提交金额偏离或状态异常的订单，规则引擎与 AI 模型识别后，告警经 WebSocket 推送至「异常看板」，并提供根因分析与建议动作。',
     tags: ['CDC 实时管道', 'AI 异常检测', '根因分析'],
     accent: '#ec4899',
   },
   {
     title: '中文提问与自动补偿',
-    desc: '在「NL 查询」用中文直接问订单状态与统计；对异常订单可执行白名单补偿动作（退款 / 通知等），高风险动作会自动挂起人工审批。',
+    desc: '在「NL 查询」中使用中文查询订单状态与统计；针对异常订单执行受控补偿动作，高风险操作进入人工审批流程。',
     tags: ['中文 NL 查询', 'Saga 自动补偿', '审批流'],
     accent: '#f59e0b',
   },
@@ -225,16 +225,16 @@ const highlights = [
 
 // 按角色建议的体验路径
 const roleSuggs = [
-  { role: '👑 管理员 admin', desc: '进入「系统管理」查看用户、角色与权限分配，体会 RBAC 的设计粒度与审计日志。', accent: '#818cf8' },
-  { role: '🛠️ 运营 operator', desc: '创建订单、推进状态、处理异常并执行补偿 —— 走完整的一条业务闭环。', accent: '#22d3ee' },
-  { role: '👁️ 只读 viewer', desc: '以只读视角看订单与异常看板，体验 NL 查询，感受权限边界下的受限视野。', accent: '#c084fc' },
+  { role: '管理员 admin', desc: '查看用户、角色、权限分配与审计日志，重点考察 RBAC 的权限粒度和管理能力。', accent: '#818cf8' },
+  { role: '运营 operator', desc: '创建订单、推进状态、处理异常并执行补偿，验证完整的业务处置闭环。', accent: '#22d3ee' },
+  { role: '只读 viewer', desc: '以只读视角查看订单、异常看板与 NL 查询结果，验证权限隔离效果。', accent: '#c084fc' },
 ]
 
 // 常见问题
 const faqs = [
   { q: '默认密码是什么？', a: '三种角色均使用下方「演示账号」中展示的默认密码，点击模糊密码即可查看，直接登录体验即可。' },
-  { q: '里面的数据是真实的吗？', a: '系统内置演示数据与异常注入脚本，专为体验设计；每笔订单的异常识别都由规则引擎与 AI 模型实时完成。' },
-  { q: '这是不是一个可运行的真实项目？', a: '是的 —— 一个事件溯源 + 异常检测的完整可运行系统，源码与架构见作者 GitHub：github.com/JRW923。' },
+  { q: '演示环境中的数据来源？', a: '系统提供演示数据与异常注入能力，用于稳定复现订单事件、异常识别和补偿流程；识别过程仍由规则引擎与 AI 模型实时执行。' },
+  { q: '项目是否完整可运行？', a: '是的。EventGuard 包含前端、Java 服务端、AI 服务、数据库、消息链路和可观测组件，源码与架构说明见作者 GitHub：github.com/JRW923。' },
   { q: '改密后还能继续体验吗？', a: '可以。你随时可以在「个人中心」修改密码，改后用新密码重新登录即可；三个演示账号互不影响。' },
 ]
 
@@ -316,13 +316,13 @@ body.eg-landing {
 
 /* ---------- 主体 ---------- */
 .guide-main {
-  max-width: 1120px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 120px 20px 60px;
 }
 .guide-title {
   margin: 0;
-  font-size: clamp(28px, 5vw, 42px);
+  font-size: 42px;
   font-weight: 800;
   text-align: center;
   color: #f8fafc;
@@ -340,8 +340,8 @@ body.eg-landing {
 /* ---------- 核心链路 ---------- */
 .guide-flow {
   margin-top: 40px;
-  padding: 18px 20px;
-  border-radius: 16px;
+  padding: 24px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.045);
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(12px);
@@ -350,16 +350,16 @@ body.eg-landing {
 .guide-flow-title {
   text-align: center;
   font-size: 13px;
-  letter-spacing: 1px;
+  letter-spacing: 0;
   color: #64748b;
 }
 .guide-flow-track {
-  margin-top: 16px;
+  margin-top: 18px;
   display: flex;
   align-items: stretch;
-  justify-content: center;
+  justify-content: stretch;
   flex-wrap: nowrap;
-  gap: 4px;
+  gap: 8px;
 }
 .guide-flow-node {
   display: flex;
@@ -367,22 +367,25 @@ body.eg-landing {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 78px;
-  padding: 10px 8px;
-  border-radius: 12px;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 92px;
+  padding: 14px 10px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 .guide-flow-icon {
-  font-size: 20px;
+  font-size: 24px;
   line-height: 1;
 }
 .guide-flow-label {
-  font-size: 12px;
+  font-size: 13px;
   text-align: center;
   color: #cbd5e1;
 }
 .guide-flow-arrow {
+  flex: 0 0 20px;
   align-self: center;
   font-size: 16px;
   color: #475569;
@@ -713,12 +716,15 @@ body.eg-landing {
 
 /* 窄屏：核心链路允许换行，避免横向溢出 */
 @media (max-width: 820px) {
+  .guide-title { font-size: 32px; }
   .guide-flow-track {
     flex-wrap: wrap;
   }
   .guide-flow-node {
-    min-width: 96px;
+    flex: 1 1 140px;
+    min-width: 140px;
   }
+  .guide-flow-arrow { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

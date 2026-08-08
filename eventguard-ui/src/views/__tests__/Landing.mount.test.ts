@@ -52,9 +52,11 @@ describe('应用启动 + Landing 渲染（诊断用）', () => {
     expect(h2s).toContain('体验账号')
     expect(h2s).toContain('关于我')
     // 项目技术栈标签
+    expect(root.querySelectorAll('.landing-stack-group').length).toBe(5)
     expect(root.querySelectorAll('.landing-projtech-chips .landing-tech-item').length).toBeGreaterThan(0)
     // 关于我内的个人技能分组
     expect(root.querySelectorAll('.landing-about-groups .landing-tech-group').length).toBe(5)
+    expect(root.querySelector('.landing-about-school-mark img')?.getAttribute('src')).toBe('/brand/seu-logo.png')
     // 账号卡
     expect(root.querySelectorAll('.landing-account').length).toBe(3)
   })
