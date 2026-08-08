@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://ollama:11434/v1"
     llm_api_key: str = "ollama"
     llm_model: str = "qwen2.5:7b"
+    # LLM 提供商：留空则按 base_url 自动探测（含 "/anthropic" → anthropic，否则 openai）
+    llm_provider: str = ""
+    llm_max_tokens: int = 2048
+    llm_temperature: float = 0.3
     model_dir: str = "models"
     server_base_url: str = "http://eventguard-server:8080"
     # 用户 JWT 校验密钥（与 Java 后端共用 EG_JWT_SECRET，HS256）；生产必须注入强随机值
