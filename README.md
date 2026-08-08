@@ -27,7 +27,7 @@ EventGuard（事件卫士）是一个面向电商订单的**事件溯源 + AI �
 ## 架构概览
 
 ```
-    Vue3 管理台 (localhost:3000)
+    Vue3 管理台（本地 Vite 默认 localhost:5173）
         │  ├─ 写命令 ─▶ 命令侧：订单事件写入事件库（PostgreSQL）
         │  ├─ 读查询 ─▶ 查询侧：事件投影为可读视图（订单列表 / 时间线 / 统计）
         │  └─ 中文提问 ─▶ AI 服务：异常检测 + 自然语言查询 + 根因分析
@@ -46,7 +46,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-启动后打开 **http://localhost** 即可使用管理台（生产镜像映射 80 端口；本地热更新开发用 Vite dev server 的 3000 端口）。
+启动后打开 **http://localhost** 即可使用管理台（生产镜像映射 80 端口；本地热更新开发用 Vite dev server 的 5173 端口）。
 **首次进入请先登录**，默认账号见下文「[登录与权限管理](#登录与权限管理)」。
 
 若使用 IDEA 启动 Spring Boot、单独运行 FastAPI 和 Vite，而不构建业务镜像，请看 [`docs/local-development.md`](docs/local-development.md)。其中命令按 Windows PowerShell 写法提供；Linux/macOS 可将 `Set-Location` 换成 `cd`，并去掉 `.cmd` 后缀。Docker Compose 命令会按当前环境使用 `docker-compose`，新版 Docker 可改为 `docker compose`。

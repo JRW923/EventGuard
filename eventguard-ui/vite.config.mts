@@ -69,8 +69,9 @@ export default defineConfig({
     },
   },
   server: {
-    host: true,
-    port: 3000,
+    // Windows 某些环境会禁止 Vite 绑定 0.0.0.0:3000；本地浏览器调试只需回环地址。
+    host: process.env.VITE_HOST ?? '127.0.0.1',
+    port: Number(process.env.VITE_PORT ?? 5173),
     proxy: {
       '/orders': 'http://localhost:8080',
       '/anomalies': 'http://localhost:8000',
