@@ -56,7 +56,7 @@ $env:EG_LOCAL_DB_PASSWORD = "changeme"
 mvn.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
 ```
 
-后端地址为 `http://localhost:8080`。默认演示账号仍为 `admin / admin123456`、`operator / operator123456`、`viewer / viewer123456`，不会因本地 profile 改变。
+后端 API 地址为 `http://localhost:8080`，不是网页入口；直接打开 `http://localhost:8080/` 返回 `401 Missing or invalid token` 属于预期行为，因为根路径受 AuthFilter 保护。浏览器使用完整界面时，请启动下面的前端并访问 `http://localhost:3000`。健康检查地址是 `http://localhost:8080/health`。默认演示账号仍为 `admin / admin123456`、`operator / operator123456`、`viewer / viewer123456`，不会因本地 profile 改变。
 
 `local` profile 默认不自动启动 Kafka listeners，避免 Compose 的 `kafka:9092` 广播地址阻断 IDEA 启动；订单 HTTP、权限和管理页面仍可正常调试。若需要本地消费 `domain-events` 或 `anomaly-alerts`，先让 Windows 能解析 Docker 广播地址，再在 IDEA 环境变量中开启：
 
