@@ -3,6 +3,7 @@
 只缓存幂等读场景（generate 的意图分类 / NL 润色）；根因分析等可解释性场景默认不缓存（由调用方决定）。
 进程内状态，重启即清——与全项目一致；升级路径=落 Redis 共享缓存。
 """
+import hashlib
 import threading
 import time
 from typing import Optional
@@ -18,7 +19,8 @@ class LLMCache:
 
     @staticmethod
     def _key(provider: str, model: str, temperature: float, prompt: str) -> str:
-        return f"{provider}|{model}|{temperature}|{hash(prompt)}"
+        digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        return f"{provider}|{model}|{temperature}|{digest}"
 
     def get(self, provider: str, model: str, temperature: float, prompt: str) -> Optional[str]:
         key = self._key(provider, model, temperature, prompt)

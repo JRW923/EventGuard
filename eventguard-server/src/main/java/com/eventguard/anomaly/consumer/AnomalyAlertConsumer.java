@@ -38,20 +38,29 @@ public class AnomalyAlertConsumer {
 
     @KafkaListener(topics = "anomaly-alerts", groupId = "anomaly-ws")
     public void on(String raw) {
+        final AnomalyAlert alert;
         try {
-            AnomalyAlert alert = objectMapper.readValue(raw, AnomalyAlert.class);
-            log.info("收到异常告警: anomaly_id={} rule_id={} source={} priority={}",
-                    alert.getAnomalyId(), alert.getRuleId(), alert.getSource(), alert.getPriority());
-            if (metrics != null) {
-                metrics.counter("eventguard.anomaly.alert.received", "rule_id",
-                        alert.getRuleId() != null ? alert.getRuleId() : "unknown",
-                        "level", alert.getLevel() != null ? alert.getLevel() : "unknown");
-            }
-            // 先入环形缓冲再广播：WS 会话断开时告警仍被保留，前端重连后经 /alerts/recent 补拉
-            recentAlertsBuffer.add(alert);
-            webSocketHandler.broadcast(alert);
+            alert = objectMapper.readValue(raw, AnomalyAlert.class);
         } catch (Exception e) {
-            log.error("反序列化/推送异常告警失败: {}", e.getMessage(), e);
+            log.error("反序列化异常告警失败", e);
+            throw new IllegalStateException("异常告警反序列化失败", e);
+        }
+        if (alert == null) {
+            throw new IllegalStateException("异常告警消息不能为 null");
+        }
+        log.info("收到异常告警: anomaly_id={} rule_id={} source={} priority={}",
+                alert.getAnomalyId(), alert.getRuleId(), alert.getSource(), alert.getPriority());
+        if (metrics != null) {
+            metrics.counter("eventguard.anomaly.alert.received", "rule_id",
+                    alert.getRuleId() != null ? alert.getRuleId() : "unknown",
+                    "level", alert.getLevel() != null ? alert.getLevel() : "unknown");
+        }
+        // 先入环形缓冲再广播：WS 会话断开时告警仍被保留，前端重连后经 /alerts/recent 补拉
+        recentAlertsBuffer.add(alert);
+        try {
+            webSocketHandler.broadcast(alert);
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("异常告警 WebSocket 推送失败", e);
         }
     }
 }

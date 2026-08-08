@@ -1,12 +1,16 @@
 package com.eventguard.command.controller;
 
 import com.eventguard.auth.security.RequirePermission;
+import com.eventguard.auth.security.AuthPrincipal;
 import com.eventguard.command.command.*;
 import com.eventguard.command.handler.OrderCommandHandler;
 import com.eventguard.common.dto.CommandResult;
 import com.eventguard.gateway.service.PaymentCoordinator;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -21,10 +25,23 @@ public class OrderCommandController {
 
     private final OrderCommandHandler handler;
     private final PaymentCoordinator paymentCoordinator;
+    private final boolean requireCommandId;
+    private final boolean allowBodyUserId;
 
     public OrderCommandController(OrderCommandHandler handler, PaymentCoordinator paymentCoordinator) {
+        this(handler, paymentCoordinator, false, true);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OrderCommandController(OrderCommandHandler handler, PaymentCoordinator paymentCoordinator,
+                                  @org.springframework.beans.factory.annotation.Value("${EG_REQUIRE_COMMAND_ID:false}")
+                                  boolean requireCommandId,
+                                  @org.springframework.beans.factory.annotation.Value("${EG_ALLOW_BODY_USER_ID:true}")
+                                  boolean allowBodyUserId) {
         this.handler = handler;
         this.paymentCoordinator = paymentCoordinator;
+        this.requireCommandId = requireCommandId;
+        this.allowBodyUserId = allowBodyUserId;
     }
 
     /**
@@ -36,8 +53,13 @@ public class OrderCommandController {
             try {
                 return UUID.fromString(header.trim());
             } catch (IllegalArgumentException ignored) {
-                // 非法 UUID 回退到服务端生成
+                if (requireCommandId) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "X-Command-Id 必须是 UUID");
+                }
             }
+        }
+        if (requireCommandId) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "生产环境必须提供 X-Command-Id");
         }
         return UUID.randomUUID();
     }
@@ -46,12 +68,21 @@ public class OrderCommandController {
     @RequirePermission("order:create")
     public ResponseEntity<CommandResult> createOrder(
             @RequestHeader(value = "X-Command-Id", required = false) String commandIdHeader,
-            @RequestBody CreateOrderRequest req) {
+            @RequestBody CreateOrderRequest req,
+            HttpServletRequest request) {
         UUID orderId = req.orderId() != null ? req.orderId() : UUID.randomUUID();
+        String userId = req.userId();
+        if (!allowBodyUserId) {
+            AuthPrincipal principal = AuthPrincipal.from(request);
+            if (principal == null || principal.isMachine() || principal.getUserId() == null) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "订单用户必须来自登录主体");
+            }
+            userId = String.valueOf(principal.getUserId());
+        }
         CreateOrderCommand cmd = new CreateOrderCommand(
                 commandId(commandIdHeader),
                 orderId,
-                req.userId(),
+                userId,
                 req.totalAmount()
         );
         CommandResult result = handler.handle(cmd);

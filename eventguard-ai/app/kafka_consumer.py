@@ -6,7 +6,7 @@ import threading
 import time
 from typing import Callable, Optional
 
-from kafka import KafkaConsumer
+from kafka import KafkaConsumer, KafkaProducer
 
 from app import metrics as egm
 
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 # 告警发布重试：3 次，退避 0.3s/0.9s（顺序与次数对齐）；真宕机不无限阻塞消费线程
 PUBLISH_RETRIES = 3
 PUBLISH_BACKOFF_SECONDS = (0.3, 0.9, 1.8)
+MAX_MESSAGE_RETRIES = 3
 
 
 class EventKafkaConsumer:
@@ -26,6 +27,7 @@ class EventKafkaConsumer:
         topic: str = "domain-events",
         group_id: str = "ai-event-detector",
         bootstrap_servers: Optional[str] = None,
+        dead_letter_topic: Optional[str] = None,
     ):
         from app.config import settings
 
@@ -33,9 +35,12 @@ class EventKafkaConsumer:
         self.topic = topic
         self.group_id = group_id
         self.bootstrap_servers = bootstrap_servers or settings.kafka_bootstrap
+        self.dead_letter_topic = dead_letter_topic or f"{topic}.DLT"
         self._consumer: Optional[KafkaConsumer] = None
+        self._dlt_producer: Optional[KafkaProducer] = None
         self._thread: Optional[threading.Thread] = None
         self._running = False
+        self._failures: dict[tuple[str, int, int], int] = {}
 
     def start(self) -> None:
         """启动后台消费线程"""
@@ -44,7 +49,8 @@ class EventKafkaConsumer:
             bootstrap_servers=self.bootstrap_servers,
             group_id=self.group_id,
             auto_offset_reset="earliest",
-            enable_auto_commit=True,
+            enable_auto_commit=False,
+            max_poll_records=1,
             key_deserializer=lambda k: k.decode("utf-8") if k else None,
         )
         self._running = True
@@ -79,10 +85,54 @@ class EventKafkaConsumer:
                                     except (ValueError, TypeError):
                                         pass
                             self.handler(value)
+                            self._consumer.commit()
                         except Exception as e:
-                            logger.exception("handler error: %s", e)
+                            logger.exception("handler error; offset will be retried: %s", e)
+                            self._retry_failed_message(msg)
         except Exception as e:
             logger.exception("consume loop error: %s", e)
+
+    def _retry_failed_message(self, msg) -> None:
+        """有限重试；DLT 发布成功后才提交原 offset，避免坏消息卡死消费组。"""
+        if self._consumer is None:
+            return
+        from kafka import TopicPartition
+
+        topic = getattr(msg, "topic", self.topic)
+        partition = int(getattr(msg, "partition", 0))
+        offset = int(getattr(msg, "offset", 0))
+        key = (topic, partition, offset)
+        attempt = self._failures.get(key, 0) + 1
+        self._failures[key] = attempt
+        tp = TopicPartition(topic, partition)
+        try:
+            if attempt >= MAX_MESSAGE_RETRIES:
+                self._publish_dlt(msg)
+                self._consumer.commit()
+                self._failures.pop(key, None)
+                logger.error("message moved to DLT topic=%s partition=%s offset=%s", topic, partition, offset)
+                return
+            self._consumer.seek(tp, offset)
+            time.sleep(PUBLISH_BACKOFF_SECONDS[min(attempt - 1, len(PUBLISH_BACKOFF_SECONDS) - 1)])
+        except Exception:
+            logger.exception("message retry/DLT failed topic=%s partition=%s offset=%s",
+                             topic, partition, offset)
+            # DLT 不可用时保持原 offset 未提交，进程重启后继续重试。
+            try:
+                self._consumer.seek(tp, offset)
+            except Exception:
+                logger.exception("failed to retain Kafka offset topic=%s partition=%s offset=%s",
+                                 topic, partition, offset)
+
+    def _publish_dlt(self, msg) -> None:
+        """DLT 发布失败时不提交 offset，交给进程重启/后续重试。"""
+        if self._dlt_producer is None:
+            self._dlt_producer = KafkaProducer(
+                bootstrap_servers=self.bootstrap_servers,
+                key_serializer=lambda k: k.encode("utf-8") if k else None,
+                value_serializer=lambda v: v if isinstance(v, bytes) else str(v).encode("utf-8"),
+            )
+        self._dlt_producer.send(self.dead_letter_topic, key=msg.key, value=msg.value).get(timeout=5)
 
     def stop(self) -> None:
         """停止消费并关闭 consumer"""
@@ -91,6 +141,8 @@ class EventKafkaConsumer:
             self._thread.join(timeout=5)
         if self._consumer:
             self._consumer.close()
+        if self._dlt_producer:
+            self._dlt_producer.close()
         logger.info("Kafka consumer stopped")
 
 

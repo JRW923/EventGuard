@@ -227,7 +227,9 @@ services:
     image: prom/alertmanager:v0.27.0
     # ponytail: 仅映射供本地 SSH 隧道访问；生产不直接暴露
     ports: ["9093:9093"]
-    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--config.expand-env"]
+    environment:
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-http://127.0.0.1:65534/alert}
     volumes:
       - "./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro"
     mem_limit: 100m

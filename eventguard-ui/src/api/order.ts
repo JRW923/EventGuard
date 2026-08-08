@@ -28,7 +28,9 @@ export const OrderApi = {
   },
 
   create(payload: { userId: string; totalAmount: number }): Promise<{ orderId: string }> {
-    return http.post<{ orderId: string }>('/orders', payload).then((r) => r.data)
+    return http.post<{ orderId: string }>('/orders', payload, {
+      headers: { 'X-Command-Id': crypto.randomUUID() },
+    }).then((r) => r.data)
   },
 
   getEvents(orderId: string, upToVersion?: number): Promise<EventItem[]> {

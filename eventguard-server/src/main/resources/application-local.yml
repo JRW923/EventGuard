@@ -1,0 +1,13 @@
+# IDEA 本地运行 profile。只覆盖容器内的服务发现地址，不影响生产 application.yml。
+spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/eventguard}
+    username: ${DB_USER:eventguard}
+    password: ${DB_PASSWORD:eventguard}
+
+eventguard:
+  local:
+    enabled: true
+

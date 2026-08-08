@@ -14,6 +14,7 @@ from typing import Optional
 from app.model.anomaly import Anomaly
 from app.store.anomaly_store import anomaly_store as default_anomaly_store
 from app.store.event_store_client import EventStoreClient
+from app.store.event_store_client import load_events_async
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ class CaseIndex:
 
     async def _resolution(self, anomaly: Anomaly) -> str:
         try:
-            events = self.event_store_client.load_events(anomaly.aggregate_id)
+            events = await load_events_async(self.event_store_client, anomaly.aggregate_id)
             if any(e.get("event_type") == "CompensationExecutedEvent" for e in events):
                 return "已补偿"
             return "未处置"

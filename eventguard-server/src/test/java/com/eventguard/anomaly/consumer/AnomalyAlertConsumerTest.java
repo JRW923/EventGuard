@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -44,18 +45,17 @@ class AnomalyAlertConsumerTest {
     }
 
     @Test
-    void on_alert_continues_when_broadcast_throws() throws Exception {
+    void on_alert_propagates_broadcast_failure_for_kafka_retry() throws Exception {
         doThrow(new RuntimeException("ws error")).when(handler).broadcast(any(AnomalyAlert.class));
 
-        // 不应抛异常（消费端不崩）
-        consumer.on(alertJson("a-2", "IF", "IF", "LOW"));
+        assertThrows(IllegalStateException.class, () -> consumer.on(alertJson("a-2", "IF", "IF", "LOW")));
 
         verify(handler).broadcast(any(AnomalyAlert.class));
     }
 
     @Test
-    void malformed_json_is_skipped_without_throwing() {
-        consumer.on("{not-json");
-        consumer.on("null");
+    void malformed_json_is_propagated_for_dead_letter_recovery() {
+        assertThrows(IllegalStateException.class, () -> consumer.on("{not-json"));
+        assertThrows(IllegalStateException.class, () -> consumer.on("null"));
     }
 }

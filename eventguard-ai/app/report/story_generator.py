@@ -5,6 +5,7 @@ from typing import Optional
 
 from app.analyzer.llm_client import LLMClient
 from app.store.event_store_client import EventStoreClient
+from app.store.event_store_client import load_events_async
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class StoryGenerator:
         self.event_store_client = event_store_client or EventStoreClient()
 
     async def generate(self, aggregate_id: str) -> dict:
-        events = self.event_store_client.load_events(aggregate_id)
+        events = await load_events_async(self.event_store_client, aggregate_id)
         if not events:
             return {
                 "aggregate_id": aggregate_id,

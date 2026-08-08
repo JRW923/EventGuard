@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 网关回调处理：支付异步回调按 external_ref 反查 gateway_request，
@@ -50,7 +51,7 @@ public class GatewayCallbackService {
     public CommandResult process(String externalRef, UUID orderId, boolean success, String error) {
         long start = System.currentTimeMillis();
         try {
-            return doProcess(externalRef, orderId, success, error);
+            return doProcess(null, externalRef, orderId, success, error, null);
         } finally {
             if (metrics != null) {
                 metrics.record("eventguard.payment.callback.duration", System.currentTimeMillis() - start,
@@ -59,31 +60,77 @@ public class GatewayCallbackService {
         }
     }
 
-    private CommandResult doProcess(String externalRef, UUID orderId, boolean success, String error) {
-        Optional<GatewayRequest> reqOpt = gatewayRequestRepository.findByExternalRef(externalRef);
-        if (reqOpt.isPresent()) {
-            GatewayRequest req = reqOpt.get();
-            if (req.isTerminal()) {
-                log.info("[支付回调] 已终态（幂等跳过）externalRef={} status={}", externalRef, req.getStatus());
-                return CommandResult.success(0);
+    public CommandResult process(String provider, String externalRef, UUID orderId,
+                                 boolean success, String error, String callbackId) {
+        long start = System.currentTimeMillis();
+        try {
+            return doProcess(provider, externalRef, orderId, success, error, callbackId);
+        } finally {
+            if (metrics != null) {
+                metrics.record("eventguard.payment.callback.duration", System.currentTimeMillis() - start,
+                        "success", String.valueOf(success));
             }
-            java.util.Map<String, Object> resultPayload = new java.util.HashMap<>();
-            resultPayload.put("result", success ? "SUCCEEDED" : "FAILED");
-            resultPayload.put("error", error);
-            gatewayRequestRepository.updateStatus(externalRef,
-                    success ? GatewayRequest.Status.SUCCEEDED : GatewayRequest.Status.FAILED,
-                    resultPayload);
-        } else {
-            log.warn("[支付回调] 未找到对应 gateway_request（externalRef={}），按结果直接派发", externalRef);
         }
+    }
+
+    /** 发起流程已完成 gateway_request 落库时复用同一记录，避免回调竞态下依赖二次查询。 */
+    public CommandResult process(GatewayRequest request, boolean success, String error, String callbackId) {
+        long start = System.currentTimeMillis();
+        try {
+            return doProcess(request.getProvider(), request, request.getAggregateId(), success, error, callbackId);
+        } finally {
+            if (metrics != null) {
+                metrics.record("eventguard.payment.callback.duration", System.currentTimeMillis() - start,
+                        "success", String.valueOf(success));
+            }
+        }
+    }
+
+    private CommandResult doProcess(String provider, String externalRef, UUID orderId,
+                                    boolean success, String error, String callbackId) {
+        Optional<GatewayRequest> reqOpt = gatewayRequestRepository.findByExternalRef(externalRef);
+        if (reqOpt.isEmpty()) {
+            throw new IllegalArgumentException("未找到对应 gateway_request: " + externalRef);
+        }
+        return doProcess(provider, reqOpt.get(), orderId, success, error, callbackId);
+    }
+
+    private CommandResult doProcess(String provider, GatewayRequest req, UUID orderId,
+                                    boolean success, String error, String callbackId) {
+        String externalRef = req.getExternalRef();
+        if (provider != null && req.getProvider() != null && !provider.equalsIgnoreCase(req.getProvider())) {
+            throw new IllegalArgumentException("回调 provider 与原请求不一致");
+        }
+        if (req.getAggregateId() == null || !req.getAggregateId().equals(orderId)) {
+            throw new IllegalArgumentException("回调订单与 gateway_request 不一致");
+        }
+        if (req.isTerminal()) {
+            log.info("[支付回调] 已终态（幂等跳过）externalRef={} status={}", externalRef, req.getStatus());
+            return CommandResult.success(0);
+        }
+        java.util.Map<String, Object> resultPayload = new java.util.HashMap<>();
+        resultPayload.put("result", success ? "SUCCEEDED" : "FAILED");
+        resultPayload.put("error", error);
+        resultPayload.put("callback_id", callbackId);
+        gatewayRequestRepository.updateStatus(externalRef,
+                success ? GatewayRequest.Status.SUCCEEDED : GatewayRequest.Status.FAILED,
+                resultPayload);
+
+        UUID commandId = stableCommandId(callbackId, externalRef, success);
 
         if (success) {
             log.info("[支付回调] 支付成功 externalRef={} order={}", externalRef, orderId);
             return orderCommandHandler.handle(new CompletePaymentCommand(
-                    UUID.randomUUID(), orderId, externalRef));
+                    commandId, orderId, externalRef));
         }
         log.warn("[支付回调] 支付失败 externalRef={} order={} reason={}", externalRef, orderId, error);
         return orderCommandHandler.handle(new FailPaymentCommand(
-                UUID.randomUUID(), orderId, error != null ? error : "网关支付失败"));
+                commandId, orderId, error != null ? error : "网关支付失败"));
+    }
+
+    private UUID stableCommandId(String callbackId, String externalRef, boolean success) {
+        String seed = (callbackId == null || callbackId.isBlank() ? externalRef : callbackId)
+                + "|" + success;
+        return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8));
     }
 }

@@ -2,18 +2,19 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app import metrics as egm
 from app.analyzer.healer_agent import HealerAgent
 from app.analyzer.root_cause import RootCauseAnalyzer, LLMResponseError
 from app.cases.case_index import CaseIndex
-from app.config import settings
+from app.config import default_llm_config, llm_config, reset_llm_config, settings, update_llm_config
 from app.detector.event_level import EventLevelService
 from app.detector.event_window import EventWindow
 from app.detector.process_level import ProcessLevelRuleDetector
@@ -78,7 +79,104 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
-_analyzer = RootCauseAnalyzer()
+_analyzer: RootCauseAnalyzer | None = None
+
+
+def _get_analyzer() -> RootCauseAnalyzer:
+    global _analyzer
+    if _analyzer is None:
+        _analyzer = RootCauseAnalyzer()
+    return _analyzer
+
+
+def _reset_llm_services() -> None:
+    """切换 provider/model 后丢弃惰性单例，让后续请求使用新配置。"""
+    global _analyzer, _nl_query_engine, _report_gen, _story_gen, _healer
+    _analyzer = None
+    _nl_query_engine = None
+    _report_gen = None
+    _story_gen = None
+    _healer = None
+
+
+class LlmSettingsUpdate(BaseModel):
+    provider: str = Field(default="", max_length=32)
+    base_url: str = Field(min_length=8, max_length=500)
+    api_key: Optional[str] = Field(default=None, max_length=1000)
+    model: str = Field(min_length=1, max_length=200)
+    max_tokens: int = Field(default=2048, ge=128, le=32768)
+    temperature: float = Field(default=0.3, ge=0, le=2)
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("base_url 必须以 http:// 或 https:// 开头")
+        parsed = urlparse(value)
+        if parsed.username or parsed.password:
+            raise ValueError("base_url 不应包含账号或密码，请单独填写 API key")
+        return value
+
+    @field_validator("provider")
+    @classmethod
+    def normalize_provider(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in {"", "openai", "anthropic"}:
+            raise ValueError("provider 仅支持 openai、anthropic 或自动探测")
+        return value
+
+
+def _masked_key(key: str) -> str:
+    if not key:
+        return ""
+    if len(key) <= 4:
+        return "****"
+    return "*" * max(0, len(key) - 4) + key[-4:]
+
+
+def _public_llm_config() -> dict:
+    current = llm_config()
+    defaults = default_llm_config()
+    return {
+        "provider": current["llm_provider"],
+        "base_url": current["llm_base_url"],
+        "model": current["llm_model"],
+        "max_tokens": current["llm_max_tokens"],
+        "temperature": current["llm_temperature"],
+        "api_key_masked": _masked_key(current["llm_api_key"]),
+        "has_api_key": bool(current["llm_api_key"]),
+        "using_defaults": current == defaults,
+    }
+
+
+@app.get("/ai/settings/llm")
+async def get_llm_settings(_: dict = Depends(require_permission("user:manage"))):
+    return _public_llm_config()
+
+
+@app.put("/ai/settings/llm")
+async def put_llm_settings(req: LlmSettingsUpdate, _: dict = Depends(require_permission("user:manage"))):
+    values = {
+        "llm_provider": req.provider,
+        "llm_base_url": req.base_url,
+        "llm_model": req.model,
+        "llm_max_tokens": req.max_tokens,
+        "llm_temperature": req.temperature,
+    }
+    # 空字符串表示沿用当前 key，避免编辑其他字段时意外清空密钥。
+    if req.api_key is not None and req.api_key.strip():
+        values["llm_api_key"] = req.api_key.strip()
+    update_llm_config(values)
+    _reset_llm_services()
+    return _public_llm_config()
+
+
+@app.post("/ai/settings/llm/reset")
+async def post_llm_settings_reset(_: dict = Depends(require_permission("user:manage"))):
+    reset_llm_config()
+    _reset_llm_services()
+    return _public_llm_config()
 
 
 class NLQueryRequest(BaseModel):
@@ -254,7 +352,7 @@ async def get_analysis(
         raise HTTPException(status_code=404, detail=f"异常 {anomaly_id} 不存在")
 
     try:
-        report = await _analyzer.analyze(anomaly, trace_id=trace_id)
+        report = await _get_analyzer().analyze(anomaly, trace_id=trace_id)
     except LLMResponseError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except httpx.HTTPError as e:

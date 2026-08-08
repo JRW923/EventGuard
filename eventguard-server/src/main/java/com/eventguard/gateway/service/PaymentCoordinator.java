@@ -76,9 +76,10 @@ public class PaymentCoordinator {
         PaymentGateway.CreatePaymentResult result = paymentGateway.createPayment(
                 new PaymentGateway.CreatePaymentRequest(orderId, commandId, amount));
 
+        String externalRef = result.paymentId() != null ? result.paymentId() : "failed-" + commandId;
         GatewayRequest req = new GatewayRequest(
                 UUID.randomUUID(), commandId, orderId, "PAYMENT", "CREATE_PAYMENT",
-                properties.getPaymentProvider(), result.paymentId(),
+                properties.getPaymentProvider(), externalRef,
                 result.success() ? GatewayRequest.Status.PENDING : GatewayRequest.Status.FAILED,
                 Map.of("amount", amount == null ? "0" : amount.toString()), Map.of(), Instant.now(), Instant.now());
         gatewayRequestRepository.insert(req);
@@ -90,7 +91,7 @@ public class PaymentCoordinator {
                 metrics.counter("eventguard.payment.initiated", "provider", properties.getPaymentProvider(),
                         "result", "FAILED");
             }
-            callbackService.process(result.paymentId(), orderId, false, result.error());
+            callbackService.process(req, false, result.error(), "create-payment-" + commandId);
             return new InitiationResult(null, true, result.error());
         }
 
@@ -102,12 +103,12 @@ public class PaymentCoordinator {
         // mock 异步：延时回调成功；真实网关由外部回调进入
         long delayMs = properties.getPaymentDelayMs();
         if (delayMs > 0) {
-            scheduler.schedule(() -> callbackService.process(result.paymentId(), orderId, true, null),
+            scheduler.schedule(() -> callbackService.process(req, true, null, "create-payment-" + commandId),
                     delayMs, TimeUnit.MILLISECONDS);
             log.info("[支付] 已发起（异步待回调）order={} paymentId={} delay={}ms", orderId, result.paymentId(), delayMs);
         } else {
             // 无延迟：立即回调（同步完成，保持 demo 可即时看到 PAID）
-            callbackService.process(result.paymentId(), orderId, true, null);
+            callbackService.process(req, true, null, "create-payment-" + commandId);
         }
         return new InitiationResult(result.paymentId(), false, null);
     }

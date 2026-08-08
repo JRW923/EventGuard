@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     ElAlert: typeof import('element-plus/es/components/alert/index.mjs')['ElAlert']
+    ElAside: typeof import('element-plus/es/components/container/index.mjs')['ElAside']
     ElButton: typeof import('element-plus/es/components/button/index.mjs')['ElButton']
     ElCard: typeof import('element-plus/es/components/card/index.mjs')['ElCard']
     ElCheckbox: typeof import('element-plus/es/components/checkbox/index.mjs')['ElCheckbox']

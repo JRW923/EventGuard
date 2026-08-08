@@ -1,5 +1,6 @@
 import json
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 
 from app.kafka_consumer import EventKafkaConsumer
 
@@ -14,14 +15,14 @@ def test_consume_loop_calls_handler_for_each_message():
         bootstrap_servers="localhost:9092",
     )
 
-    fake_msg_1 = MagicMock()
-    fake_msg_1.value = json.dumps(
+    fake_msg_1 = SimpleNamespace(topic="domain-events", partition=0, offset=0, key=None,
+                                 value=json.dumps(
         {"event_type": "OrderCreatedEvent", "aggregate_id": "agg-1"}
-    ).encode("utf-8")
-    fake_msg_2 = MagicMock()
-    fake_msg_2.value = json.dumps(
+    ).encode("utf-8"))
+    fake_msg_2 = SimpleNamespace(topic="domain-events", partition=0, offset=1, key=None,
+                                 value=json.dumps(
         {"event_type": "PaymentCompletedEvent", "aggregate_id": "agg-1"}
-    ).encode("utf-8")
+    ).encode("utf-8"))
 
     mock_kafka = MagicMock()
     call_count = [0]
@@ -42,6 +43,7 @@ def test_consume_loop_calls_handler_for_each_message():
     handler.assert_any_call({"event_type": "OrderCreatedEvent", "aggregate_id": "agg-1"})
     handler.assert_any_call({"event_type": "PaymentCompletedEvent", "aggregate_id": "agg-1"})
     assert handler.call_count == 2
+    assert mock_kafka.commit.call_count == 2
 
 
 def test_consume_loop_continues_after_handler_exception():
@@ -54,10 +56,10 @@ def test_consume_loop_continues_after_handler_exception():
         bootstrap_servers="localhost:9092",
     )
 
-    fake_msg_1 = MagicMock()
-    fake_msg_1.value = json.dumps({"event_type": "OrderCreatedEvent"}).encode("utf-8")
-    fake_msg_2 = MagicMock()
-    fake_msg_2.value = json.dumps({"event_type": "PaymentCompletedEvent"}).encode("utf-8")
+    fake_msg_1 = SimpleNamespace(topic="domain-events", partition=0, offset=0, key=None,
+                                 value=json.dumps({"event_type": "OrderCreatedEvent"}).encode("utf-8"))
+    fake_msg_2 = SimpleNamespace(topic="domain-events", partition=0, offset=1, key=None,
+                                 value=json.dumps({"event_type": "PaymentCompletedEvent"}).encode("utf-8"))
 
     mock_kafka = MagicMock()
     call_count = [0]
@@ -76,3 +78,6 @@ def test_consume_loop_continues_after_handler_exception():
     consumer._consume_loop()
 
     assert handler.call_count == 2
+    mock_kafka.seek.assert_called()
+    # 第一条失败未提交，第二条成功才提交；失败消息仍留在原 offset 等待下一轮重试。
+    assert mock_kafka.commit.call_count == 1

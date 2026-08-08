@@ -58,7 +58,7 @@ import { CompensationApi, type ApprovalItem } from '../api/compensation'
 const approvals = ref<ApprovalItem[]>([])
 const loading = ref(false)
 const error = ref('')
-const deciding = ref<Record<string, 'approve' | 'reject'>>({})
+const deciding = ref<Record<string, 'approve' | 'reject' | ''>>({})
 
 function formatTime(iso?: string): string {
   if (!iso) return '-'

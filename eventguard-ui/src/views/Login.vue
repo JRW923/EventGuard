@@ -34,6 +34,13 @@
         <div class="login-forgot">
           忘记密码？请联系管理员在「用户管理」中为你重置
         </div>
+        <div class="login-demo">
+          <div class="login-demo-title">演示账号 · 点击快速填充</div>
+          <button v-for="account in demoAccounts" :key="account.username" type="button" class="login-demo-item" @click="fillDemo(account)">
+            <span class="login-demo-role">{{ account.role }}</span>
+            <strong>{{ account.username }}</strong>
+          </button>
+        </div>
       </el-form>
 
       <el-alert v-if="error" :title="error" type="error" :closable="false" style="margin-top: 16px" />
@@ -84,6 +91,18 @@ const newPwd = ref('')
 const confirmPwd = ref('')
 const changing = ref(false)
 const changeError = ref('')
+
+const demoAccounts = [
+  { username: 'admin', password: 'admin123456', role: '管理员' },
+  { username: 'operator', password: 'operator123456', role: '运营' },
+  { username: 'viewer', password: 'viewer123456', role: '只读' },
+]
+
+function fillDemo(account: (typeof demoAccounts)[number]) {
+  username.value = account.username
+  password.value = account.password
+  error.value = ''
+}
 
 async function onLogin() {
   if (!username.value || !password.value) {
@@ -146,29 +165,40 @@ function finishLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #409eff 0%, #1c6fc4 100%);
+  padding: 24px;
+  box-sizing: border-box;
+  background: linear-gradient(145deg, #101a35 0%, #1d2b51 54%, #1a716f 100%);
 }
 .login-card {
-  width: 380px;
-  padding: 8px 12px;
+  width: min(420px, 100%);
+  padding: 12px 16px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 18px;
+  box-shadow: 0 26px 70px rgba(7, 14, 38, .34);
 }
 .login-brand {
   text-align: center;
-  margin-bottom: 20px;
+  margin: 8px 0 24px;
 }
 .login-brand h2 {
-  margin: 10px 0 4px;
-  color: #303133;
+  margin: 12px 0 5px;
+  color: #172033;
+  letter-spacing: .2px;
 }
 .login-sub {
-  color: #909399;
+  color: #7b879b;
   font-size: 13px;
   margin: 0;
 }
 .login-forgot {
   margin-top: 12px;
   text-align: center;
-  color: #909399;
+  color: #8b97aa;
   font-size: 13px;
 }
+.login-demo { margin-top: 23px; padding-top: 16px; border-top: 1px solid #edf0f5; }
+.login-demo-title { margin-bottom: 10px; color: #8b97aa; font-size: 12px; text-align: center; }
+.login-demo-item { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 7px; padding: 9px 11px; border: 1px solid #e6eaf1; border-radius: 9px; background: #fbfcfe; color: #30405a; cursor: pointer; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+.login-demo-item:hover { border-color: #8c9af1; background: #f4f6ff; transform: translateY(-1px); }
+.login-demo-role { color: #8b97aa; font-size: 12px; }
 </style>

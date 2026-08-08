@@ -46,7 +46,7 @@ public class OrderViewRepository {
     }
 
     public com.eventguard.query.model.OrderListResponse list(String status, int page, int size) {
-        int offset = page * size;
+        long offset = (long) page * size;
         RowMapper<com.eventguard.query.model.OrderListItem> mapper = (rs, rowNum) -> {
             com.eventguard.query.model.OrderListItem item = new com.eventguard.query.model.OrderListItem();
             item.setOrderId(rs.getObject("order_id", java.util.UUID.class));
@@ -63,14 +63,14 @@ public class OrderViewRepository {
         if (status == null || status.isBlank()) {
             orders = jdbc.query(
                     "SELECT order_id, status, total_amount, version, updated_at " +
-                            "FROM order_view ORDER BY updated_at DESC NULLS LAST LIMIT ? OFFSET ?",
+                            "FROM order_view ORDER BY updated_at DESC NULLS LAST, order_id LIMIT ? OFFSET ?",
                     mapper, size, offset);
             Long cnt = jdbc.queryForObject("SELECT count(*) FROM order_view", Long.class);
             total = cnt == null ? 0 : cnt;
         } else {
             orders = jdbc.query(
                     "SELECT order_id, status, total_amount, version, updated_at " +
-                            "FROM order_view WHERE status = ? ORDER BY updated_at DESC NULLS LAST LIMIT ? OFFSET ?",
+                    "FROM order_view WHERE status = ? ORDER BY updated_at DESC NULLS LAST, order_id LIMIT ? OFFSET ?",
                     mapper, status, size, offset);
             Long cnt = jdbc.queryForObject(
                     "SELECT count(*) FROM order_view WHERE status = ?", Long.class, status);

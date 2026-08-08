@@ -11,6 +11,6 @@ route:
 receivers:
   - name: "webhook"
     webhook_configs:
-      # 默认指向一个不存在的内部端点（仅记录不实际发送）；生产改成企业微信/钉钉 webhook。
-      - url: "http://127.0.0.1:65534/alert"
+      # 通过 ALERT_WEBHOOK_URL 注入真实通知地址；未配置时使用黑洞地址，避免误把告警发到宿主机。
+      - url: "${ALERT_WEBHOOK_URL}"
         send_resolved: true

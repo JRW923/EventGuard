@@ -36,17 +36,15 @@
         <el-table-column label="AI 预测" width="150">
           <template #default="{ row }">
             <template v-if="predictions[row.orderId]">
-              <el-tag
-                v-if="predictions[row.orderId].error"
-                type="info"
-                size="small"
-              >{{ predictions[row.orderId].error }}</el-tag>
-              <template v-else>
-                <el-tag :type="riskType(predictions[row.orderId].risk)" size="small">
-                  {{ predictions[row.orderId].outcome }}
+              <el-tag v-if="predictionError(predictions[row.orderId])" type="info" size="small">
+                {{ predictionError(predictions[row.orderId]) }}
+              </el-tag>
+              <template v-else-if="predictionValue(row.orderId)">
+                <el-tag :type="riskType(predictionValue(row.orderId)?.risk)" size="small">
+                  {{ predictionValue(row.orderId)?.outcome }}
                 </el-tag>
                 <div class="pred-conf">
-                  置信 {{ (predictions[row.orderId].confidence * 100).toFixed(0) }}%
+                  置信 {{ ((predictionValue(row.orderId)?.confidence ?? 0) * 100).toFixed(0) }}%
                 </div>
               </template>
             </template>
@@ -116,6 +114,15 @@ const total = ref(0)
 // AI 预测（Item 5）：orderId -> OrderPrediction | { error }
 const predictions = ref<Record<string, OrderPrediction | { error: string }>>({})
 const predicting = ref<Record<string, boolean>>({})
+
+function predictionError(value: OrderPrediction | { error: string } | undefined): string | undefined {
+  return value && 'error' in value ? value.error : undefined
+}
+
+function predictionValue(orderId: string): OrderPrediction | undefined {
+  const value = predictions.value[orderId]
+  return value && 'risk' in value ? value : undefined
+}
 
 function riskType(risk?: string): 'success' | 'warning' | 'danger' | 'info' {
   if (risk === 'HIGH') return 'danger'

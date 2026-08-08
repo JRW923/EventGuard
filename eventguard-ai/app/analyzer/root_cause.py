@@ -21,6 +21,7 @@ from app.config import settings
 from app.model.anomaly import Anomaly
 from app.model.analysis_report import AnalysisReport
 from app.store.event_store_client import EventStoreClient
+from app.store.event_store_client import load_events_async
 from app.trace.trace_log import trace_log
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ class RootCauseAnalyzer:
         _t0 = time.time()
 
         # 1. 加载事件历史
-        events = self.event_store_client.load_events(anomaly.aggregate_id)
+        events = await load_events_async(self.event_store_client, anomaly.aggregate_id)
 
         # 2. 加载上下文（MVP 简化）
         context = {

@@ -49,7 +49,7 @@ public class OrderViewProjection implements Projection {
             event = deserializer.deserializeFromKafka(record.value());
         } catch (Exception e) {
             log.error("[投影] 反序列化失败，offset={}", record.offset(), e);
-            return;
+            throw new IllegalStateException("投影事件反序列化失败", e);
         }
         if (idempotentConsumer.isProcessed(CONSUMER_GROUP, event.getEventId())) {
             log.debug("[投影] 事件已处理，跳过 eventId={}", event.getEventId());
@@ -63,6 +63,7 @@ public class OrderViewProjection implements Projection {
             idempotentConsumer.markProcessed(CONSUMER_GROUP, event.getEventId());
         } catch (Exception e) {
             log.error("[投影] 处理事件失败 eventId={}", event.getEventId(), e);
+            throw new IllegalStateException("投影事件处理失败", e);
         }
     }
 
@@ -71,20 +72,24 @@ public class OrderViewProjection implements Projection {
         if (event instanceof OrderCreatedEvent e) {
             jdbc.update(
                     "INSERT INTO order_view (order_id, status, total_amount, version, updated_at) VALUES (?, ?, ?, ?, now()) " +
-                    "ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status, total_amount = EXCLUDED.total_amount, version = EXCLUDED.version, updated_at = now()",
+                    "ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status, total_amount = EXCLUDED.total_amount, version = EXCLUDED.version, updated_at = now() " +
+                    "WHERE order_view.version IS NULL OR order_view.version < EXCLUDED.version",
                     e.getAggregateId(), "PENDING_PAYMENT", e.getTotalAmount(), e.getVersion());
         } else if (event instanceof PaymentCompletedEvent e) {
             jdbc.update(
-                    "UPDATE order_view SET status = 'PAID', payment_time = ?, version = ? WHERE order_id = ?",
-                    Timestamp.from(e.getOccurredAt()), e.getVersion(), e.getAggregateId());
+                    "UPDATE order_view SET status = 'PAID', payment_time = ?, version = ?, updated_at = now() " +
+                    "WHERE order_id = ? AND (version IS NULL OR version < ?)",
+                    Timestamp.from(e.getOccurredAt()), e.getVersion(), e.getAggregateId(), e.getVersion());
         } else if (event instanceof PaymentFailedEvent e) {
             jdbc.update(
-                    "UPDATE order_view SET status = 'PAYMENT_FAILED', version = ? WHERE order_id = ?",
-                    e.getVersion(), e.getAggregateId());
+                    "UPDATE order_view SET status = 'PAYMENT_FAILED', version = ?, updated_at = now() " +
+                    "WHERE order_id = ? AND (version IS NULL OR version < ?)",
+                    e.getVersion(), e.getAggregateId(), e.getVersion());
         } else if (event instanceof PaymentRetriedEvent e) {
             jdbc.update(
-                    "UPDATE order_view SET status = 'PENDING_PAYMENT', version = ? WHERE order_id = ?",
-                    e.getVersion(), e.getAggregateId());
+                    "UPDATE order_view SET status = 'PENDING_PAYMENT', version = ?, updated_at = now() " +
+                    "WHERE order_id = ? AND (version IS NULL OR version < ?)",
+                    e.getVersion(), e.getAggregateId(), e.getVersion());
         } else if (event instanceof PaymentRequestedEvent) {
             // 支付意图事件不改读模型状态（仍 PENDING_PAYMENT，待网关回调）
         } else if (event instanceof InventoryReservedEvent) {
@@ -97,28 +102,34 @@ public class OrderViewProjection implements Projection {
             // 退款意图事件不改读模型状态（订单仍 PAID，待退款结果确认）
         } else if (event instanceof OrderConfirmedEvent e) {
             jdbc.update(
-                    "UPDATE order_view SET status = 'CONFIRMED', version = ? WHERE order_id = ?",
-                    e.getVersion(), e.getAggregateId());
+                    "UPDATE order_view SET status = 'CONFIRMED', version = ?, updated_at = now() " +
+                    "WHERE order_id = ? AND (version IS NULL OR version < ?)",
+                    e.getVersion(), e.getAggregateId(), e.getVersion());
         } else if (event instanceof ShippedEvent e) {
             jdbc.update(
-                    "UPDATE order_view SET status = 'SHIPPED', shipping_time = ?, version = ? WHERE order_id = ?",
-                    Timestamp.from(e.getOccurredAt()), e.getVersion(), e.getAggregateId());
+                    "UPDATE order_view SET status = 'SHIPPED', shipping_time = ?, version = ?, updated_at = now() " +
+                    "WHERE order_id = ? AND (version IS NULL OR version < ?)",
+                    Timestamp.from(e.getOccurredAt()), e.getVersion(), e.getAggregateId(), e.getVersion());
         } else if (event instanceof DeliveredEvent e) {
             jdbc.update(
-                    "UPDATE order_view SET status = 'DELIVERED', version = ? WHERE order_id = ?",
-                    e.getVersion(), e.getAggregateId());
+                    "UPDATE order_view SET status = 'DELIVERED', version = ?, updated_at = now() " +
+                    "WHERE order_id = ? AND (version IS NULL OR version < ?)",
+                    e.getVersion(), e.getAggregateId(), e.getVersion());
         } else if (event instanceof OrderClosedEvent e) {
             jdbc.update(
-                    "UPDATE order_view SET status = 'CLOSED', version = ? WHERE order_id = ?",
-                    e.getVersion(), e.getAggregateId());
+                    "UPDATE order_view SET status = 'CLOSED', version = ?, updated_at = now() " +
+                    "WHERE order_id = ? AND (version IS NULL OR version < ?)",
+                    e.getVersion(), e.getAggregateId(), e.getVersion());
         } else if (event instanceof OrderCancelledEvent e) {
             jdbc.update(
-                    "UPDATE order_view SET status = 'CANCELLED', version = ? WHERE order_id = ?",
-                    e.getVersion(), e.getAggregateId());
+                    "UPDATE order_view SET status = 'CANCELLED', version = ?, updated_at = now() " +
+                    "WHERE order_id = ? AND (version IS NULL OR version < ?)",
+                    e.getVersion(), e.getAggregateId(), e.getVersion());
         } else if (event instanceof OrderRefundedEvent e) {
             jdbc.update(
-                    "UPDATE order_view SET status = 'REFUNDED', version = ? WHERE order_id = ?",
-                    e.getVersion(), e.getAggregateId());
+                    "UPDATE order_view SET status = 'REFUNDED', version = ?, updated_at = now() " +
+                    "WHERE order_id = ? AND (version IS NULL OR version < ?)",
+                    e.getVersion(), e.getAggregateId(), e.getVersion());
         } else {
             log.warn("[投影] 未知事件类型: {}", event.getEventType());
         }

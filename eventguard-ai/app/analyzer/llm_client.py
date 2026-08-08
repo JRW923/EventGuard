@@ -12,6 +12,7 @@ anthropic，其余视为 openai（/chat/completions）。
 import json
 import logging
 import time
+import asyncio
 from typing import Any, Optional
 
 import httpx
@@ -52,6 +53,7 @@ class LLMClient:
         self.provider = self._detect_provider()
         self.transport = transport  # 测试注入 httpx.MockTransport，离线验证请求/响应形状
         self.cache = cache or default_llm_cache  # Item 4：幂等读场景响应缓存
+        self._semaphore = asyncio.Semaphore(max(1, settings.llm_max_concurrency))
 
     # ---------------- provider 探测 ----------------
 
@@ -160,16 +162,37 @@ class LLMClient:
         """统一请求入口，返回 (text, tool_calls, usage)。统一埋点 llm_call 指标与 trace。"""
         _t0 = time.time()
         try:
-            if self.is_anthropic:
-                resp = await self._post_anthropic(messages, system, tools, tool_choice, json_mode)
-            else:
-                resp = await self._post_openai(messages, system, tools, tool_choice, json_mode)
+            async with self._semaphore:
+                resp = None
+                attempts = max(0, settings.llm_retry_attempts) + 1
+                for attempt in range(attempts):
+                    try:
+                        if self.is_anthropic:
+                            resp = await self._post_anthropic(messages, system, tools, tool_choice, json_mode)
+                        else:
+                            resp = await self._post_openai(messages, system, tools, tool_choice, json_mode)
+                        break
+                    except Exception as e:
+                        if attempt >= attempts - 1 or not self._retryable(e):
+                            raise
+                        delay = settings.llm_retry_backoff_seconds * (2 ** attempt)
+                        logger.warning("LLM transient failure, retrying attempt=%s delay=%.2fs: %s",
+                                       attempt + 1, delay, e)
+                        await asyncio.sleep(delay)
             text, tool_calls, usage = self._parse_response(resp)
             self._record_llm(operation, _t0, usage, ok=True, trace_id=trace_id)
             return text, tool_calls, usage
         except Exception as e:
             self._record_llm(operation, _t0, {}, ok=False, trace_id=trace_id)
             raise
+
+    @staticmethod
+    def _retryable(error: Exception) -> bool:
+        if isinstance(error, (httpx.TimeoutException, httpx.ConnectError)):
+            return True
+        if isinstance(error, httpx.HTTPStatusError):
+            return error.response.status_code == 429 or error.response.status_code >= 500
+        return False
 
     def _record_llm(
         self,
@@ -208,6 +231,7 @@ class LLMClient:
             "model": self.model,
             "messages": self._to_openai_messages(messages, system),
             "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
         }
         if json_mode:
             body["response_format"] = {"type": "json_object"}

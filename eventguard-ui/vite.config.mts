@@ -23,6 +23,7 @@ const SUB_COMPONENT_PARENT: Record<string, string> = {
   loadingdirective: 'loading',
   popoverdirective: 'popover',
   infinitescroll: 'infinite-scroll',
+  aside: 'container',
 }
 
 // 包一层 ElementPlusResolver：默认它从 element-plus/es（barrel 根）具名导入，

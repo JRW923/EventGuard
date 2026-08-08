@@ -29,9 +29,10 @@ public class RuleContextLoader {
 
     public RuleContext load(DomainEvent event) {
         String userId = event.getMetadata() != null ? event.getMetadata().get("userId") : null;
+        BigDecimal userMean = loadUserMeanAmount(userId);
         return RuleContext.builder()
-                .userMeanAmount(loadUserMeanAmount(userId))
-                .userStdAmount(loadUserStdAmount(userId))
+                .userMeanAmount(userMean)
+                .userStdAmount(estimateStdAmount(userMean))
                 .recentPaymentCompletions(loadRecentPaymentCompletions(event.getAggregateId().toString()))
                 .previousState(loadPreviousState(event.getAggregateId().toString()))
                 .recentCreateOrders(loadRecentCreateOrders(userId))
@@ -62,9 +63,8 @@ public class RuleContextLoader {
         }
     }
 
-    private BigDecimal loadUserStdAmount(String userId) {
+    private BigDecimal estimateStdAmount(BigDecimal mean) {
         // MVP 简化：返回均值的 10% 作为标准差估计
-        BigDecimal mean = loadUserMeanAmount(userId);
         if (mean.compareTo(BigDecimal.ZERO) == 0) return null;
         return mean.multiply(new BigDecimal("0.1"));
     }

@@ -57,12 +57,13 @@ public class SagaTrigger {
             event = deserializer.deserializeFromKafka(record.value());
         } catch (Exception e) {
             log.error("[Saga] 反序列化失败 offset={}", record.offset(), e);
-            return;
+            throw new IllegalStateException("Saga 事件反序列化失败", e);
         }
         try {
             handle(event);
         } catch (Exception e) {
             log.error("[Saga] 处理事件失败 eventId={}", event.getEventId(), e);
+            throw new IllegalStateException("Saga 事件处理失败", e);
         }
     }
 

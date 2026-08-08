@@ -37,7 +37,8 @@ class OrderViewProjectionTest {
         projection.handle(e);
         verify(jdbc).update(
                 eq("INSERT INTO order_view (order_id, status, total_amount, version, updated_at) VALUES (?, ?, ?, ?, now()) " +
-                   "ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status, total_amount = EXCLUDED.total_amount, version = EXCLUDED.version, updated_at = now()"),
+                   "ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status, total_amount = EXCLUDED.total_amount, version = EXCLUDED.version, updated_at = now() " +
+                   "WHERE order_view.version IS NULL OR order_view.version < EXCLUDED.version"),
                 eq(orderId), eq("PENDING_PAYMENT"), eq(new BigDecimal("99.00")), eq(1));
     }
 
@@ -47,8 +48,9 @@ class OrderViewProjectionTest {
         PaymentCompletedEvent e = new PaymentCompletedEvent(orderId, 2, "pay-1", null);
         projection.handle(e);
         verify(jdbc).update(
-                eq("UPDATE order_view SET status = 'PAID', payment_time = ?, version = ? WHERE order_id = ?"),
-                any(), eq(2), eq(orderId));
+                eq("UPDATE order_view SET status = 'PAID', payment_time = ?, version = ?, updated_at = now() " +
+                   "WHERE order_id = ? AND (version IS NULL OR version < ?)"),
+                any(), eq(2), eq(orderId), eq(2));
     }
 
     @Test
@@ -57,8 +59,9 @@ class OrderViewProjectionTest {
         OrderConfirmedEvent e = new OrderConfirmedEvent(orderId, 4, null);
         projection.handle(e);
         verify(jdbc).update(
-                eq("UPDATE order_view SET status = 'CONFIRMED', version = ? WHERE order_id = ?"),
-                eq(4), eq(orderId));
+                eq("UPDATE order_view SET status = 'CONFIRMED', version = ?, updated_at = now() " +
+                   "WHERE order_id = ? AND (version IS NULL OR version < ?)"),
+                eq(4), eq(orderId), eq(4));
     }
 
     @Test
@@ -67,8 +70,9 @@ class OrderViewProjectionTest {
         ShippedEvent e = new ShippedEvent(orderId, 5, "trk-1", null);
         projection.handle(e);
         verify(jdbc).update(
-                eq("UPDATE order_view SET status = 'SHIPPED', shipping_time = ?, version = ? WHERE order_id = ?"),
-                any(), eq(5), eq(orderId));
+                eq("UPDATE order_view SET status = 'SHIPPED', shipping_time = ?, version = ?, updated_at = now() " +
+                   "WHERE order_id = ? AND (version IS NULL OR version < ?)"),
+                any(), eq(5), eq(orderId), eq(5));
     }
 
     @Test
@@ -77,8 +81,9 @@ class OrderViewProjectionTest {
         OrderClosedEvent e = new OrderClosedEvent(orderId, 7, null);
         projection.handle(e);
         verify(jdbc).update(
-                eq("UPDATE order_view SET status = 'CLOSED', version = ? WHERE order_id = ?"),
-                eq(7), eq(orderId));
+                eq("UPDATE order_view SET status = 'CLOSED', version = ?, updated_at = now() " +
+                   "WHERE order_id = ? AND (version IS NULL OR version < ?)"),
+                eq(7), eq(orderId), eq(7));
     }
 
     @Test

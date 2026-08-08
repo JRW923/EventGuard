@@ -32,6 +32,7 @@ import java.util.Map;
 public class HttpInventoryGateway implements InventoryGateway {
 
     private static final Logger log = LoggerFactory.getLogger(HttpInventoryGateway.class);
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(5);
 
     private final GatewayProperties properties;
     private final ObjectMapper objectMapper;
@@ -55,6 +56,7 @@ public class HttpInventoryGateway implements InventoryGateway {
                     "quantity", req.quantity()));
             HttpResponse<String> resp = httpClient.send(
                     HttpRequest.newBuilder()
+                            .timeout(REQUEST_TIMEOUT)
                             .uri(URI.create(properties.getInventoryServiceUrl() + "/reserve"))
                             .header("Content-Type", "application/json")
                             .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -84,6 +86,7 @@ public class HttpInventoryGateway implements InventoryGateway {
                     "quantity", req.quantity()));
             httpClient.send(
                     HttpRequest.newBuilder()
+                            .timeout(REQUEST_TIMEOUT)
                             .uri(URI.create(properties.getInventoryServiceUrl() + "/release"))
                             .header("Content-Type", "application/json")
                             .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -103,6 +106,7 @@ public class HttpInventoryGateway implements InventoryGateway {
         try {
             HttpResponse<String> resp = httpClient.send(
                     HttpRequest.newBuilder()
+                            .timeout(REQUEST_TIMEOUT)
                             .uri(URI.create(properties.getInventoryServiceUrl() + "/stock/" + skuId))
                             .GET().build(),
                     HttpResponse.BodyHandlers.ofString());
@@ -124,6 +128,7 @@ public class HttpInventoryGateway implements InventoryGateway {
         try {
             httpClient.send(
                     HttpRequest.newBuilder()
+                            .timeout(REQUEST_TIMEOUT)
                             .uri(URI.create(properties.getInventoryServiceUrl() + "/out-of-stock/" + skuId))
                             .POST(HttpRequest.BodyPublishers.noBody())
                             .build(),
