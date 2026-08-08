@@ -444,4 +444,50 @@ git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时�
   `__saga_remaining_steps` 为保留键，`GET /approvals` 视图已过滤，不外泄给前端。
 - **NL 降级**：无 Ollama 时 LLMClient 秒失败走摘要（原本就快）；有 Ollama 但响应 >8s 也走摘要，保证 10s 内必有回答。
 
+---
+
+## 12. AI 拓展八连发：被动检测 → 主动预测 → 自主处置（2026-08-08）
+
+在既有「检测 → 告警 → 建议」被动链路上按顺序补齐 8 项 AI 拓展（M0 前置 + Item1-8，`ca61afb`..`32e77f5` + `16400b3`），主线升级为**可对话、可预测、可自主处置、可复盘**。
+
+### 12.1 改动清单
+
+| 项 | 内容 | 关键文件 |
+|---|---|---|
+| M0 · LLM 提供商适配 | Anthropic/OpenAI 双格式（`_detect_provider` 按 base_url 含 `/anthropic` 探测，`EG_LLM_PROVIDER` 可覆盖）；`generate_json`（OpenAI `response_format` / Anthropic 强约束+抽码）；`generate_with_tools`（归一化 `{id,name,input}`）。修复「默认 system 强制 JSON」潜伏 bug——本会破坏 NL 回答。 | `llm_client.py`、`config.py` |
+| 1 · 多轮对话 | 缺参反问（`needs_input` + 会话 pending 槽）+ 补参续查 + 同会话上下文复用（TTL 30min + LRU 512）。 | `conversation_store.py`(新)、`nl_query_engine.py`、`query_result.py` |
+| 2 · 告警去重/风暴抑制 | `AlertDeduper` 幂等门控（TTL 5min + 10k LRU + 风暴限 3/min）；事件级/流程级 publish 前过门控；看板「聚合模式」按 (规则,订单) 聚类。 | `alert_dedup.py`(新)、`kafka_consumer.py`、`metrics.py`、`AnomalyDashboard.vue` |
+| 3 · LLM 输出可靠性 | 根因分析走 `generate_json` + 错误反馈重试（MAX_ATTEMPTS=2：JSON 解析 / Pydantic / 证据核验不通过即回喂修正）。 | `root_cause.py` |
+| 4 · 可观测性 + LLM 缓存 | `LLMCache`（TTL 300s + LRU 256，key 含 provider/model/temp/prompt）；`TraceLog` 环形缓冲 200 条 + `X-Trace-Id`；指标 `llm_cache_hits/misses`、`llm_tokens{model,operation}`、`llm_call{provider,operation,ok}`。 | `llm_cache.py`(新)、`trace_log.py`(新)、`metrics.py`、`main.py` |
+| 5 · 事件流终局预测（flagship） | 前缀采样训练 RandomForest（8 特征、`class_weight=balanced`，准确率 0.71，pkl 1.3MB）；`GET /ai/predict/{id}` + watchlist + 订单列表预测角标。**不自动发新告警**（保 s03 FP 口径）。 | `training/train_predict.py`(新)、`predictor/order_predictor.py`(新)、`models/predictor.pkl`、`OrderList.vue` |
+| 6a · ReAct 分析闭环 | `HealerAgent`（TOOLS=query_order/query_events/query_stats、MAX_STEPS=5）`POST /ai/heal/{anomaly_id}` → 报告 + 分析过程 trace；看板对话框展示工具调用链。 | `healer_agent.py`(新)、`main.py`、`AnomalyDashboard.vue` |
+| 6b · 补偿审批闭环 | Java `POST /compensations/saga`（机器密钥加 `compensation:execute`，白名单动作校验）+ 审批页 `Approvals.vue`（列 PENDING + approve/reject）。**写工具人工在环**：AI 建议 → 一键发 Saga → 高风险自动落审批单 → 人工决策。 | `CompensationController.java`、`AuthPrincipal.java`、`Approvals.vue`(新)、`compensation.ts` |
+| 7 · 运营周报/故事线 | anomaly JSONL 持久化（`EG_ANOMALY_STORE_PATH`，Item 8 复用）+ `POST /ai/report/weekly` + `GET /ai/orders/{id}/story`；`AiReport.vue` 周报卡片 + 订单故事。 | `anomaly_store.py`、`report/weekly_report.py`(新)、`report/story_generator.py`(新)、`AiReport.vue`(新) |
+| 8 · 相似案例检索 | 零依赖加权相似度（规则 0.5 / 事件 0.2 / 来源 0.1 / 时间衰减 0.15 / 同单 0.2）+ 处置状态（后端事件解析）；`GET /ai/cases/{id}/similar`；可选 `EG_AI_RAG_FEWSHOT=true` 注入 Item 3/6 prompt。 | `cases/case_index.py`(新)、`main.py`、`AnomalyDashboard.vue` |
+
+### 12.2 验证
+
+| 套件 | 结果 |
+|------|------|
+| `pytest tests/`（AI，含新增 ~30 用例） | **123 通过 / 0 失败** |
+| `vitest run`（UI，12 文件） | **39 通过 / 0 失败** |
+| `mvn test`（server 补偿模块） | 补偿相关 **15 通过** |
+| 真实 LLM 端到端（DeepSeek Anthropic 端点） | 多轮三回、根因分析、ReAct agent 4 步工具调用、终局预测、周报统计、相似案例排序均通 |
+| `vite build`（按需引入回归） | 通过，element-plus 分块 311KB(gzip 101KB)，`el-collapse-item` 深路径解析正常 |
+
+### 12.3 关键修复（过程中抓到）
+
+- **`predict_proba` 列与 `classes_` 不对齐**：预测结果张冠李戴，改为按 `model.classes_` 映射回标签（Item 5 单测抓到）。
+- **Anthropic 要求多个 `tool_result` 合并进紧邻的同一条 user 消息**，否则 400（6a E2E 抓到）。
+- **`EventStoreClient` camelCase 集成 bug（最隐蔽）**：后端 `/orders/{id}/events` 返回 `eventType`/`createdAt`，AI 内部是 snake_case → 根因/故事/预测一直拿到「?」事件；加 `_normalize()` 映射修复（影响 Item 5/7 与既有根因分析）。
+- **HealerAgent 首条消息 role=system 被 anthropic 转换跳过** → 空 messages 400；改为显式 user 任务消息 + system 走顶层参数。
+- **predictor.pkl 44MB → 1.3MB**：`max_depth=12, min_samples_leaf=5`（仓库可提交）。
+- **LLM 适配 3-tuple 泄漏**：`generate_with_tools` 需剥掉 usage 只返回 `(text, tool_calls)`。
+
+### 12.4 说明
+
+- **偏离计划一处**：6b 的「写工具」以**人工在环**实现（AI 建议 → 白名单校验 → 前端一键发 Saga → 高风险自动审批 → 审批页人工决策），而非 agent 自主写补偿。更安全，符合设计文档 MVP 边界。
+- **压测约束保持**：`s04` 的 `/ai/query` 形状（新字段带默认值）、`s03` 的 rule_id 语义与控制组 FP 均未改动；预测按需查询、不自动告警。
+- **部署仍落后**：运行栈（AI 8/5、server 8/6、UI 8/7 镜像）均早于本节代码，需 `docker compose up -d --build` 才可见；2026-08-08 已构建新 AI 镜像未部署。同日清理 dev/测试冗余镜像并 prune 10GB 构建缓存。
+
 
