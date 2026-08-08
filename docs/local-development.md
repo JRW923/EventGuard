@@ -15,6 +15,23 @@ docker-compose up -d postgres kafka debezium
 
 如果只调试订单、权限和管理页面，PostgreSQL 是必需的；Kafka 用于读模型投影、Saga 和 AI 检测链路，建议一并启动。
 
+如果后端仍然报 `Failed to obtain JDBC Connection`，先确认 `5432` 没有被 Windows 本机 PostgreSQL 占用。Docker 容器发布的端口必须由 Compose 接管，否则 IDEA 可能连接到另一个本机 PostgreSQL 实例：
+
+```powershell
+Get-NetTCPConnection -LocalPort 5432 -State Listen -ErrorAction SilentlyContinue
+Get-Service *postgres* -ErrorAction SilentlyContinue
+```
+
+如果看到 `postgresql-x64-*` 服务正在监听 `5432`，请用“管理员身份”PowerShell 暂停它，再重启容器（不会修改数据库账号密码）：
+
+```powershell
+Stop-Service postgresql-x64-18
+docker-compose restart postgres
+docker-compose ps postgres
+```
+
+服务名以 `Get-Service *postgres*` 的实际输出为准。若本机服务不能停止，请在 Docker Desktop 中把 PostgreSQL 映射到空闲端口，并在 IDEA 的 `EG_LOCAL_DB_URL` 中填对应端口；无需修改仓库内 Docker 配置。
+
 下面第 2～4 步建议分别使用三个 PowerShell 窗口，并且每个窗口都从仓库根目录开始执行；不要把不同服务的前台进程放在同一个窗口。
 
 ## 2. IDEA 启动 Java 后端
@@ -25,10 +42,16 @@ docker-compose up -d postgres kafka debezium
 Active profiles: local
 ```
 
+注意：根目录 `.env` 中的 `DB_URL=jdbc:postgresql://postgres:5432/eventguard` 是容器内部地址，不能直接填到 IDEA。`local` profile 默认使用 `localhost` 和 Compose 默认的 `changeme` 数据库密码；如果你初始化数据库时改过密码，请在 IDEA 的 Environment variables 中设置 `EG_LOCAL_DB_PASSWORD`。
+
 也可以在终端验证：
 
 ```powershell
 Set-Location .\eventguard-server
+$env:EG_LOCAL_KAFKA_BOOTSTRAP = "localhost:9092"
+$env:EG_LOCAL_DB_URL = "jdbc:postgresql://localhost:5432/eventguard"
+$env:EG_LOCAL_DB_USER = "eventguard"
+$env:EG_LOCAL_DB_PASSWORD = "changeme"
 mvn.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
 ```
 

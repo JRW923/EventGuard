@@ -1,13 +1,13 @@
 # IDEA 本地运行 profile。只覆盖容器内的服务发现地址，不影响生产 application.yml。
 spring:
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    # 使用 EG_LOCAL_*，避免 IDEA 误读根目录 .env 中仅供容器使用的 kafka:9092。
+    bootstrap-servers: ${EG_LOCAL_KAFKA_BOOTSTRAP:localhost:9092}
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/eventguard}
-    username: ${DB_USER:eventguard}
-    password: ${DB_PASSWORD:eventguard}
+    url: ${EG_LOCAL_DB_URL:jdbc:postgresql://localhost:5432/eventguard}
+    username: ${EG_LOCAL_DB_USER:eventguard}
+    password: ${EG_LOCAL_DB_PASSWORD:changeme}
 
 eventguard:
   local:
     enabled: true
-
