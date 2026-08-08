@@ -12,8 +12,8 @@ public final class AuthPrincipal {
 
     public static final String REQUEST_ATTR = "EG_AUTH_PRINCIPAL";
 
-    /** 机器主体固定权限集：仅内部服务（AI 读订单 + 规则评估）所需。 */
-    private static final Set<String> MACHINE_PERMISSIONS = Set.of("order:read", "anomaly:evaluate");
+    /** 机器主体固定权限集：内部服务（AI）所需——读订单 + 规则评估 + 发起补偿 Saga（Item 6b）。 */
+    private static final Set<String> MACHINE_PERMISSIONS = Set.of("order:read", "anomaly:evaluate", "compensation:execute");
 
     private final boolean machine;
     private final Long userId;

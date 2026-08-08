@@ -74,6 +74,7 @@ export default defineConfig({
       '/anomalies': 'http://localhost:8000',
       '/ai': 'http://localhost:8000',
       '/compensations': 'http://localhost:8080',
+      '/approvals': 'http://localhost:8080',
       '/auth': 'http://localhost:8080',
       '/users': 'http://localhost:8080',
       '/roles': 'http://localhost:8080',

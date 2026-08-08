@@ -38,6 +38,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/CompensationExecute.vue'),
     meta: { title: '补偿执行', permission: 'compensation:execute' },
   },
+  {
+    path: '/approvals',
+    name: 'Approvals',
+    component: () => import('../views/Approvals.vue'),
+    meta: { title: '补偿审批', permission: 'compensation:execute' },
+  },
   { path: '/profile', name: 'Profile', component: () => import('../views/Profile.vue'), meta: { title: '个人中心' } },
   {
     path: '/admin/users',

@@ -83,8 +83,39 @@
       <el-empty v-if="alerts.length === 0" description="暂无异常告警" />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="根因分析报告" width="60%">
-      <div v-if="currentReport" v-loading="analysisLoading">
+    <el-dialog v-model="dialogVisible" title="根因分析报告" width="62%">
+      <div style="margin-bottom: 12px; display: flex; gap: 8px">
+        <el-button type="primary" plain :loading="healing" @click="runDeepAnalysis">
+          深度分析（Agent）
+        </el-button>
+        <el-button
+          type="success"
+          plain
+          v-permission="'compensation:execute'"
+          :disabled="!currentReport || currentReport.suggestions.length === 0"
+          @click="startSagaCompensation"
+        >
+          发起补偿审批
+        </el-button>
+        <span v-if="healNote" style="font-size: 12px; color: #909399; align-self: center">{{ healNote }}</span>
+      </div>
+
+      <div v-if="currentReport" v-loading="analysisLoading || healing">
+        <!-- Agent 分析过程（Item 6a） -->
+        <template v-if="agentTrace.length">
+          <h3>AI 分析过程</h3>
+          <el-collapse>
+            <el-collapse-item
+              v-for="(t, i) in agentTrace"
+              :key="i"
+              :title="`第 ${t.step} 步 · 工具 ${t.tool}`"
+            >
+              <div class="trace-input">输入：{{ JSON.stringify(t.input) }}</div>
+              <pre class="trace-output">{{ typeof t.output === 'string' ? t.output : JSON.stringify(t.output, null, 2) }}</pre>
+            </el-collapse-item>
+          </el-collapse>
+        </template>
+
         <h3>根因</h3>
         <p>{{ currentReport.root_cause }}</p>
 
@@ -114,7 +145,7 @@
           </el-button>
         </div>
       </div>
-      <div v-else v-loading="analysisLoading" />
+      <div v-else v-loading="analysisLoading || healing" />
     </el-dialog>
   </div>
 </template>
@@ -122,8 +153,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { useAnomalyWebSocket } from '../composables/useAnomalyWebSocket'
-import { AnomalyApi, type AnalysisReport, type AnomalyAlert } from '../api/anomaly'
+import { AnomalyApi, type AnalysisReport, type AnomalyAlert, type AgentTraceStep } from '../api/anomaly'
+import { CompensationApi } from '../api/compensation'
 
 const router = useRouter()
 const { alerts, connected } = useAnomalyWebSocket()
@@ -132,7 +165,12 @@ const dialogVisible = ref(false)
 const analysisLoading = ref(false)
 const currentReport = ref<AnalysisReport | null>(null)
 const currentAggregateId = ref('')
+const currentAnomalyId = ref('')
 const aggregateMode = ref(false)
+// Item 6a/6b：Agent 深度分析 + 补偿审批
+const healing = ref(false)
+const agentTrace = ref<AgentTraceStep[]>([])
+const healNote = ref('')
 
 interface Cluster {
   rule_id: string
@@ -185,9 +223,12 @@ async function showAnalysis(anomalyId: string) {
   dialogVisible.value = true
   analysisLoading.value = true
   currentReport.value = null
+  agentTrace.value = []
+  healNote.value = ''
   // ponytail: 补偿按订单聚合根执行，须用 anomaly 的 aggregate_id 而非 anomaly_id
   const alert = alerts.value.find((a) => a.anomaly_id === anomalyId)
   currentAggregateId.value = alert?.aggregate_id ?? ''
+  currentAnomalyId.value = anomalyId
   try {
     currentReport.value = await AnomalyApi.getAnalysis(anomalyId)
   } catch (e: any) {
@@ -198,7 +239,58 @@ async function showAnalysis(anomalyId: string) {
   }
 }
 
+// Item 6a：ReAct 深度分析 —— agent 多轮工具调用收集证据，展示分析过程 + 报告
+async function runDeepAnalysis() {
+  if (!currentAnomalyId.value) return
+  healing.value = true
+  agentTrace.value = []
+  healNote.value = ''
+  try {
+    const r = await AnomalyApi.healAnomaly(currentAnomalyId.value)
+    currentReport.value = r.report
+    agentTrace.value = r.agent_trace
+    healNote.value = r.note ?? ''
+  } catch (e: any) {
+    console.error('深度分析失败', e)
+    ElMessage.error('深度分析失败：' + (e.message || '未知错误'))
+  } finally {
+    healing.value = false
+  }
+}
+
+// Item 6b：把 AI 建议动作作为步骤发起补偿 Saga（高风险步自动落审批单）
+async function startSagaCompensation() {
+  if (!currentReport.value || !currentAggregateId.value) return
+  const steps = currentReport.value.suggestions.map((s) => ({ actionType: s.action, params: {} }))
+  try {
+    const r = await CompensationApi.startSaga(currentAggregateId.value, steps)
+    const msg =
+      r.status === 'AWAITING_APPROVAL'
+        ? '补偿已提交，高风险步骤已进入审批队列'
+        : `补偿已执行（Saga: ${r.status}）`
+    ElMessage.success(msg)
+  } catch (e: any) {
+    ElMessage.error('发起补偿失败：' + (e.message || '未知错误'))
+  }
+}
+
 function goCompensate(action: string) {
   router.push({ path: '/compensations', query: { actionType: action, aggregateId: currentAggregateId.value } })
 }
 </script>
+
+<style scoped>
+.trace-input {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+.trace-output {
+  margin: 0;
+  padding: 8px;
+  background: #f5f5f5;
+  font-size: 12px;
+  max-height: 160px;
+  overflow: auto;
+}
+</style>

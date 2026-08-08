@@ -15,6 +15,7 @@
           <el-menu-item v-if="auth.hasPermission('anomaly:view')" index="/anomalies">异常看板</el-menu-item>
           <el-menu-item v-if="auth.hasPermission('ai:query')" index="/nl-query">NL 查询</el-menu-item>
           <el-menu-item v-if="auth.hasPermission('compensation:execute')" index="/compensations">补偿执行</el-menu-item>
+          <el-menu-item v-if="auth.hasPermission('compensation:execute')" index="/approvals">补偿审批</el-menu-item>
           <el-sub-menu
             v-if="auth.hasPermission('user:manage') || auth.hasPermission('role:manage')"
             index="/admin"
