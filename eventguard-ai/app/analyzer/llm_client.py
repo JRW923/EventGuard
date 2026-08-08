@@ -120,6 +120,7 @@ class LLMClient:
         messages: list[dict],
         tools: list[dict],
         tool_choice: Any = "auto",
+        system: Optional[str] = None,
         operation: str = "generate_with_tools",
         trace_id: Optional[str] = None,
     ) -> tuple[str, list[dict]]:
@@ -132,12 +133,14 @@ class LLMClient:
                 - {"role": "tool", "tool_call_id": str, "content": str|dict}
             tools: OpenAI function schema 列表（name/description/parameters），内部转换为提供商格式。
             tool_choice: "auto" | 工具名 | 对象。anthropic 用 {"type":"tool","name":...}。
+            system: 顶层 system 提示（anthropic 走 body["system"]；openai 前置为 role=system）。
+                传入时不要在 messages 里再放 role="system" 消息，避免重复。
 
         Returns:
             (text, tool_calls)：tool_calls 统一为 [{"id","name","input"}]，input 为已解析 dict。
         """
         text, tool_calls, _ = await self._complete(
-            messages, tools=tools, tool_choice=tool_choice,
+            messages, tools=tools, tool_choice=tool_choice, system=system,
             operation=operation, trace_id=trace_id,
         )
         return text, tool_calls
@@ -303,15 +306,23 @@ class LLMClient:
 
     @staticmethod
     def _to_anthropic_messages(messages: list[dict]) -> list[dict]:
+        """中立消息 → anthropic 格式。
+
+        关键约束：assistant 的 tool_use 块必须在紧随其后的同一条 user 消息里配齐 tool_result 块，
+        因此连续的多条 role="tool" 消息会被合并成一条含多个 tool_result 块的 user 消息。
+        """
         out: list[dict] = []
-        for m in messages:
+        i, n = 0, len(messages)
+        while i < n:
+            m = messages[i]
             role = m.get("role", "user")
-            content = m.get("content", "")
             if role == "system":
                 # anthropic system 走顶层 body["system"]，这里跳过
+                i += 1
                 continue
-            elif role == "assistant":
+            if role == "assistant":
                 blocks: list[dict] = []
+                content = m.get("content", "")
                 if content:
                     blocks.append({"type": "text", "text": content})
                 for tc in m.get("tool_calls", []):
@@ -319,21 +330,21 @@ class LLMClient:
                         {"type": "tool_use", "id": tc["id"], "name": tc["name"], "input": tc.get("input", {})}
                     )
                 out.append({"role": "assistant", "content": blocks})
+                i += 1
             elif role == "tool":
-                out.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": m["tool_call_id"],
-                                "content": LLMClient._serialize(content),
-                            }
-                        ],
-                    }
-                )
+                results: list[dict] = []
+                while i < n and messages[i].get("role") == "tool":
+                    tm = messages[i]
+                    results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tm["tool_call_id"],
+                        "content": LLMClient._serialize(tm.get("content", "")),
+                    })
+                    i += 1
+                out.append({"role": "user", "content": results})
             else:
-                out.append({"role": "user", "content": content})
+                out.append({"role": "user", "content": m.get("content", "")})
+                i += 1
         return out
 
     # ---------------- 响应解析 ----------------

@@ -233,6 +233,38 @@ async def test_anthropic_tool_result_roundtrip():
 
 
 @pytest.mark.asyncio
+async def test_anthropic_multiple_tool_results_merge_into_one_message():
+    """anthropic 要求多个 tool_result 合并进同一条 user 消息（紧跟 assistant tool_use）。"""
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"content": [{"type": "text", "text": "完成"}]}, request=request)
+
+    client = LLMClient(
+        base_url="https://api.deepseek.com/anthropic", api_key="k", transport=httpx.MockTransport(handler)
+    )
+    messages = [
+        {"role": "user", "content": "查单"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "t1", "name": "query_order", "input": {"order_id": "x"}},
+            {"id": "t2", "name": "query_events", "input": {"order_id": "x"}},
+        ]},
+        {"role": "tool", "tool_call_id": "t1", "content": {"status": "PAID"}},
+        {"role": "tool", "tool_call_id": "t2", "content": [{"eventType": "OrderCreatedEvent"}]},
+    ]
+    await client.generate_with_tools(messages, ANTHROPIC_TOOLS)
+
+    anthropic_messages = captured["body"]["messages"]
+    # 连续两条 tool 结果合并为一条 user 消息、两个 tool_result 块
+    assert len(anthropic_messages) == 3  # user + assistant + user(tool_results)
+    merged = anthropic_messages[2]
+    assert merged["role"] == "user"
+    assert [b["type"] for b in merged["content"]] == ["tool_result", "tool_result"]
+    assert [b["tool_use_id"] for b in merged["content"]] == ["t1", "t2"]
+
+
+@pytest.mark.asyncio
 async def test_openai_tool_call_parse_and_result_roundtrip():
     captured = {}
 

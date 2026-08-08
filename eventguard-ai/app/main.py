@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app import metrics as egm
+from app.analyzer.healer_agent import HealerAgent
 from app.analyzer.root_cause import RootCauseAnalyzer, LLMResponseError
 from app.config import settings
 from app.detector.event_level import EventLevelService
@@ -196,3 +197,27 @@ async def get_analysis(
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail="LLM 服务不可用")
     return report.model_dump()
+
+
+# ReAct 自愈 agent 惰性单例（Item 6a）
+_healer = None
+
+
+def _get_healer() -> HealerAgent:
+    global _healer
+    if _healer is None:
+        _healer = HealerAgent()
+    return _healer
+
+
+@app.post("/ai/heal/{anomaly_id}")
+async def ai_heal(
+    anomaly_id: str, response: Response, _: dict = Depends(require_permission("anomaly:view"))
+):
+    """ReAct 根因分析：agent 多轮工具调用收集证据 → 结构化报告 + 分析过程 trace。"""
+    trace_id = str(uuid.uuid4())
+    response.headers["X-Trace-Id"] = trace_id
+    anomaly = anomaly_store.get(anomaly_id)
+    if anomaly is None:
+        raise HTTPException(status_code=404, detail=f"异常 {anomaly_id} 不存在")
+    return await _get_healer().heal(anomaly, trace_id=trace_id)
