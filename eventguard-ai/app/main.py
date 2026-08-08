@@ -22,6 +22,8 @@ from app.predictor.order_predictor import OrderPredictor
 from app.query.backend_client import BackendClient
 from app.query.nl_query_engine import NLQueryEngine
 from app.query.query_result import QueryResult
+from app.report.story_generator import StoryGenerator
+from app.report.weekly_report import WeeklyReportGenerator
 from app.security import require_permission
 from app.store.anomaly_store import anomaly_store
 from app.trace.trace_log import trace_log
@@ -159,6 +161,45 @@ async def predictions_watchlist(limit: int = 10, _: dict = Depends(require_permi
             items.append({"orderId": o.get("orderId"), "status": o.get("status"), **pred})
     items.sort(key=lambda x: OrderPredictor.risk_rank(x.get("risk", "LOW")))
     return {"items": items[:limit]}
+
+
+# 周报 / 故事线惰性单例（Item 7）
+_report_gen = None
+_story_gen = None
+
+
+def _get_report_generator() -> WeeklyReportGenerator:
+    global _report_gen
+    if _report_gen is None:
+        _report_gen = WeeklyReportGenerator()
+    return _report_gen
+
+
+def _get_story_generator() -> StoryGenerator:
+    global _story_gen
+    if _story_gen is None:
+        _story_gen = StoryGenerator()
+    return _story_gen
+
+
+class WeeklyReportRequest(BaseModel):
+    days: int = 7
+
+
+@app.post("/ai/report/weekly")
+async def weekly_report(
+    req: WeeklyReportRequest, _: dict = Depends(require_permission("ai:query"))
+):
+    """运营周报：近期异常聚合 + 订单统计 + LLM 症状/建议（Item 7）。"""
+    return await _get_report_generator().generate(req.days)
+
+
+@app.get("/ai/orders/{aggregate_id}/story")
+async def order_story(
+    aggregate_id: str, _: dict = Depends(require_permission("ai:query"))
+):
+    """订单事件故事线：事件链 → 运营可读复盘（Item 7）。"""
+    return await _get_story_generator().generate(aggregate_id)
 
 
 @app.get("/health")

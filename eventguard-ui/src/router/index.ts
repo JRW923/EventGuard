@@ -27,6 +27,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'NL 查询', permission: 'ai:query' },
   },
   {
+    path: '/ai-report',
+    name: 'AiReport',
+    component: () => import('../views/AiReport.vue'),
+    meta: { title: '运营周报', permission: 'ai:query' },
+  },
+  {
     path: '/orders/:id/timeline',
     name: 'OrderTimeline',
     component: () => import('../views/OrderTimeline.vue'),

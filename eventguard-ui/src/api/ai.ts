@@ -16,6 +16,22 @@ export interface OrderPrediction {
   risk: 'LOW' | 'MEDIUM' | 'HIGH'
 }
 
+export interface WeeklyReport {
+  period: { days: number; from: string; to: string }
+  total_anomalies: number
+  by_rule: { rule_id: string; count: number }[]
+  order_stats: { status: string; orderCount: number; totalAmount: number }[]
+  symptoms: string[]
+  recommendations: string[]
+  top_orders: { aggregate_id: string; count: number }[]
+}
+
+export interface OrderStory {
+  aggregate_id: string
+  story: string
+  event_types: string[]
+}
+
 export const AiApi = {
   query(question: string, conversationId?: string): Promise<QueryResult> {
     const payload: Record<string, unknown> = { question }
@@ -29,5 +45,13 @@ export const AiApi = {
   // 高风险在途订单 watchlist（Item 5）
   watchlist(limit = 10): Promise<{ items: Array<{ orderId: string; status?: string; outcome: string; confidence: number; risk: string }>; message?: string }> {
     return http.get('/ai/predictions/watchlist', { params: { limit } }).then((r) => r.data)
+  },
+  // 运营周报（Item 7）：近期异常聚合 + LLM 症状/建议
+  weeklyReport(days = 7): Promise<WeeklyReport> {
+    return http.post<WeeklyReport>('/ai/report/weekly', { days }).then((r) => r.data)
+  },
+  // 订单事件故事线（Item 7）
+  orderStory(aggregateId: string): Promise<OrderStory> {
+    return http.get<OrderStory>(`/ai/orders/${aggregateId}/story`).then((r) => r.data)
   },
 }
