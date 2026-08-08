@@ -44,11 +44,11 @@ describe('欢迎页 / 体验指南路由（登录前落地页）', () => {
     expect(router.currentRoute.value.path).toBe('/')
   })
 
-  it('已登录访问“/”重定向到“/orders”（不再看到欢迎页）', async () => {
+  it('已登录仍可访问介绍页', async () => {
     state.authenticated = true
     await router.push('/guide') // 先离开“/”，避免重复导航不触发守卫
     await router.push('/')
-    expect(router.currentRoute.value.path).toBe('/orders')
+    expect(router.currentRoute.value.path).toBe('/')
   })
 
   it('已登录访问“/login”重定向到“/orders”', async () => {

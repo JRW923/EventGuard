@@ -79,7 +79,9 @@ async function onSubmit() {
 
 async function onLogoutAll() {
   try {
-    await ElMessageBox.confirm('将注销本账号在所有设备的登录状态，确定继续？', '退出所有设备', { type: 'warning' })
+    await ElMessageBox.confirm('将注销本账号在所有设备的登录状态，确定继续？', '退出所有设备', {
+      type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消',
+    })
   } catch {
     return
   }

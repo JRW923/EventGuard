@@ -1,6 +1,6 @@
 <template>
   <div class="landing">
-    <Starfield :density="180" accent-color="#a78bfa" />
+    <Starfield :density="150" accent-color="#4fb8aa" />
 
     <!-- 顶部导航 -->
     <nav class="landing-nav" :class="{ 'landing-nav--scrolled': scrolled }">
@@ -17,7 +17,9 @@
         </div>
         <div class="landing-nav-actions">
           <router-link class="landing-btn landing-btn--ghost" to="/guide">体验指南</router-link>
-          <button class="landing-btn landing-btn--primary" @click="goEnter">进入系统</button>
+          <button class="landing-btn landing-btn--primary" @click="goEnter">
+            {{ auth.isAuthenticated ? '返回控制台' : '进入系统' }}
+          </button>
         </div>
       </div>
     </nav>
@@ -25,6 +27,7 @@
     <!-- Hero -->
     <header class="landing-hero">
       <div class="landing-hero-inner reveal">
+        <div class="landing-eyebrow"><span class="landing-eyebrow-dot" /> EVENT-DRIVEN OPERATIONS</div>
         <div class="landing-logo-wrap">
           <img src="/brand/logo-2.png" alt="EventGuard" class="landing-logo" />
         </div>
@@ -37,10 +40,17 @@
           <span class="landing-chip" v-for="chip in heroChips" :key="chip">{{ chip }}</span>
         </div>
         <div class="landing-hero-actions">
-          <button class="landing-btn landing-btn--primary landing-btn--lg" @click="goEnter">🚀 进入系统</button>
-          <router-link class="landing-btn landing-btn--glass landing-btn--lg" to="/guide">📖 体验指南</router-link>
+          <button class="landing-btn landing-btn--primary landing-btn--lg" @click="goEnter">
+            {{ auth.isAuthenticated ? '返回控制台' : '进入系统' }}
+          </button>
+          <router-link class="landing-btn landing-btn--glass landing-btn--lg" to="/guide">查看体验指南</router-link>
         </div>
         <p class="landing-hint">公开演示环境 · 使用下方「体验账号」即可登录体验</p>
+        <div class="landing-proof" aria-label="系统能力摘要">
+          <div><strong>Event Sourcing</strong><span>业务状态全程可追溯</span></div>
+          <div><strong>AI Detection</strong><span>规则与模型协同检测</span></div>
+          <div><strong>Saga Recovery</strong><span>异常处置形成闭环</span></div>
+        </div>
       </div>
       <button class="landing-scroll" aria-label="向下浏览" @click="scrollToSection('features')">
         <span class="landing-scroll-chevron"></span>
@@ -49,17 +59,21 @@
 
     <!-- 核心能力 -->
     <section id="features" class="landing-section">
-      <h2 class="landing-h2 reveal">核心能力</h2>
+      <div class="landing-section-heading reveal">
+        <span class="landing-section-kicker">01 / CAPABILITIES</span>
+        <h2 class="landing-h2">核心能力</h2>
+        <p class="landing-sec-sub">从事件写入到异常处置，覆盖完整的订单运营链路。</p>
+      </div>
       <div class="landing-cards">
         <div
-          v-for="f in features"
+          v-for="(f, index) in features"
           :key="f.title"
           class="landing-card reveal"
           :style="{ '--accent': f.accent }"
           @pointermove="onCardPointerMove"
           @pointerleave="onCardPointerLeave"
         >
-          <div class="landing-card-icon">{{ f.icon }}</div>
+          <div class="landing-card-index">{{ String(index + 1).padStart(2, '0') }}</div>
           <h3 class="landing-card-title">{{ f.title }}</h3>
           <p class="landing-card-desc">{{ f.desc }}</p>
           <div class="landing-card-tags">
@@ -71,7 +85,11 @@
 
     <!-- 项目技术栈 -->
     <section id="projtech" class="landing-section landing-section--thin">
-      <h2 class="landing-h2 reveal">项目技术栈</h2>
+      <div class="landing-section-heading reveal">
+        <span class="landing-section-kicker">02 / ENGINEERING</span>
+        <h2 class="landing-h2">项目技术栈</h2>
+        <p class="landing-sec-sub">围绕可靠交付、可观测性与 AI 工程组织技术选型。</p>
+      </div>
       <div class="landing-projtech-chips reveal">
         <span class="landing-tech-item" v-for="t in projectStack" :key="t">{{ t }}</span>
       </div>
@@ -79,7 +97,11 @@
 
     <!-- 体验账号 -->
     <section id="accounts" class="landing-section">
-      <h2 class="landing-h2 reveal">体验账号</h2>
+      <div class="landing-section-heading reveal">
+        <span class="landing-section-kicker">03 / DEMO ACCESS</span>
+        <h2 class="landing-h2">体验账号</h2>
+        <p class="landing-sec-sub">三种权限视角对应管理员、运营和只读访客的真实工作流。</p>
+      </div>
       <div class="landing-accounts">
         <div
           v-for="acc in accounts"
@@ -115,7 +137,11 @@
 
     <!-- 关于我 -->
     <section id="about" class="landing-section">
-      <h2 class="landing-h2 reveal">关于我</h2>
+      <div class="landing-section-heading reveal">
+        <span class="landing-section-kicker">04 / BUILDER</span>
+        <h2 class="landing-h2">关于我</h2>
+        <p class="landing-sec-sub">后端系统能力与 AI 应用工程的综合实践。</p>
+      </div>
       <div class="landing-about reveal">
         <div class="landing-about-card">
           <div class="landing-about-head">
@@ -123,7 +149,7 @@
             <div class="landing-about-info">
               <h3 class="landing-about-name">吴佳睿</h3>
               <p class="landing-about-roles">后端开发 · AI 应用开发 · Agent 开发</p>
-              <p class="landing-about-edu">🎓 东南大学 · 本硕</p>
+              <p class="landing-about-edu">东南大学 · 本硕</p>
               <div class="landing-about-links">
               <a class="landing-about-link" href="https://github.com/JRW923" target="_blank" rel="noopener noreferrer">
                 <svg viewBox="0 0 16 16" class="landing-about-github" aria-hidden="true">
@@ -134,7 +160,7 @@
                 </svg>
                 GitHub · JRW923
               </a>
-              <span class="landing-about-qq">💬 QQ · 471464213</span>
+              <span class="landing-about-qq">QQ · 471464213</span>
               </div>
             </div>
           </div>
@@ -187,7 +213,6 @@ const scrolled = ref(false)
 const heroChips = ['事件溯源 + 回放', 'CDC 实时管道', 'AI 异常检测', '中文 NL 查询', 'Saga 自动补偿']
 
 interface Feature {
-  icon: string
   title: string
   desc: string
   tags: string[]
@@ -195,46 +220,40 @@ interface Feature {
 }
 const features: Feature[] = [
   {
-    icon: '🧾',
     title: '事件溯源 + 回放',
     desc: '订单每一步状态变更都作为不可变事件落库，可随时回放任意历史时刻，审计与排障更清晰。',
     tags: ['Event Sourcing', 'CQRS', '乐观锁'],
-    accent: '#6366f1',
+    accent: '#5b8def',
   },
   {
-    icon: '⚡',
     title: 'CDC 实时管道',
     desc: 'Debezium 捕获事件库变更，经 Kafka 实时流入检测侧，订单提交到异常发现端到端近实时可见。',
     tags: ['Debezium', 'Kafka', 'CDC'],
-    accent: '#8b5cf6',
+    accent: '#45b8a3',
   },
   {
-    icon: '🛰️',
     title: 'AI 异常检测',
     desc: '规则引擎 + 无监督模型双通道识别异常订单，命中规则 / 模型与异常类型清晰标注。',
     tags: ['规则引擎', 'IsolationForest'],
-    accent: '#ec4899',
+    accent: '#e17865',
   },
   {
-    icon: '💬',
     title: '中文 NL 查询',
     desc: '用中文直接问订单、查统计、追轨迹，意图识别后安全调用后端接口，不暴露原始 SQL。',
     tags: ['NL2API', '意图分类'],
-    accent: '#06b6d4',
+    accent: '#5fb7ce',
   },
   {
-    icon: '🔁',
     title: 'Saga 自动补偿',
     desc: '失败类事件自动触发退款 / 标记缺货 / 通知用户闭环，高风险动作挂人工审批，重启也不丢在途补偿。',
     tags: ['Saga', '补偿', '审批流'],
-    accent: '#f59e0b',
+    accent: '#d8a445',
   },
   {
-    icon: '🔐',
     title: '根因分析 + RBAC',
     desc: 'LLM 产出异常根因与白名单建议动作；JWT + 用户-角色-权限覆盖 REST / WebSocket / AI 全链路鉴权。',
     tags: ['LLM', 'JWT', 'RBAC'],
-    accent: '#22c55e',
+    accent: '#63b87b',
   },
 ]
 
@@ -305,9 +324,9 @@ interface Account {
   accent: string
 }
 const accounts = ref<Account[]>([
-  { username: 'admin', role: '管理员', desc: '用户 / 角色 / 审计全权限', password: 'admin123456', revealed: false, copied: false, accent: '#818cf8' },
-  { username: 'operator', role: '运营', desc: '下单 · 状态 · 异常 · 补偿', password: 'operator123456', revealed: false, copied: false, accent: '#22d3ee' },
-  { username: 'viewer', role: '只读', desc: '订单 / 看板 / NL 查询', password: 'viewer123456', revealed: false, copied: false, accent: '#c084fc' },
+  { username: 'admin', role: '管理员', desc: '用户 / 角色 / 审计全权限', password: 'admin123456', revealed: false, copied: false, accent: '#5b8def' },
+  { username: 'operator', role: '运营', desc: '下单 · 状态 · 异常 · 补偿', password: 'operator123456', revealed: false, copied: false, accent: '#45b8a3' },
+  { username: 'viewer', role: '只读', desc: '订单 / 看板 / NL 查询', password: 'viewer123456', revealed: false, copied: false, accent: '#d8a445' },
 ])
 
 // 个人技能见「关于我」板块（按 语言/后端/数据库与中间件/AI工程/部署运维 分类）
@@ -393,7 +412,7 @@ onUnmounted(() => {
 <style>
 /* 落地页暗色背景：body 类切换，避免滚动越界露出亮色 */
 body.eg-landing {
-  background: #070b1a;
+  background: #071319;
   color: #e2e8f0;
 }
 </style>
@@ -404,7 +423,7 @@ body.eg-landing {
   z-index: 1;
   min-height: 100vh;
   /* 根元素自带暗底：即使 body.eg-landing 尚未挂载，首帧也是深空背景而非灰底 */
-  background: #070b1a;
+  background: #071319;
   /* 用 clip 而非 hidden：hidden 会把元素变成滚动容器，干扰 window 滚动事件与滚动浮现；clip 只裁剪不滚动（老浏览器回退 hidden） */
   overflow-x: hidden;
   overflow-x: clip;
@@ -420,12 +439,12 @@ body.eg-landing {
   z-index: 20;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  background: rgba(7, 11, 26, 0.55);
+  background: rgba(7, 19, 25, 0.62);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   transition: background 0.3s ease, border-color 0.3s ease;
 }
 .landing-nav--scrolled {
-  background: rgba(7, 11, 26, 0.82);
+  background: rgba(7, 19, 25, 0.9);
   border-color: rgba(255, 255, 255, 0.12);
 }
 .landing-nav-inner {
@@ -451,7 +470,7 @@ body.eg-landing {
   border-radius: 6px;
 }
 .landing-nav-name {
-  letter-spacing: 0.2px;
+  letter-spacing: 0;
 }
 .landing-nav-links {
   flex: 1;
@@ -485,7 +504,7 @@ body.eg-landing {
   font-size: 14px;
   font-family: inherit;
   padding: 8px 18px;
-  border-radius: 10px;
+  border-radius: 8px;
   text-decoration: none;
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.2s ease;
   user-select: none;
@@ -495,8 +514,8 @@ body.eg-landing {
 }
 .landing-btn--primary {
   color: #fff;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%);
-  box-shadow: 0 4px 22px rgba(129, 140, 248, 0.4);
+  background: #3f63d8;
+  box-shadow: 0 4px 22px rgba(63, 99, 216, 0.34);
   position: relative;
   overflow: hidden;
 }
@@ -516,7 +535,8 @@ body.eg-landing {
 }
 .landing-btn--primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(129, 140, 248, 0.55);
+  background: #4b70e3;
+  box-shadow: 0 8px 30px rgba(63, 99, 216, 0.42);
 }
 .landing-btn--ghost {
   color: #cbd5e1;
@@ -543,24 +563,36 @@ body.eg-landing {
 .landing-btn--lg {
   font-size: 16px;
   padding: 13px 30px;
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
 /* ---------- Hero ---------- */
 .landing-hero {
-  min-height: 100vh;
+  min-height: 86svh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 96px 20px 60px;
+  padding: 108px 20px 74px;
   position: relative;
 }
+.landing-hero-inner { width: min(820px, 100%); }
+.landing-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 24px;
+  color: #85bdb4;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.landing-eyebrow-dot { width: 7px; height: 7px; border-radius: 50%; background: #42c2a8; box-shadow: 0 0 0 5px rgba(66, 194, 168, .12); }
 .landing-logo-wrap {
   display: inline-block;
   animation: landing-float 5s ease-in-out infinite;
-  filter: drop-shadow(0 6px 24px rgba(129, 140, 248, 0.45));
+  filter: drop-shadow(0 8px 26px rgba(69, 126, 211, 0.36));
 }
 .landing-logo {
   width: 88px;
@@ -578,17 +610,14 @@ body.eg-landing {
 }
 .landing-title {
   margin: 26px 0 0;
-  font-size: clamp(34px, 6vw, 58px);
+  font-size: 56px;
   font-weight: 800;
-  color: #f8fafc;
-  letter-spacing: 1px;
-  text-shadow: 0 0 40px rgba(129, 140, 248, 0.45);
+  color: #f4f8f8;
+  letter-spacing: 0;
+  text-shadow: 0 0 40px rgba(69, 126, 211, 0.24);
 }
 .landing-title-cn {
-  background: linear-gradient(120deg, #a5b4fc, #f0abfc, #a5b4fc);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: #62c6b4;
 }
 .landing-sub {
   margin: 18px auto 0;
@@ -609,12 +638,12 @@ body.eg-landing {
   justify-content: center;
 }
 .landing-chip {
-  padding: 6px 14px;
-  border-radius: 999px;
+  padding: 6px 12px;
+  border-radius: 6px;
   font-size: 13px;
-  color: #c7d2fe;
-  background: rgba(129, 140, 248, 0.1);
-  border: 1px solid rgba(129, 140, 248, 0.28);
+  color: #b8cfce;
+  background: rgba(80, 137, 148, 0.1);
+  border: 1px solid rgba(105, 163, 171, 0.24);
 }
 .landing-hero-actions {
   margin-top: 34px;
@@ -628,6 +657,19 @@ body.eg-landing {
   font-size: 13px;
   color: #64748b;
 }
+.landing-proof {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  width: min(720px, 100%);
+  margin: 34px auto 0;
+  padding-top: 22px;
+  border-top: 1px solid rgba(255,255,255,.1);
+}
+.landing-proof > div { display: flex; flex-direction: column; gap: 5px; padding: 0 18px; border-right: 1px solid rgba(255,255,255,.08); }
+.landing-proof > div:last-child { border-right: 0; }
+.landing-proof strong { color: #dce8e7; font-size: 13px; font-weight: 700; }
+.landing-proof span { color: #728b91; font-size: 12px; }
 .landing-scroll {
   position: absolute;
   bottom: 30px;
@@ -663,35 +705,37 @@ body.eg-landing {
 .landing-section {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 52px 20px 36px;
+  padding: 68px 20px 42px;
   scroll-margin-top: 70px;
 }
+.landing-section-heading { max-width: 650px; margin: 0 auto; text-align: center; }
+.landing-section-kicker { display: block; margin-bottom: 10px; color: #5f9f96; font-size: 11px; font-weight: 750; letter-spacing: 0; }
 .landing-h2 {
   margin: 0;
   text-align: center;
-  font-size: 30px;
+  font-size: 28px;
   font-weight: 800;
   color: #f1f5f9;
 }
 .landing-h2::after {
   content: '';
   display: block;
-  width: 56px;
-  height: 4px;
-  margin: 14px auto 0;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #6366f1, #a855f7, #ec4899);
+  width: 36px;
+  height: 2px;
+  margin: 13px auto 0;
+  background: #45b29f;
 }
 .landing-sec-sub {
   margin: 14px auto 0;
   text-align: center;
-  color: #94a3b8;
-  font-size: 15px;
+  color: #7f949a;
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 /* 项目技术栈：紧贴上一板块的窄区块 */
 .landing-section--thin {
-  padding-top: 24px;
+  padding-top: 42px;
 }
 .landing-projtech-chips {
   --accent: #a5b4fc;
@@ -707,14 +751,15 @@ body.eg-landing {
   margin-top: 40px;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 22px;
+  gap: 16px;
 }
 .landing-card {
   --accent: #6366f1;
-  padding: 26px 24px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  min-height: 210px;
+  padding: 24px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
@@ -724,9 +769,17 @@ body.eg-landing {
   border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   box-shadow: 0 12px 40px -8px color-mix(in srgb, var(--accent) 40%, transparent);
 }
-.landing-card-icon {
-  font-size: 30px;
-  line-height: 1;
+.landing-card-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 26px;
+  border-radius: 5px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 11px;
+  font-weight: 800;
 }
 .landing-card-title {
   margin: 14px 0 8px;
@@ -750,9 +803,9 @@ body.eg-landing {
   padding: 3px 10px;
   font-size: 12px;
   border-radius: 6px;
-  color: #c7d2fe;
-  background: rgba(129, 140, 248, 0.1);
-  border: 1px solid rgba(129, 140, 248, 0.22);
+  color: #a9bec0;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.09);
 }
 
 /* ---------- 技能分组（关于我内，行式） ---------- */
@@ -788,7 +841,7 @@ body.eg-landing {
 .landing-tech-item {
   padding: 6px 14px;
   font-size: 14px;
-  border-radius: 999px;
+  border-radius: 6px;
   color: #cbd5e1;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -810,7 +863,7 @@ body.eg-landing {
 .landing-account {
   --accent: #818cf8;
   padding: 22px 22px 18px;
-  border-radius: 16px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.045);
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(12px);
@@ -825,9 +878,9 @@ body.eg-landing {
   padding: 3px 12px;
   font-size: 13px;
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: 5px;
   color: #fff;
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #000));
+  background: color-mix(in srgb, var(--accent) 72%, #10262a);
 }
 .landing-account-user {
   font-size: 15px;
@@ -844,7 +897,7 @@ body.eg-landing {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.09);
 }
@@ -859,7 +912,7 @@ body.eg-landing {
   font-size: 14px;
   color: #c7d2fe;
   cursor: pointer;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
   transition: filter 0.2s ease;
   user-select: none;
 }
@@ -911,7 +964,7 @@ body.eg-landing {
   max-width: 1120px;
   margin: 0 auto;
   padding: 30px;
-  border-radius: 18px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(12px);
@@ -932,15 +985,15 @@ body.eg-landing {
   flex-shrink: 0;
   width: 76px;
   height: 76px;
-  border-radius: 22px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 34px;
   font-weight: 800;
   color: #fff;
-  background: linear-gradient(135deg, #6366f1, #a855f7);
-  box-shadow: 0 8px 28px rgba(129, 140, 248, 0.4);
+  background: #3f63d8;
+  box-shadow: 0 8px 28px rgba(63, 99, 216, 0.28);
 }
 .landing-about-name {
   margin: 0;
@@ -1056,6 +1109,29 @@ body.eg-landing {
   .landing-tech-group-head {
     width: auto;
   }
+  .landing-proof { grid-template-columns: 1fr; width: min(420px, 100%); }
+  .landing-proof > div { padding: 12px 0; border-right: 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .landing-proof > div:last-child { border-bottom: 0; }
+  .landing-hero { min-height: auto; padding-bottom: 84px; }
+  .landing-scroll { display: none; }
+}
+
+@media (max-width: 520px) {
+  .landing-nav-inner { padding: 10px 14px; }
+  .landing-nav-actions { gap: 6px; }
+  .landing-btn { padding: 8px 12px; }
+  .landing-hero { padding: 92px 16px 64px; }
+  .landing-logo { width: 72px; height: 72px; border-radius: 16px; }
+  .landing-title { margin-top: 20px; font-size: 34px; line-height: 1.16; }
+  .landing-title-cn { display: block; margin-top: 5px; }
+  .landing-sub { font-size: 14px; line-height: 1.7; }
+  .landing-hero-actions { gap: 10px; }
+  .landing-btn--lg { width: 100%; max-width: 300px; }
+  .landing-section { padding: 52px 16px 30px; }
+  .landing-cards { grid-template-columns: 1fr; }
+  .landing-account-pwd { flex-wrap: wrap; }
+  .landing-account-pwd-value { min-width: 130px; }
+  .landing-about-card { padding: 22px 18px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

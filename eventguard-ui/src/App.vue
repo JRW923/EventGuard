@@ -3,16 +3,20 @@
   <el-container v-else class="app-shell">
     <div v-if="sidebarOpen" class="app-sidebar-backdrop" @click="sidebarOpen = false" />
     <el-aside class="app-sidebar" :class="{ 'app-sidebar--open': sidebarOpen }" width="248px">
-      <div class="app-brand-lockup">
+      <button class="app-brand-lockup" type="button" title="返回项目首页" @click="router.push('/')">
         <img src="/brand/logo-2.png" alt="EventGuard" class="app-brand-mark" />
         <div>
           <div class="app-brand">EventGuard</div>
           <div class="app-brand-caption">事件卫士 · 控制台</div>
         </div>
-      </div>
+      </button>
       <div class="app-workspace-label">OPERATIONS CONSOLE</div>
 
       <el-menu :default-active="activeMenu" router class="app-menu" @select="sidebarOpen = false">
+        <el-menu-item index="/">
+          <span class="app-menu-icon app-menu-icon--home" aria-hidden="true" />
+          <span>项目首页</span>
+        </el-menu-item>
         <el-menu-item v-if="auth.hasPermission('order:read')" index="/orders">
           <span class="app-menu-icon">◈</span><span>订单中心</span>
         </el-menu-item>
@@ -51,7 +55,7 @@
         <div class="app-topbar-left">
           <button class="app-mobile-toggle" type="button" aria-label="打开导航" @click="sidebarOpen = !sidebarOpen">☰</button>
           <div class="app-breadcrumb">
-            <span class="app-breadcrumb-muted">EventGuard</span>
+            <button class="app-breadcrumb-home" type="button" @click="router.push('/')">EventGuard</button>
             <span class="app-breadcrumb-separator">/</span>
             <strong>{{ route.meta.title || '工作台' }}</strong>
           </div>
@@ -64,7 +68,7 @@
             <button class="app-user-trigger" type="button">
               <span class="app-user-avatar">{{ avatarText }}</span>
               <span class="app-user-name">{{ auth.user?.displayName || auth.user?.username }}</span>
-              <span class="app-user-chevron">⌄</span>
+              <span class="app-user-chevron" aria-hidden="true" />
             </button>
             <template #dropdown>
               <el-dropdown-menu>
@@ -133,7 +137,11 @@ async function onUserCommand(command: string) {
   if (command === 'profile') return router.push('/profile')
   if (command === 'llm') return router.push('/admin/llm-settings')
   try {
-    await ElMessageBox.confirm('确定退出登录？', '提示', { type: 'warning' })
+    await ElMessageBox.confirm('确定退出当前账号吗？', '退出登录', {
+      type: 'warning',
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+    })
   } catch {
     return
   }
@@ -174,11 +182,12 @@ button, input, textarea, select { font: inherit; }
   min-height: 100vh; padding: 28px 16px 18px; box-sizing: border-box;
   background: #111a2e; color: #e8edff; border-right: 1px solid rgba(255,255,255,.06);
 }
-.app-brand-lockup { display: flex; align-items: center; gap: 12px; padding: 0 10px; }
+.app-brand-lockup { display: flex; align-items: center; gap: 12px; width: 100%; padding: 0 10px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.app-brand-lockup:hover .app-brand { color: #dce3ff; }
 .app-brand-mark { width: 38px; height: 38px; border-radius: 11px; box-shadow: 0 8px 24px rgba(82,111,255,.32); }
-.app-brand { font-size: 17px; font-weight: 750; letter-spacing: .2px; color: #fff; }
+.app-brand { font-size: 17px; font-weight: 750; letter-spacing: 0; color: #fff; }
 .app-brand-caption { margin-top: 3px; color: #94a2c0; font-size: 11px; }
-.app-workspace-label { margin: 34px 10px 10px; color: #657395; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; }
+.app-workspace-label { margin: 34px 10px 10px; color: #657395; font-size: 10px; font-weight: 700; letter-spacing: 0; }
 .app-menu { border: 0; background: transparent; }
 .app-menu .el-menu-item, .app-menu .el-sub-menu__title { height: 46px; line-height: 46px; margin: 4px 0; border-radius: 10px; color: #aeb9d4; font-size: 14px; }
 .app-menu .el-menu-item:hover, .app-menu .el-sub-menu__title:hover { background: rgba(255,255,255,.07); color: #fff; }
@@ -186,6 +195,9 @@ button, input, textarea, select { font: inherit; }
 .app-menu .el-menu { background: rgba(0,0,0,.12); border-radius: 10px; }
 .app-menu .el-menu-item.is-active::before { content: ''; width: 3px; height: 18px; margin-right: 9px; border-radius: 3px; background: #fff; }
 .app-menu-icon { width: 23px; margin-right: 8px; color: #91a2d1; font-size: 16px; text-align: center; }
+.app-menu-icon--home { position: relative; height: 18px; }
+.app-menu-icon--home::before { content: ''; position: absolute; left: 6px; top: 6px; width: 10px; height: 9px; border: 1.5px solid currentColor; border-top: 0; border-radius: 1px; }
+.app-menu-icon--home::after { content: ''; position: absolute; left: 7px; top: 2px; width: 8px; height: 8px; border-left: 1.5px solid currentColor; border-top: 1.5px solid currentColor; transform: rotate(45deg); }
 .app-menu .is-active .app-menu-icon { color: #fff; }
 .app-sidebar-footer { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 13px 11px 0; color: #8e9bb8; font-size: 12px; border-top: 1px solid rgba(255,255,255,.08); }
 .app-sidebar-footer-dot, .app-runtime-pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #c4cad7; }
@@ -196,6 +208,8 @@ button, input, textarea, select { font: inherit; }
 .app-topbar-left, .app-topbar-right, .app-breadcrumb, .app-user-trigger { display: flex; align-items: center; }
 .app-breadcrumb { gap: 10px; font-size: 14px; }
 .app-breadcrumb-muted { color: #9aa5b8; }
+.app-breadcrumb-home { padding: 3px 0; border: 0; background: transparent; color: #8995aa; cursor: pointer; }
+.app-breadcrumb-home:hover { color: var(--eg-brand); }
 .app-breadcrumb-separator { color: #c6ccd7; }
 .app-breadcrumb strong { color: var(--eg-ink); font-weight: 650; }
 .app-topbar-right { gap: 20px; }
@@ -204,7 +218,9 @@ button, input, textarea, select { font: inherit; }
 .app-user-trigger { gap: 8px; padding: 4px; border: 0; background: transparent; color: var(--eg-ink); cursor: pointer; }
 .app-user-avatar { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 10px; color: #fff; background: linear-gradient(145deg, #4c63e8, #2e3db2); font-weight: 700; }
 .app-user-name { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
-.app-user-chevron { color: #8d98aa; font-size: 16px; }
+.app-user-chevron { width: 7px; height: 7px; margin: -3px 4px 0 2px; border-right: 1.5px solid #8390a4; border-bottom: 1.5px solid #8390a4; transform: rotate(45deg); transition: transform .18s ease, border-color .18s ease; }
+.app-user-trigger:hover .app-user-chevron { border-color: var(--eg-brand); }
+.app-user-trigger:focus-visible { outline: 2px solid rgba(52,81,232,.3); outline-offset: 3px; border-radius: 8px; }
 .app-mobile-toggle { display: none; margin-right: 12px; border: 0; background: transparent; color: var(--eg-ink); font-size: 20px; cursor: pointer; }
 .app-main { padding: 0; background: var(--eg-canvas); }
 .app-content { max-width: 1440px; min-height: calc(100vh - 124px); margin: 0 auto; padding: 30px 34px 40px; box-sizing: border-box; }

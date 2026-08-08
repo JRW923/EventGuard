@@ -93,8 +93,8 @@ router.beforeEach(async (to) => {
   document.title = pageTitle ? `${pageTitle} · EventGuard` : 'EventGuard'
 
   if (to.meta.public) {
-    // 已登录用户访问登录页或欢迎页 → 直接进控制台首页（/orders），不再看到落地页
-    if ((to.path === '/login' || to.path === '/') && auth.isAuthenticated) return { path: '/orders' }
+    // 介绍页始终可访问；已登录用户仅在访问登录页时回到控制台。
+    if (to.path === '/login' && auth.isAuthenticated) return { path: '/orders' }
     return true
   }
 

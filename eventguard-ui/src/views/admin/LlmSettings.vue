@@ -131,7 +131,9 @@ async function save() {
 
 async function reset() {
   try {
-    await ElMessageBox.confirm('恢复后将重新使用 AI 服务启动时的 EG_LLM_* 配置，确定继续吗？', '恢复默认值', { type: 'warning' })
+    await ElMessageBox.confirm('恢复后将重新使用 AI 服务启动时的 EG_LLM_* 配置，确定继续吗？', '恢复默认值', {
+      type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消',
+    })
   } catch {
     return
   }

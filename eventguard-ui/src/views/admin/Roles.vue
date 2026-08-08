@@ -139,6 +139,8 @@ async function onSave() {
 async function onDelete(row: RoleItem) {
   await ElMessageBox.confirm(`确定删除角色「${row.name}」？删除后该角色下用户将失去对应权限。`, '提示', {
     type: 'warning',
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
   })
   await AuthApi.deleteRole(row.id)
   ElMessage.success('已删除')

@@ -60,7 +60,7 @@
             <el-tag :type="levelType(row.level)" size="small" style="white-space: nowrap">{{ row.level }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="count" label="命中次数" width="100" sortable />
+        <el-table-column prop="count" label="命中次数" width="118" sortable label-class-name="hit-count-column" />
         <el-table-column prop="first" label="首次" width="180">
           <template #default="{ row }">{{ formatTime(row.first) }}</template>
         </el-table-column>
@@ -328,5 +328,13 @@ function goCompensate(action: string) {
   font-size: 12px;
   max-height: 160px;
   overflow: auto;
+}
+:deep(.hit-count-column .cell) {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+:deep(.hit-count-column .caret-wrapper) {
+  flex: 0 0 24px;
 }
 </style>
