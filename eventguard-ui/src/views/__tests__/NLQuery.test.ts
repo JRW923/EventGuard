@@ -68,4 +68,39 @@ describe('NLQuery', () => {
 
     expect(wrapper.text()).toContain('查询失败')
   })
+
+  it('追问轮携带会话 id，且首轮不携带（多轮对话）', async () => {
+    ;(AiApi.query as any)
+      .mockResolvedValueOnce({
+        intent: 'event_lookup',
+        data: null,
+        answer: '请提供订单号（例如：订单 1234… 当前状态是什么？）',
+        conversation_id: 'conv-1',
+        needs_input: true,
+      })
+      .mockResolvedValueOnce({
+        intent: 'event_lookup',
+        data: { status: 'PAID' },
+        answer: '订单已支付。',
+        conversation_id: 'conv-1',
+      })
+
+    const wrapper = mount(NLQuery, {
+      global: { plugins: [ElementPlus] },
+    })
+
+    // 第一轮：缺参反问，仅传问题（单轮语义保持）
+    await wrapper.find('input[data-testid="question-input"]').setValue('这个订单什么状态？')
+    await wrapper.find('button[data-testid="submit-btn"]').trigger('click')
+    await flushPromises()
+    expect(AiApi.query).toHaveBeenNthCalledWith(1, '这个订单什么状态？')
+    expect(wrapper.text()).toContain('请提供订单号')
+
+    // 第二轮：携带会话 id 续聊
+    await wrapper.find('input[data-testid="question-input"]').setValue('订单 abc 状态？')
+    await wrapper.find('button[data-testid="submit-btn"]').trigger('click')
+    await flushPromises()
+    expect(AiApi.query).toHaveBeenNthCalledWith(2, '订单 abc 状态？', 'conv-1')
+    expect(wrapper.text()).toContain('订单已支付。')
+  })
 })

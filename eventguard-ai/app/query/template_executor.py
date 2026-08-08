@@ -65,6 +65,13 @@ class TemplateExecutor:
         order_id = self._extract_order_id(question)
         return await self.backend_client.get_events(order_id)
 
+    def resolve_order_id(self, question: str) -> Optional[str]:
+        """非抛异常版提取订单号：找不到返回 None（供多轮对话上下文捕获使用）。"""
+        try:
+            return self._extract_order_id(question)
+        except ValueError:
+            return None
+
     def _extract_order_id(self, question: str) -> str:
         """从问题中提取 UUID 格式的 order_id。"""
         match = self.UUID_PATTERN.search(question)

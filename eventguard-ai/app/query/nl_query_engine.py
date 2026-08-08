@@ -7,6 +7,8 @@ from typing import Optional
 
 from app import metrics as egm
 from app.analyzer.llm_client import LLMClient
+from app.query.conversation_store import Conversation
+from app.query.conversation_store import conversation_store as default_conversation_store
 from app.query.intent_classifier import IntentClassifier
 from app.query.prompts import NL_ANSWER_SYSTEM_PROMPT, NL_ANSWER_USER_TEMPLATE
 from app.query.query_result import QueryResult
@@ -19,11 +21,17 @@ logger = logging.getLogger(__name__)
 # 8s 内 LLM 无响应 → _generate_answer 捕获超时 → 返回数据摘要，保证 10s 内必有回答。
 LLM_ANSWER_TIMEOUT_SECONDS = 8.0
 
+# 缺参追问提示：目前唯一必填参数是 order_id（event_lookup / trace_replay 缺了无法查询）
+PENDING_PARAM_HINTS = {
+    "order_id": "请提供订单号（例如：订单 12345678-… 当前状态是什么？）",
+}
+
 
 class NLQueryEngine:
-    """自然语言查询引擎。
+    """自然语言查询引擎（支持多轮追问）。
 
     流程：IntentClassifier 分类 → TemplateExecutor 模板查询 → LLMClient 润色回答。
+    缺参（如订单号）时进入追问：向用户反问，下一轮携带 conversation_id 补齐参数后重查。
     """
 
     def __init__(
@@ -31,38 +39,98 @@ class NLQueryEngine:
         intent_classifier: Optional[IntentClassifier] = None,
         template_executor: Optional[TemplateExecutor] = None,
         llm_client: Optional[LLMClient] = None,
+        conversation_store: Optional[object] = None,
     ):
         self.intent_classifier = intent_classifier or IntentClassifier()
         self.template_executor = template_executor or TemplateExecutor()
         self.llm_client = llm_client or LLMClient()
+        self.conversation_store = conversation_store or default_conversation_store
 
-    async def query(self, question: str) -> QueryResult:
-        """处理用户问题，返回 QueryResult。"""
-        # 1. 意图分类
+    async def query(
+        self, question: str, conversation_id: Optional[str] = None
+    ) -> QueryResult:
+        """处理用户问题（可携带会话 id 续聊），返回 QueryResult。"""
+        # 1. 取/建会话（无 conversation_id 即开新会话）
+        conv = self.conversation_store.get_or_create(conversation_id)
+
+        # 2. 意图分类
         intent = await self.intent_classifier.classify(question)
-        logger.info("NL 查询意图：%s（问题：%s）", intent, question)
+        logger.info("NL 查询意图：%s（问题：%s，会话：%s）", intent, question, conv.conversation_id)
 
         _t0 = time.time()
         fallback = "false"
         try:
-            # 2. 模板路由（缺订单号/未知意图时返回友好结果而非 500）
             try:
-                data = await self._route_template(intent, question)
+                # 3. 模板路由（缺订单号/未知意图时抛出，转追问）
+                data = await self._route(intent, question, conv)
             except ValueError as e:
-                # ponytail: MVP 不接 Text-to-SQL，无法从问题提取订单号时直接告知用户，避免裸异常 500
-                logger.warning("NL 路由失败：%s", e)
                 fallback = "true"
-                return QueryResult(intent=intent, data=None, answer=str(e))
+                hint = self._ask_for_param(intent, conv)
+                self._append_history(conv, question, intent, None, hint, needs_input=True)
+                logger.warning("NL 缺参追问：%s（%s）", hint, e)
+                return QueryResult(
+                    intent=intent, data=None, answer=hint,
+                    conversation_id=conv.conversation_id, needs_input=True,
+                )
 
-            # 3. LLM 润色回答
+            # 4. LLM 润色回答
             answer = await self._generate_answer(question, intent, data)
             # LLM 失败时 _generate_answer 内部已降级为数据摘要，这里据此标记 fallback
             if answer == self._fallback_answer(intent, data):
                 fallback = "true"
-            return QueryResult(intent=intent, data=data, answer=answer)
+            self._append_history(conv, question, intent, data, answer)
+            return QueryResult(
+                intent=intent, data=data, answer=answer, conversation_id=conv.conversation_id,
+            )
         finally:
             egm.nl_query_duration.labels(intent=intent).observe(time.time() - _t0)
             egm.nl_query_total.labels(intent=intent, fallback=fallback).inc()
+
+    async def _route(self, intent: str, question: str, conv: Conversation):
+        """模板路由；缺 order_id 时若会话上下文已有订单号则补参重试一次。"""
+        try:
+            data = await self._route_template(intent, question)
+            self._capture_context(intent, question, conv)
+            return data
+        except ValueError:
+            if conv.context.get("order_id"):
+                # 追问轮次：把会话里的订单号补进问题再查一次
+                augmented = f"{question} 订单号 {conv.context['order_id']}"
+                return await self._route_template(intent, augmented)
+            raise
+
+    def _capture_context(self, intent: str, question: str, conv: Conversation) -> None:
+        """路由成功后把问题里的订单号存进会话上下文，供后续追问补参。"""
+        try:
+            order_id = self.template_executor.resolve_order_id(question)
+        except Exception:  # mock/异常执行器下防御
+            order_id = None
+        if isinstance(order_id, str) and order_id:
+            conv.context["order_id"] = order_id
+        conv.pending.pop("order_id", None)
+
+    def _ask_for_param(self, intent: str, conv: Conversation) -> str:
+        """缺参时登记待补参数并返回反问语。"""
+        if intent in ("event_lookup", "trace_replay"):
+            conv.pending["order_id"] = "uuid"
+            conv.context.pop("order_id", None)  # 反问时不沿用旧上下文，避免指代歧义
+            return PENDING_PARAM_HINTS["order_id"]
+        return f"暂不支持该查询意图：{intent}"
+
+    @staticmethod
+    def _append_history(
+        conv: Conversation, question: str, intent: str, data, answer: str,
+        needs_input: bool = False,
+    ) -> None:
+        conv.history.append({
+            "question": question,
+            "intent": intent,
+            "answer": answer,
+            "needs_input": needs_input,
+            "data": data,
+        })
+        if len(conv.history) > 20:
+            conv.history = conv.history[-20:]
 
     async def _route_template(self, intent: str, question: str):
         """根据意图路由到对应模板。"""

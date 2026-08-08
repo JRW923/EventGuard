@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from typing import Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException, Depends
@@ -74,6 +75,8 @@ _analyzer = RootCauseAnalyzer()
 
 class NLQueryRequest(BaseModel):
     question: str
+    # 多轮对话会话 id：无则后端新建（响应里返回），前端续聊时携带
+    conversation_id: Optional[str] = None
 
 
 # 单例引擎（首次调用时初始化）
@@ -89,9 +92,9 @@ def _get_nl_query_engine() -> NLQueryEngine:
 
 @app.post("/ai/query", response_model=QueryResult)
 async def ai_query(req: NLQueryRequest, _: dict = Depends(require_permission("ai:query"))):
-    """自然语言查询：意图分类 + 模板查询 + LLM 润色。"""
+    """自然语言查询：意图分类 + 模板查询 + LLM 润色；缺参时反问（多轮对话）。"""
     engine = _get_nl_query_engine()
-    return await engine.query(req.question)
+    return await engine.query(req.question, req.conversation_id)
 
 
 @app.get("/health")
