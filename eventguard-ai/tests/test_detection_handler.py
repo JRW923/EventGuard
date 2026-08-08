@@ -80,6 +80,44 @@ def test_detection_handler_no_anomaly_skips_publish():
         _clear_global_store()
 
 
+def test_detection_handler_dedups_repeated_process_anomaly():
+    """同一 P001（同 rule/agg/描述）随窗口滑动重复检出时只发布一次（Item 2 去重门控）。"""
+    _clear_global_store()
+    try:
+        svc = MagicMock()
+        svc.detect.return_value = AnomalyResult(is_anomaly=False, source="IF", level="LOW")
+        publisher = MagicMock()
+        proc = MagicMock()
+        proc.detect.return_value = [Anomaly(
+            anomaly_id="p-1",
+            rule_id="P001",
+            aggregate_id="agg-1",
+            event_type="PaymentFailedEvent",
+            level="ERROR",
+            source="PROCESS",
+            priority="HIGH",
+            detected_at="2026-07-21T00:00:00Z",
+            description="非法迁移:PENDING_PAYMENT→ShippedEvent",
+        )]
+        win = MagicMock()
+        win.add = MagicMock()
+        win.get.return_value = [{"event_type": "OrderCreatedEvent"}]
+        handler = DetectionHandler(
+            event_level_service=svc,
+            publisher=publisher,
+            process_level_detector=proc,
+            event_window=win,
+        )
+
+        handler.handle({"event_type": "PaymentFailedEvent", "aggregate_id": "agg-1"})
+        handler.handle({"event_type": "PaymentFailedEvent", "aggregate_id": "agg-1"})
+
+        # 第二次检出同一异常被去重：仅发布 1 次
+        assert publisher.publish.call_count == 1
+    finally:
+        _clear_global_store()
+
+
 def test_anomaly_store_roundtrip():
     """AnomalyStore 存→取 往返一致"""
     a = Anomaly(

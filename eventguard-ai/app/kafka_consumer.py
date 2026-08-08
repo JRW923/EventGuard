@@ -99,6 +99,7 @@ class EventKafkaConsumer:
 import uuid
 from datetime import datetime, timezone
 
+from app.detector.alert_dedup import AlertDeduper
 from app.detector.event_level import EventLevelService
 from app.detector.process_level_hmm import run_process_detectors
 from app.model.anomaly import Anomaly, AnomalyResult
@@ -107,7 +108,7 @@ from app.store.anomaly_store import anomaly_store
 
 
 class DetectionHandler:
-    """Kafka 事件处理：事件级 + 流程级检测 → 发布异常"""
+    """Kafka 事件处理：事件级 + 流程级检测 → 去重门控 → 发布异常"""
 
     def __init__(
         self,
@@ -116,6 +117,7 @@ class DetectionHandler:
         process_level_detector=None,
         hmm_detector=None,
         event_window=None,
+        deduper: Optional[AlertDeduper] = None,
     ):
         self.event_level_service = event_level_service
         self.publisher = publisher
@@ -125,6 +127,8 @@ class DetectionHandler:
         # M3.9 HMM 流程检测作为规则检测之后的第二道流程级检测（可选注入）
         self.hmm_detector = hmm_detector
         self.event_window = event_window
+        # Item 2：告警去重 + 风暴抑制门控（不影响检测触发语义）
+        self.deduper = deduper or AlertDeduper()
 
     def handle(self, event: dict) -> None:
         """处理单条事件：事件级检测 + 流程级检测"""
@@ -136,13 +140,13 @@ class DetectionHandler:
             egm.detection_latency.observe(time.time() - _t0)
 
     def _detect_and_publish(self, event: dict) -> None:
-        """事件级 + 流程级检测并发布异常。"""
+        """事件级 + 流程级检测并发布异常（均经去重门控）。"""
         # 1. 事件级检测
         result = self.event_level_service.detect(event)
         if result.is_anomaly:
             anomaly = self._build_anomaly(event, result)
-            anomaly_store.save(anomaly)
-            self._publish(anomaly)
+            # 事件级指纹用 event_id：不同事件永不误去重（事件级无窗口滑动重复问题）
+            self._emit(anomaly, fingerprint=event.get("event_id") or anomaly.description)
 
         # 2. 流程级检测（M3.6 接入）
         if self.process_level_detector is not None and self.event_window is not None:
@@ -154,8 +158,20 @@ class DetectionHandler:
                 sequence, self.process_level_detector, self.hmm_detector
             )
             for pa in process_anomalies:
-                anomaly_store.save(pa)
-                self._publish(pa)
+                # 流程级指纹用描述（P001 含迁移对、P002 含停滞状态），窗口内稳定 → 消除滑动重复
+                self._emit(pa, fingerprint=pa.description)
+
+    def _emit(self, anomaly, fingerprint: str) -> None:
+        """去重/抑制门控后 save + publish；跳过的只计指标，不落库不发 Kafka。"""
+        verdict = self.deduper.should_publish(anomaly.rule_id, anomaly.aggregate_id, fingerprint)
+        if verdict != "publish":
+            egm.alert_dedup_total.labels(reason=verdict).inc()
+            logger.info(
+                "告警去重/抑制：%s（rule=%s agg=%s）", verdict, anomaly.rule_id, anomaly.aggregate_id
+            )
+            return
+        anomaly_store.save(anomaly)
+        self._publish(anomaly)
 
     def _publish(self, anomaly) -> None:
         """发布异常到 Kafka；瞬时失败带退避重试，仍失败则留痕并计数。

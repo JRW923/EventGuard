@@ -27,6 +27,11 @@ publish_errors = Counter(
     "eventguard_ai_publish_errors_total",
     "发布异常到 Kafka 失败次数",
 )
+alert_dedup_total = Counter(
+    "eventguard_ai_alert_dedup_total",
+    "告警去重/风暴抑制跳过的发布数",
+    ["reason"],  # dup / suppressed
+)
 rule_bridge_errors = Counter(
     "eventguard_ai_rule_bridge_errors_total",
     "Java 规则引擎桥接调用失败次数",
