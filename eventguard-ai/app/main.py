@@ -17,6 +17,8 @@ from app.detector.event_window import EventWindow
 from app.detector.process_level import ProcessLevelRuleDetector
 from app.kafka_consumer import DetectionHandler, EventKafkaConsumer
 from app.publisher.anomaly_publisher import AnomalyPublisher
+from app.predictor.order_predictor import OrderPredictor
+from app.query.backend_client import BackendClient
 from app.query.nl_query_engine import NLQueryEngine
 from app.query.query_result import QueryResult
 from app.security import require_permission
@@ -105,6 +107,57 @@ async def ai_query(req: NLQueryRequest, response: Response, _: dict = Depends(re
 async def ai_traces_recent(limit: int = 100, _: dict = Depends(require_permission("ai:query"))):
     """AI 可观测性：最近 N 条操作 trace（llm_call / nl_query / root_cause / llm_cache）。"""
     return trace_log.recent(limit=limit)
+
+
+# 预测器惰性单例（模型缺失时 available=False，端点返回 prediction=null）
+_predictor = None
+
+
+def _get_predictor() -> OrderPredictor:
+    global _predictor
+    if _predictor is None:
+        _predictor = OrderPredictor()
+    return _predictor
+
+
+@app.get("/ai/predict/{aggregate_id}")
+async def predict_order(aggregate_id: str, _: dict = Depends(require_permission("ai:query"))):
+    """订单终局预测：加载事件序列 → 预测终局状态 + 置信度 + 风险分级。"""
+    predictor = _get_predictor()
+    if not predictor.available:
+        return {"aggregate_id": aggregate_id, "prediction": None,
+                "message": "预测模型不可用（models/predictor.pkl 缺失）"}
+    pred = predictor.predict_order(aggregate_id)
+    current_status = None
+    try:
+        order = await BackendClient().get_order(aggregate_id)
+        current_status = order.get("status")
+    except Exception:
+        pass
+    return {"aggregate_id": aggregate_id, "current_status": current_status, "prediction": pred}
+
+
+@app.get("/ai/predictions/watchlist")
+async def predictions_watchlist(limit: int = 10, _: dict = Depends(require_permission("ai:query"))):
+    """高风险在途订单 watchlist：遍历后端非终态订单批量预测，按风险降序返回 TopN。"""
+    predictor = _get_predictor()
+    if not predictor.available:
+        return {"items": [], "message": "预测模型不可用（models/predictor.pkl 缺失）"}
+    data = await BackendClient().list_orders(size=50)
+    orders = data.get("orders", [])
+    terminal = {"CLOSED", "CANCELLED"}
+    items = []
+    for o in orders:
+        if o.get("status") in terminal:
+            continue
+        try:
+            pred = predictor.predict_order(o.get("orderId", ""))
+        except Exception:
+            pred = None
+        if pred:
+            items.append({"orderId": o.get("orderId"), "status": o.get("status"), **pred})
+    items.sort(key=lambda x: OrderPredictor.risk_rank(x.get("risk", "LOW")))
+    return {"items": items[:limit]}
 
 
 @app.get("/health")

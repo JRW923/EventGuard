@@ -32,6 +32,34 @@
         <el-table-column label="更新时间">
           <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
         </el-table-column>
+        <!-- AI 终局预测（Item 5）：按需加载，展示预测终局 + 风险分级 -->
+        <el-table-column label="AI 预测" width="150">
+          <template #default="{ row }">
+            <template v-if="predictions[row.orderId]">
+              <el-tag
+                v-if="predictions[row.orderId].error"
+                type="info"
+                size="small"
+              >{{ predictions[row.orderId].error }}</el-tag>
+              <template v-else>
+                <el-tag :type="riskType(predictions[row.orderId].risk)" size="small">
+                  {{ predictions[row.orderId].outcome }}
+                </el-tag>
+                <div class="pred-conf">
+                  置信 {{ (predictions[row.orderId].confidence * 100).toFixed(0) }}%
+                </div>
+              </template>
+            </template>
+            <el-button
+              v-else
+              size="small"
+              :loading="!!predicting[row.orderId]"
+              @click="predictRow(row.orderId)"
+            >
+              预测
+            </el-button>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
             <el-button size="small" @click="goTimeline(row.orderId)">事件时间线</el-button>
@@ -72,6 +100,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import { AiApi, type OrderPrediction } from '../api/ai'
 import { OrderApi, type OrderListItem } from '../api/order'
 
 const router = useRouter()
@@ -83,6 +112,29 @@ const statusFilter = ref<string | null>(null)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
+
+// AI 预测（Item 5）：orderId -> OrderPrediction | { error }
+const predictions = ref<Record<string, OrderPrediction | { error: string }>>({})
+const predicting = ref<Record<string, boolean>>({})
+
+function riskType(risk?: string): 'success' | 'warning' | 'danger' | 'info' {
+  if (risk === 'HIGH') return 'danger'
+  if (risk === 'MEDIUM') return 'warning'
+  if (risk === 'LOW') return 'success'
+  return 'info'
+}
+
+async function predictRow(orderId: string) {
+  predicting.value[orderId] = true
+  try {
+    const r = await AiApi.predict(orderId)
+    predictions.value[orderId] = r.prediction ?? { error: r.message || '暂无预测' }
+  } catch (e: any) {
+    predictions.value[orderId] = { error: e.message || '预测失败' }
+  } finally {
+    predicting.value[orderId] = false
+  }
+}
 
 const statuses = [
   'PENDING_PAYMENT', 'PAYMENT_FAILED', 'PAID', 'CONFIRMED',
@@ -188,3 +240,11 @@ async function waitForOrder(orderId: string, attempts = 10, interval = 400): Pro
 
 onMounted(loadData)
 </script>
+
+<style scoped>
+.pred-conf {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #909399;
+}
+</style>

@@ -53,3 +53,14 @@ class BackendClient:
             resp = await client.get(url, headers=self.headers)
             resp.raise_for_status()
             return resp.json()
+
+    async def list_orders(self, status: Optional[str] = None, page: int = 0, size: int = 50) -> dict:
+        """GET /orders?status=&page=&size= — 订单列表（供预测 watchlist 用）。"""
+        params: dict = {"page": page, "size": size}
+        if status:
+            params["status"] = status
+        url = f"{self.base_url}/orders"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params, headers=self.headers)
+            resp.raise_for_status()
+            return resp.json()
