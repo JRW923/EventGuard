@@ -3,6 +3,10 @@ spring:
   kafka:
     # 使用 EG_LOCAL_*，避免 IDEA 误读根目录 .env 中仅供容器使用的 kafka:9092。
     bootstrap-servers: ${EG_LOCAL_KAFKA_BOOTSTRAP:localhost:9092}
+    listener:
+      # Compose 的 broker 会把 kafka:9092 广播给客户端；IDEA 进程默认无法解析该容器 hostname。
+      # 本地 HTTP/前端调试不应因 listener 启动失败而退出，可通过 EG_LOCAL_KAFKA_LISTENER_ENABLED=true 开启。
+      auto-startup: ${EG_LOCAL_KAFKA_LISTENER_ENABLED:false}
   datasource:
     url: ${EG_LOCAL_DB_URL:jdbc:postgresql://localhost:5432/eventguard}
     username: ${EG_LOCAL_DB_USER:eventguard}

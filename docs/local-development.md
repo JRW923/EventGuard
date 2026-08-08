@@ -49,6 +49,7 @@ Active profiles: local
 ```powershell
 Set-Location .\eventguard-server
 $env:EG_LOCAL_KAFKA_BOOTSTRAP = "localhost:9092"
+$env:EG_LOCAL_KAFKA_LISTENER_ENABLED = "false"
 $env:EG_LOCAL_DB_URL = "jdbc:postgresql://localhost:5432/eventguard"
 $env:EG_LOCAL_DB_USER = "eventguard"
 $env:EG_LOCAL_DB_PASSWORD = "changeme"
@@ -56,6 +57,19 @@ mvn.cmd spring-boot:run "-Dspring-boot.run.profiles=local"
 ```
 
 后端地址为 `http://localhost:8080`。默认演示账号仍为 `admin / admin123456`、`operator / operator123456`、`viewer / viewer123456`，不会因本地 profile 改变。
+
+`local` profile 默认不自动启动 Kafka listeners，避免 Compose 的 `kafka:9092` 广播地址阻断 IDEA 启动；订单 HTTP、权限和管理页面仍可正常调试。若需要本地消费 `domain-events` 或 `anomaly-alerts`，先让 Windows 能解析 Docker 广播地址，再在 IDEA 环境变量中开启：
+
+```powershell
+# 管理员 PowerShell 执行一次；确认 9092 未被其他程序占用
+$hosts = "$env:SystemRoot\System32\drivers\etc\hosts"
+if (-not (Select-String -Path $hosts -Pattern '^\s*127\.0\.0\.1\s+kafka(\s|$)' -Quiet)) {
+  Add-Content -Path $hosts -Value "`n127.0.0.1 kafka"
+}
+$env:EG_LOCAL_KAFKA_LISTENER_ENABLED = "true"
+```
+
+如果不希望修改 hosts 文件，保持 `EG_LOCAL_KAFKA_LISTENER_ENABLED=false` 即可；这只关闭本地 listener，不会改变 Docker 生产配置。
 
 ## 3. 启动 AI 服务（可选）
 
