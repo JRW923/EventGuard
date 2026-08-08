@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from app.analyzer.llm_client import LLMClient
 from app.analyzer.prompt_builder import PromptBuilder
+from app.config import settings
 from app.model.anomaly import Anomaly
 from app.model.analysis_report import AnalysisReport
 from app.store.event_store_client import EventStoreClient
@@ -39,9 +40,11 @@ class RootCauseAnalyzer:
         self,
         llm_client: Optional[LLMClient] = None,
         event_store_client: Optional[EventStoreClient] = None,
+        case_index=None,  # Item 8：可选相似案例检索器（few-shot 注入）
     ):
         self.llm_client = llm_client or LLMClient()
         self.event_store_client = event_store_client or EventStoreClient()
+        self.case_index = case_index
 
     async def analyze(
         self, anomaly: Anomaly, trace_id: Optional[str] = None
@@ -72,6 +75,7 @@ class RootCauseAnalyzer:
 
         # 3. 构建 prompt
         prompt = PromptBuilder.build(anomaly, events, context)
+        prompt = self._maybe_add_fewshot(prompt, anomaly)
 
         # 4. LLM 结构化输出 + 错误反馈重试 + 证据核验
         feedback: Optional[str] = None
@@ -125,6 +129,24 @@ class RootCauseAnalyzer:
             latency_ms=round((time.time() - _t0) * 1000, 1), ok=False, trace_id=trace_id,
         )
         raise LLMResponseError(f"LLM 输出不可用：{last_error}")
+
+    def _maybe_add_fewshot(self, prompt: str, anomaly: Anomaly) -> str:
+        """Item 8：EG_AI_RAG_FEWSHOT=true 且注入相似案例检索器时，把 top-k 相似案例并入 prompt。"""
+        if not settings.ai_rag_fewshot or self.case_index is None:
+            return prompt
+        try:
+            top = self.case_index.top_k_cases(anomaly, top_k=3)
+        except Exception as e:
+            logger.warning("相似案例 few-shot 注入失败（跳过）：%s", e)
+            return prompt
+        if not top:
+            return prompt
+        lines = ["\n\n## 相似历史案例（供参考处置方式，勿照抄）"]
+        for score, case in top:
+            lines.append(
+                f"- [{case.rule_id}] {case.description}（{case.detected_at}）"
+            )
+        return prompt + "\n".join(lines)
 
     @staticmethod
     def _evidence_plausible(report: AnalysisReport, events: list[dict]) -> bool:

@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     llm_provider: str = ""
     llm_max_tokens: int = 2048
     llm_temperature: float = 0.3
+    # Item 8：根因分析是否注入相似案例 few-shot（默认关，开则每次分析前检索相似案例并入 prompt）
+    ai_rag_fewshot: bool = False
     model_dir: str = "models"
     server_base_url: str = "http://eventguard-server:8080"
     # 用户 JWT 校验密钥（与 Java 后端共用 EG_JWT_SECRET，HS256）；生产必须注入强随机值

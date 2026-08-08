@@ -20,6 +20,18 @@ export interface HealResult {
   note?: string
 }
 
+export interface SimilarCase {
+  similarity: number
+  case_anomaly_id: string
+  rule_id: string
+  aggregate_id: string
+  event_type?: string
+  level: string
+  detected_at: string
+  description: string
+  resolution: string
+}
+
 export interface AnomalyAlert {
   anomaly_id: string
   rule_id: string
@@ -45,5 +57,9 @@ export const AnomalyApi = {
   // 最近告警历史（server 侧环形缓冲，最新在前）：WS 重连后补拉断线期间错过的告警
   getRecentAlerts(): Promise<AnomalyAlert[]> {
     return http.get<AnomalyAlert[]>('/alerts/recent').then((r) => r.data)
+  },
+  // 相似案例检索（Item 8 · 轻量 RAG）
+  similarCases(anomalyId: string, topK = 5): Promise<{ anomaly_id: string; cases: SimilarCase[]; message?: string }> {
+    return http.get(`/ai/cases/${anomalyId}/similar`, { params: { top_k: topK } }).then((r) => r.data)
   },
 }

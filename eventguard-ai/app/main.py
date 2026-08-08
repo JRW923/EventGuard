@@ -12,6 +12,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from app import metrics as egm
 from app.analyzer.healer_agent import HealerAgent
 from app.analyzer.root_cause import RootCauseAnalyzer, LLMResponseError
+from app.cases.case_index import CaseIndex
 from app.config import settings
 from app.detector.event_level import EventLevelService
 from app.detector.event_window import EventWindow
@@ -200,6 +201,27 @@ async def order_story(
 ):
     """订单事件故事线：事件链 → 运营可读复盘（Item 7）。"""
     return await _get_story_generator().generate(aggregate_id)
+
+
+# 相似案例检索惰性单例（Item 8 · 轻量 RAG）
+_case_index = None
+
+
+def _get_case_index() -> CaseIndex:
+    global _case_index
+    if _case_index is None:
+        _case_index = CaseIndex()
+    return _case_index
+
+
+@app.get("/ai/cases/{anomaly_id}/similar")
+async def similar_cases(
+    anomaly_id: str,
+    top_k: int = 5,
+    _: dict = Depends(require_permission("anomaly:view")),
+):
+    """相似案例检索：按规则/事件类型/时间近邻打分，附上次处置状态（Item 8）。"""
+    return await _get_case_index().query(anomaly_id, top_k)
 
 
 @app.get("/health")

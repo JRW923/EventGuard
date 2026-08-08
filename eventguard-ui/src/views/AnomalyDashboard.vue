@@ -97,6 +97,9 @@
         >
           发起补偿审批
         </el-button>
+        <el-button type="warning" plain :loading="similarLoading" @click="loadSimilarCases">
+          相似案例
+        </el-button>
         <span v-if="healNote" style="font-size: 12px; color: #909399; align-self: center">{{ healNote }}</span>
       </div>
 
@@ -131,6 +134,20 @@
           <el-table-column prop="risk" label="风险" width="100" />
         </el-table>
 
+        <!-- 相似案例（Item 8 · 轻量 RAG）：参考上次处置方式 -->
+        <template v-if="similarCases.length">
+          <h3>相似案例</h3>
+          <el-table :data="similarCases" border size="small">
+            <el-table-column prop="similarity" label="相似度" width="90">
+              <template #default="{ row }">{{ Math.round(row.similarity * 100) }}%</template>
+            </el-table-column>
+            <el-table-column prop="rule_id" label="规则" width="150" />
+            <el-table-column prop="aggregate_id" label="订单 ID" show-overflow-tooltip />
+            <el-table-column prop="description" label="描述" show-overflow-tooltip />
+            <el-table-column prop="resolution" label="处置" width="90" />
+          </el-table>
+        </template>
+
         <div style="margin-top: 16px; text-align: right">
           <el-button
             v-for="s in currentReport.suggestions"
@@ -155,7 +172,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { useAnomalyWebSocket } from '../composables/useAnomalyWebSocket'
-import { AnomalyApi, type AnalysisReport, type AnomalyAlert, type AgentTraceStep } from '../api/anomaly'
+import { AnomalyApi, type AnalysisReport, type AnomalyAlert, type AgentTraceStep, type SimilarCase } from '../api/anomaly'
 import { CompensationApi } from '../api/compensation'
 
 const router = useRouter()
@@ -171,6 +188,9 @@ const aggregateMode = ref(false)
 const healing = ref(false)
 const agentTrace = ref<AgentTraceStep[]>([])
 const healNote = ref('')
+// Item 8：相似案例
+const similarCases = ref<SimilarCase[]>([])
+const similarLoading = ref(false)
 
 interface Cluster {
   rule_id: string
@@ -225,6 +245,7 @@ async function showAnalysis(anomalyId: string) {
   currentReport.value = null
   agentTrace.value = []
   healNote.value = ''
+  similarCases.value = []
   // ponytail: 补偿按订单聚合根执行，须用 anomaly 的 aggregate_id 而非 anomaly_id
   const alert = alerts.value.find((a) => a.anomaly_id === anomalyId)
   currentAggregateId.value = alert?.aggregate_id ?? ''
@@ -271,6 +292,21 @@ async function startSagaCompensation() {
     ElMessage.success(msg)
   } catch (e: any) {
     ElMessage.error('发起补偿失败：' + (e.message || '未知错误'))
+  }
+}
+
+// Item 8：相似案例检索（轻量 RAG）
+async function loadSimilarCases() {
+  if (!currentAnomalyId.value) return
+  similarLoading.value = true
+  similarCases.value = []
+  try {
+    const r = await AnomalyApi.similarCases(currentAnomalyId.value)
+    similarCases.value = r.cases
+  } catch (e: any) {
+    console.error('相似案例加载失败', e)
+  } finally {
+    similarLoading.value = false
   }
 }
 
