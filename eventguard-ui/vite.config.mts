@@ -8,6 +8,7 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 // 这里映射到实际导出它们的父组件深路径，保证按需引用时只拉对应模块、不整包拖入 barrel。
 const SUB_COMPONENT_PARENT: Record<string, string> = {
   checkboxgroup: 'checkbox',
+  collapseitem: 'collapse',
   descriptionsitem: 'descriptions',
   dropdownitem: 'dropdown',
   dropdownmenu: 'dropdown',
