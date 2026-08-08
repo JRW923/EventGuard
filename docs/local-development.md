@@ -8,10 +8,10 @@
 
 ```powershell
 # 当前目录为 EventGuard 仓库根目录
-docker compose up -d postgres kafka debezium
+docker-compose up -d postgres kafka debezium
 ```
 
-如果 Docker Desktop 提示 `compose` 不是可用命令，请先更新 Docker Desktop；旧版环境可以将命令中的 `docker compose` 替换为 `docker-compose`。
+当前项目环境使用独立的 `docker-compose.exe`。如果你的 Docker Desktop 支持新版 Compose 子命令，也可以将命令替换为 `docker compose up -d postgres kafka debezium`。
 
 如果只调试订单、权限和管理页面，PostgreSQL 是必需的；Kafka 用于读模型投影、Saga 和 AI 检测链路，建议一并启动。
 
