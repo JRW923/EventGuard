@@ -93,7 +93,7 @@ async def test_root_cause_analyzer_returns_valid_report():
     })
 
     mock_llm = AsyncMock()
-    mock_llm.generate.return_value = llm_response
+    mock_llm.generate_json.return_value = llm_response
 
     mock_event_client = MagicMock()
     mock_event_client.load_events.return_value = [
@@ -139,7 +139,7 @@ async def test_root_cause_analyzer_raises_on_invalid_suggestion():
     })
 
     mock_llm = AsyncMock()
-    mock_llm.generate.return_value = llm_response
+    mock_llm.generate_json.return_value = llm_response
     mock_event_client = MagicMock()
     mock_event_client.load_events.return_value = []
 
@@ -147,3 +147,71 @@ async def test_root_cause_analyzer_raises_on_invalid_suggestion():
 
     with pytest.raises(LLMResponseError):
         await analyzer.analyze(anomaly)
+
+
+@pytest.mark.asyncio
+async def test_root_cause_evidence_mismatch_retries_and_succeeds():
+    """evidence 提及的事件不在序列中 → 错误反馈重试一次 → 修正后成功（Item 3）。"""
+    from app.analyzer.root_cause import RootCauseAnalyzer
+    from app.model.anomaly import Anomaly
+    from app.model.analysis_report import AnalysisReport
+
+    anomaly = Anomaly(
+        anomaly_id="a-3", rule_id="P002_STUCK", aggregate_id="agg-3",
+        event_type="PaymentCompletedEvent", level="WARN", source="PROCESS",
+        priority="HIGH", detected_at="2026-07-21T10:00:00Z", description="停滞",
+    )
+    bad = json.dumps({
+        "anomaly_id": "a-3", "root_cause": "停滞",
+        "evidence": ["异常事件：PaymentTimeoutEvent"],  # 不在序列中 → 应触发重试
+        "suggestions": [{"action": "NOTIFY_DELAY", "reason": "r", "risk": "LOW"}],
+    })
+    good = json.dumps({
+        "anomaly_id": "a-3", "root_cause": "停滞",
+        "evidence": ["异常事件：PaymentCompletedEvent"],  # 在序列中 → 通过
+        "suggestions": [{"action": "NOTIFY_DELAY", "reason": "r", "risk": "LOW"}],
+    })
+    mock_llm = AsyncMock()
+    mock_llm.generate_json.side_effect = [bad, good]
+    mock_events = MagicMock()
+    mock_events.load_events.return_value = [
+        {"event_type": "OrderCreatedEvent", "created_at": "2026-07-20T10:00:00Z"},
+        {"event_type": "PaymentCompletedEvent", "created_at": "2026-07-20T10:05:00Z"},
+    ]
+
+    analyzer = RootCauseAnalyzer(llm_client=mock_llm, event_store_client=mock_events)
+    report = await analyzer.analyze(anomaly)
+
+    assert isinstance(report, AnalysisReport)
+    assert mock_llm.generate_json.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_root_cause_json_parse_failure_retries_and_succeeds():
+    """首次输出非法 JSON → 反馈重试一次 → 成功（Item 3）。"""
+    from app.analyzer.root_cause import RootCauseAnalyzer
+    from app.model.anomaly import Anomaly
+    from app.model.analysis_report import AnalysisReport
+
+    anomaly = Anomaly(
+        anomaly_id="a-4", rule_id="R001", aggregate_id="agg-4",
+        event_type="OrderCreatedEvent", level="WARN", source="RULE",
+        priority="HIGH", detected_at="2026-07-21T10:00:00Z", description="金额偏离",
+    )
+    good = json.dumps({
+        "anomaly_id": "a-4", "root_cause": "偏离",
+        "evidence": ["金额偏离 3σ"],
+        "suggestions": [{"action": "FREEZE_ORDER", "reason": "r", "risk": "LOW"}],
+    })
+    mock_llm = AsyncMock()
+    mock_llm.generate_json.side_effect = ["这不是 JSON", good]
+    mock_events = MagicMock()
+    mock_events.load_events.return_value = [
+        {"event_type": "OrderCreatedEvent", "created_at": "2026-07-20T10:00:00Z"},
+    ]
+
+    analyzer = RootCauseAnalyzer(llm_client=mock_llm, event_store_client=mock_events)
+    report = await analyzer.analyze(anomaly)
+
+    assert isinstance(report, AnalysisReport)
+    assert mock_llm.generate_json.call_count == 2

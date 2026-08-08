@@ -37,7 +37,8 @@ class PromptBuilder:
 {action_catalog}
 
 ## 输出要求
-请输出严格的 JSON，格式如下：
+- evidence 必须来源于上面的「事件序列」，只能提及序列中出现过的事件类型，严禁编造
+- 请输出严格的 JSON，格式如下：
 {{
   "anomaly_id": "{anomaly.anomaly_id}",
   "root_cause": "根因分析文字描述",
