@@ -56,6 +56,7 @@ describe('应用启动 + Landing 渲染（诊断用）', () => {
     expect(root.querySelectorAll('.landing-projtech-chips .landing-tech-item').length).toBeGreaterThan(0)
     // 关于我内的个人技能分组
     expect(root.querySelectorAll('.landing-about-groups .landing-tech-group').length).toBe(5)
+    expect(root.querySelector('.landing-about-avatar img')?.getAttribute('src')).toBe('/brand/profile-photo.jpeg')
     expect(root.querySelector('.landing-about-school-mark img')?.getAttribute('src')).toBe('/brand/seu-logo.png')
     // 账号卡
     expect(root.querySelectorAll('.landing-account').length).toBe(3)

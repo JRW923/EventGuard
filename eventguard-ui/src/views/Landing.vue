@@ -156,7 +156,14 @@
       <div class="landing-about reveal">
         <div class="landing-about-card">
           <div class="landing-about-head">
-            <div class="landing-about-avatar">吴</div>
+            <div class="landing-about-avatar">
+              <img
+                src="/brand/profile-photo.jpeg"
+                alt="吴佳睿证件照"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
             <div class="landing-about-info">
               <h3 class="landing-about-name">吴佳睿</h3>
               <p class="landing-about-roles">后端开发 · AI 应用开发 · Agent 开发</p>
@@ -1008,17 +1015,20 @@ body.eg-landing {
 }
 .landing-about-avatar {
   flex-shrink: 0;
-  width: 76px;
-  height: 76px;
+  width: 84px;
+  height: 104px;
+  padding: 3px;
   border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 34px;
-  font-weight: 800;
-  color: #fff;
-  background: #3f63d8;
-  box-shadow: 0 8px 28px rgba(63, 99, 216, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 28px rgba(18, 45, 55, 0.3);
+}
+.landing-about-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: center 25%;
 }
 .landing-about-name {
   margin: 0;
