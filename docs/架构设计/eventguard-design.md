@@ -1161,7 +1161,7 @@ class HealerAgent:
 
 > 原 V2 项；现已落地：`compensation/saga/` 包提供 `CompensationSaga`（SagaStatus 状态机）、
 > `SagaTrigger`（消费 domain-events 自动触发）、`ApprovalController`（`POST /approvals/{id}/approve|reject`）。
-> 本文以下为设计蓝图，实现细节见代码与 `docs/verification-log.md` §8。
+> 本文以下为设计蓝图，实现细节见代码与 `docs/验证报告/verification-log.md` §8。
 
 #### 7.4.1 Saga 编排器
 

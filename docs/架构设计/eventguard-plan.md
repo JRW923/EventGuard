@@ -2,7 +2,7 @@
 
 > 日期: 2026-07-21
 > 状态: 已确认
-> 关联文档: `eventguard-design.md`（设计文档）
+> 关联文档: `eventguard-design.md`（设计文档，同目录）
 > 定位: 任务级工程可执行计划，仅覆盖 MVP
 
 ---
@@ -815,7 +815,7 @@ M1 骨架 ──► M2 事件溯源 ──► M3 AI 检测 ──► M4 NL+前�
 - **状态**：[x]
 - **依赖**：M4.7
 - **涉及文件**：
-  - `docs/demo-script.md`
+  - `docs/使用指南/demo-script.md`
   - `docs/demo-video.mp4`
 - **关键接口**：无
 - **步骤**：
@@ -949,7 +949,7 @@ eventguard:
 - 网关真实 Provider 对接需外部凭证（支付宝沙箱/正式商户号、企业微信 webhook），当前以 mock 默认 + HTTP 适配器示例提供接缝
 
 **交付说明（非阻塞项）**：
-- M5.5 Demo 视频：交付 5 分钟走查脚本 `docs/demo-script.md`（6 场景）。mp4 需人工录制（AI 无法生成视频），脚本末尾已注明。
+- M5.5 Demo 视频：交付 5 分钟走查脚本 `docs/使用指南/demo-script.md`（6 场景）。mp4 需人工录制（AI 无法生成视频），脚本末尾已注明。
 - V2 局部增强已补齐：`eventguard.projection.lag` 计数（读己写超时时 +1）+ 时间线按 `upToVersion` 版本回放。
 
 ---

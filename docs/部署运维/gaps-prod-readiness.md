@@ -68,7 +68,7 @@
 
 ### 2026-08 二次加固（一致性/可用性/安全性/体验度，非原缺口清单）
 
-针对使用中暴露的 6 个真实缺口逐项加固（验证见 `verification-log.md` §11）：
+针对使用中暴露的 6 个真实缺口逐项加固（验证见 `../验证报告/verification-log.md` §11）：
 
 - [x] **限流按真实用户 IP 分桶**（安全/体验）：nginx 只设 `X-Real-IP`、不透传 XFF，原实现回退 `remoteAddr`
   使全站共享一个 60/10s 窗口。`RateLimitFilter.clientIp()` 改为优先读 `X-Real-IP`，修掉「一人刷爆全站 429」。

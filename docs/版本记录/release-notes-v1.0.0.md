@@ -15,8 +15,8 @@
 - **M5.2** Pumba 混沌实验脚本（`db-kill` / `kafka-pause` / `ai-delay` / `verify`）。
 - **M5.3** AI vs Baseline 评估（`training/evaluate.py` + `eventguard-benchmark/ai-vs-baseline.md`）。
 - **M5.4** Gatling 压测仿真（P95<500ms 断言）。
-- **M5.5** 5 分钟 Demo 走查脚本（`docs/demo-script.md`；mp4 需人工录制）。
-- **M5.6** 架构图改为文本 SVG（`docs/architecture.svg`）。
+- **M5.5** 5 分钟 Demo 走查脚本（`docs/使用指南/demo-script.md`；mp4 需人工录制）。
+- **M5.6** 架构图改为文本 SVG（`docs/架构设计/architecture.svg`）。
 - **V2 局部增强**：投影延迟 Micrometer `Timer`/`Counter`（读己写超时计入 `eventguard.projection.lag`）+ 时间线按 `upToVersion` 版本回放。
 
 ## 已知限制

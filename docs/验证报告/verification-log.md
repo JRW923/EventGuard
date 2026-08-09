@@ -210,7 +210,7 @@ curl -s "http://localhost:8080/orders/stats?from=$FROM&to=$NOW" ; echo
 ### 步骤 5.7 提交验证结论
 
 ```bash
-git add docs/verification-log.md
+git add docs/验证报告/verification-log.md
 git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时区核对）"
 ```
 - 实际结果（PENDING）：commit=________________

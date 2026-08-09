@@ -404,7 +404,7 @@ Java 侧使用 `DefaultErrorHandler + DeadLetterPublishingRecoverer`，成功后
 
 ## 八、本轮本地调试与体验优化补充
 
-- **本地调试**：新增 `eventguard-server/src/main/resources/application-local.yml`，IDEA 使用 `local` profile 时将 Kafka、PostgreSQL 指向 `localhost`；新增 `docs/local-development.md` 和 `eventguard-ai/.env.local.example`，明确 IDEA、FastAPI、Vite 的启动顺序。未改动生产 Docker 配置。
+- **本地调试**：新增 `eventguard-server/src/main/resources/application-local.yml`，IDEA 使用 `local` profile 时将 Kafka、PostgreSQL 指向 `localhost`；新增 `docs/使用指南/local-development.md` 和 `eventguard-ai/.env.local.example`，明确 IDEA、FastAPI、Vite 的启动顺序。未改动生产 Docker 配置。
 - **LLM 配置中心**：`eventguard-ai/app/main.py` 新增 `GET/PUT /ai/settings/llm` 与 `POST /ai/settings/llm/reset`，复用 `user:manage` 权限；默认仍读取 `EG_LLM_*`，API key 只返回掩码，配置仅驻留 AI 进程内存，修改后重建 LLM 相关惰性单例。
 - **前端体验**：`eventguard-ui/src/App.vue` 改为响应式侧栏 + 顶部状态栏 + 统一工作区主题；`Login.vue` 增加三种演示账号快速填充但不改密码；新增 `admin/LlmSettings.vue`，业务页沿用现有功能并统一卡片、表格、间距和移动端布局。
 - **最新验证**：AI `python -m pytest -q` 通过（125 passed）；前端 `npm test -- --run` 通过（39 passed）、`npm run type-check` 通过、`npm run build` 通过；Vite 本地 `http://127.0.0.1:3000/` 返回 200；Java `mvn test -q` 退出码 0。

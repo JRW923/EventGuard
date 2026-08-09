@@ -1,7 +1,7 @@
 # EventGuard 混沌实验（M5.2）
 
 用 Docker 故障注入验证 EventGuard 的韧性：数据库崩溃不丢数据、消息总线暂停命令端仍可写、
-AI 链路延迟时规则引擎兜底。三种故障均对应计划 `docs/eventguard-plan.md` 的 M5.2 验收点。
+AI 链路延迟时规则引擎兜底。三种故障均对应计划 `docs/架构设计/eventguard-plan.md` 的 M5.2 验收点。
 
 ## 前置条件
 
