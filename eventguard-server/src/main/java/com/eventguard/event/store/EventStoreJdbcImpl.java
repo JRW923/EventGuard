@@ -17,6 +17,11 @@ import java.util.UUID;
 @Component
 public class EventStoreJdbcImpl implements EventStore {
 
+    // ponytail: 当前系统只有 Order 一个聚合，aggregate_type 恒为该值。接口 append 接受任意
+    // DomainEvent，一旦引入第二种聚合，这里会把它错标成 Order。升级路径：给 DomainEvent 加
+    // aggregateType()，由事件自身携带类型，而不是在写入处猜。
+    private static final String AGGREGATE_TYPE_ORDER = "Order";
+
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final EventDeserializer deserializer;
@@ -43,9 +48,10 @@ public class EventStoreJdbcImpl implements EventStore {
             try {
                 jdbc.update(
                         "INSERT INTO domain_events (event_id, aggregate_id, aggregate_type, event_type, event_version, payload, metadata, created_at) " +
-                                "VALUES (?, ?, 'Order', ?, ?, ?::jsonb, ?::jsonb, ?)",
+                                "VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?)",
                         event.getEventId(),
                         event.getAggregateId(),
+                        AGGREGATE_TYPE_ORDER,
                         event.getEventType(),
                         event.getVersion(),
                         toJson(event.getPayload()),

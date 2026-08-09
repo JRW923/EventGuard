@@ -21,13 +21,20 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AnomalyWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(AnomalyWebSocketHandler.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     // ponytail: 会话仅在 afterConnectionClosed 移除，无心跳/空闲剔除；isOpen() 检查防止向死会话发送
     private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
 
+    // 注入 Spring 托管实例，与 REST 响应共用同一套序列化配置（JSR310、命名策略）；
+    // 自建 new ObjectMapper() 会让 WS 推送的告警字段与 /alerts/recent 补拉的不一致。
+    private final ObjectMapper objectMapper;
+
     @Autowired(required = false)
     private EventGuardMetrics metrics;
+
+    public AnomalyWebSocketHandler(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {

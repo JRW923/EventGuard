@@ -19,14 +19,17 @@ import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 通用请求限流（P0-4）：per-IP 滑动窗口计数，超过阈值返回 429。
+ * 通用请求限流（P0-4）：per-IP <b>固定窗口</b>计数，超过阈值返回 429。
  * <p>
  * 放在 AuthFilter 之前（@Order(0)），无论是否登录都限流；登录防爆破仍由
  * LoginAttemptGuard 独立负责。默认每个 IP 每 10 秒最多 60 次请求。
  * <p>
  * 放行路径：/actuator、/health、/gateway（外部网关回调可能高频且来自固定 IP，
  * 不应被普通用户限流规则误伤）、/ws（WebSocket 握手，不走 REST 限流）。
- * ponytail: 单实例内存窗口，多副本部署需共享存储（Redis），记入已知上限。
+ * <p>
+ * ponytail: 两处已知上限。① 固定窗口（非滑动）：窗口到期整段重置，跨边界最坏可放过
+ * 2×maxRequests（窗口末尾 60 次 + 新窗口开头 60 次）。升级路径是改为滑动窗口，
+ * 按时间戳队列或分桶计数。② 单实例内存窗口，多副本部署需共享存储（Redis）。
  */
 @Component
 @Order(0)
@@ -81,12 +84,12 @@ public class RateLimitFilter implements Filter {
         }
     }
 
-    /** 滑动窗口判断：窗口内计数 < maxRequests 则放行并 +1，否则拒绝。 */
+    /** 固定窗口判断：窗口内计数 <= maxRequests 则放行并 +1，否则拒绝；窗口到期整段重置。 */
     private boolean allow(String ip) {
         long now = System.currentTimeMillis();
         long[] window = windows.compute(ip, (k, v) -> {
             if (v == null || now - v[0] >= windowMs) {
-                return new long[]{now, 1}; // 新窗口
+                return new long[]{now, 1}; // 窗口过期，整段重置（固定窗口语义）
             }
             v[1]++;
             return v;

@@ -86,11 +86,21 @@ class EventKafkaConsumer:
                                         pass
                             self.handler(value)
                             self._consumer.commit()
+                            # 重试后成功的 offset 必须从失败计数里摘掉，否则 _failures 随运行时长无界增长
+                            self._failures.pop(self._msg_key(msg), None)
                         except Exception as e:
                             logger.exception("handler error; offset will be retried: %s", e)
                             self._retry_failed_message(msg)
         except Exception as e:
             logger.exception("consume loop error: %s", e)
+
+    def _msg_key(self, msg) -> tuple[str, int, int]:
+        """失败计数的键；getattr 兜底是为了兼容测试里的轻量 mock 消息。"""
+        return (
+            getattr(msg, "topic", self.topic),
+            int(getattr(msg, "partition", 0)),
+            int(getattr(msg, "offset", 0)),
+        )
 
     def _retry_failed_message(self, msg) -> None:
         """有限重试；DLT 发布成功后才提交原 offset，避免坏消息卡死消费组。"""
@@ -98,9 +108,7 @@ class EventKafkaConsumer:
             return
         from kafka import TopicPartition
 
-        topic = getattr(msg, "topic", self.topic)
-        partition = int(getattr(msg, "partition", 0))
-        offset = int(getattr(msg, "offset", 0))
+        topic, partition, offset = self._msg_key(msg)
         key = (topic, partition, offset)
         attempt = self._failures.get(key, 0) + 1
         self._failures[key] = attempt

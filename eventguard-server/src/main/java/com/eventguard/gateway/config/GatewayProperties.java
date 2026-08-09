@@ -1,5 +1,7 @@
 package com.eventguard.gateway.config;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -19,6 +21,8 @@ import java.util.Map;
  */
 @Component
 public class GatewayProperties {
+
+    private static final Logger log = LoggerFactory.getLogger(GatewayProperties.class);
 
     private final String paymentProvider;
     private final String inventoryProvider;
@@ -85,11 +89,14 @@ public class GatewayProperties {
         if (csv == null || csv.isBlank()) return m;
         for (String entry : csv.split(",")) {
             String[] kv = entry.split(":");
-            if (kv.length == 2) {
-                try {
-                    m.put(kv[0].trim(), Integer.parseInt(kv[1].trim()));
-                } catch (NumberFormatException ignored) {
-                }
+            if (kv.length != 2) {
+                log.warn("[网关配置] EG_GATEWAY_MOCK_SKUS 条目格式错误已跳过：'{}'（期望 SKU:数量）", entry);
+                continue;
+            }
+            try {
+                m.put(kv[0].trim(), Integer.parseInt(kv[1].trim()));
+            } catch (NumberFormatException e) {
+                log.warn("[网关配置] EG_GATEWAY_MOCK_SKUS 数量不是整数已跳过：'{}'", entry);
             }
         }
         return m;

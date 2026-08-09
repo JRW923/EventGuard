@@ -1,5 +1,6 @@
 package com.eventguard.gateway.controller;
 
+import com.eventguard.auth.config.ProductionSecurityGuard;
 import com.eventguard.common.dto.CommandResult;
 import com.eventguard.gateway.service.GatewayCallbackService;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,7 +36,8 @@ public class GatewayCallbackController {
     private final boolean signatureRequired;
 
     public GatewayCallbackController(GatewayCallbackService callbackService,
-                                     @Value("${EG_MACHINE_API_KEY:dev-machine-key}") String machineApiKey,
+                                     @Value("${EG_MACHINE_API_KEY:" + ProductionSecurityGuard.DEFAULT_MACHINE_KEY + "}")
+                                     String machineApiKey,
                                      @Value("${EG_GATEWAY_CALLBACK_SECRET:}") String callbackSecret,
                                      @Value("${EG_GATEWAY_CALLBACK_SIGNATURE_REQUIRED:false}") boolean signatureRequired) {
         this.callbackService = callbackService;

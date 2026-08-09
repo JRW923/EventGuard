@@ -1,15 +1,27 @@
 package com.eventguard.auth.config;
 
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-/** 仅在生产环境阻止开发密钥启动；不会修改或禁用三种演示账号。 */
+/**
+ * 仅在生产环境阻止开发密钥启动；不会修改或禁用三种演示账号。
+ * <p>
+ * 非 prod 环境仍允许使用开发默认密钥（保证 `docker compose up` 开箱可演示），
+ * 但会在启动时打 WARN——避免 EG_ENV 忘记设置就把默认密钥带上线而毫无提示。
+ * <p>
+ * 本类同时是两个开发默认密钥的<b>唯一权威定义处</b>，AuthFilter 与
+ * GatewayCallbackController 的 @Value fallback 必须引用这里的常量，不要各写字面量。
+ */
 @Component
 public class ProductionSecurityGuard {
 
-    private static final String DEFAULT_JWT_SECRET = "eventguard-dev-secret-change-me-0123456789abcdef";
-    private static final String DEFAULT_MACHINE_KEY = "dev-machine-key";
+    private static final Logger log = LoggerFactory.getLogger(ProductionSecurityGuard.class);
+
+    public static final String DEFAULT_JWT_SECRET = "eventguard-dev-secret-change-me-0123456789abcdef";
+    public static final String DEFAULT_MACHINE_KEY = "dev-machine-key";
 
     private final String environment;
     private final String jwtSecret;
@@ -45,6 +57,7 @@ public class ProductionSecurityGuard {
     @PostConstruct
     void validate() {
         if (!"prod".equalsIgnoreCase(environment) && !"production".equalsIgnoreCase(environment)) {
+            warnIfDefaultSecrets();
             return;
         }
         if (jwtSecret == null || jwtSecret.isBlank() || DEFAULT_JWT_SECRET.equals(jwtSecret)) {
@@ -67,6 +80,16 @@ public class ProductionSecurityGuard {
         }
         if ("always".equalsIgnoreCase(sqlInitMode)) {
             throw new IllegalStateException("生产环境必须关闭 spring.sql.init.mode=always");
+        }
+    }
+
+    /** EG_ENV 未设为 prod 时不阻止启动，但默认密钥必须留下痕迹，否则忘记配置就会静默上线。 */
+    private void warnIfDefaultSecrets() {
+        if (DEFAULT_JWT_SECRET.equals(jwtSecret)) {
+            log.warn("[安全] 正在使用开发默认 EG_JWT_SECRET（EG_ENV={}）。对外提供服务前必须改为强随机值。", environment);
+        }
+        if (DEFAULT_MACHINE_KEY.equals(machineKey)) {
+            log.warn("[安全] 正在使用开发默认 EG_MACHINE_API_KEY（EG_ENV={}）。对外提供服务前必须改为强随机值。", environment);
         }
     }
 }

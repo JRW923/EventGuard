@@ -39,7 +39,13 @@ class EventLevelDetector:
         self.feature_extractor = feature_extractor or FeatureExtractor()
 
     def detect(self, event: dict) -> AnomalyResult:
-        """检测单事件是否异常"""
+        """检测单事件是否异常。
+
+        ponytail: feature_extractor 是有状态的（update 会推进用户历史基线），本方法未加锁。
+        安全前提是检测只由单条 Kafka 消费线程驱动（KafkaEventConsumer 单线程 +
+        max_poll_records=1）。若将来从 HTTP 端点并发调用 detect，或改成多消费线程，
+        必须先给 feature_extractor 加锁，否则不同订单的特征会互相串味。
+        """
         features = self.feature_extractor.extract(event)
         self.feature_extractor.update(event)  # 推进特征提取器状态，避免推理特征塌缩成常量
         X = np.array([features])

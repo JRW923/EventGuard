@@ -1,6 +1,7 @@
 package com.eventguard.common.websocket;
 
 import com.eventguard.anomaly.model.AnomalyAlert;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -13,7 +14,7 @@ class AnomalyWebSocketHandlerTest {
 
     @Test
     void broadcast_should_send_message_to_all_open_sessions() throws Exception {
-        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler();
+        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler(new ObjectMapper());
 
         WebSocketSession session1 = mock(WebSocketSession.class);
         WebSocketSession session2 = mock(WebSocketSession.class);
@@ -36,7 +37,7 @@ class AnomalyWebSocketHandlerTest {
 
     @Test
     void broadcast_should_skip_closed_sessions() throws Exception {
-        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler();
+        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler(new ObjectMapper());
 
         WebSocketSession open = mock(WebSocketSession.class);
         WebSocketSession closed = mock(WebSocketSession.class);
@@ -59,7 +60,7 @@ class AnomalyWebSocketHandlerTest {
 
     @Test
     void after_connection_closed_should_remove_session() throws Exception {
-        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler();
+        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler(new ObjectMapper());
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(true);
 
@@ -78,7 +79,7 @@ class AnomalyWebSocketHandlerTest {
 
     @Test
     void broadcast_should_continue_other_sessions_when_one_send_fails() throws Exception {
-        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler();
+        AnomalyWebSocketHandler handler = new AnomalyWebSocketHandler(new ObjectMapper());
 
         WebSocketSession ok = mock(WebSocketSession.class);
         WebSocketSession fail = mock(WebSocketSession.class);

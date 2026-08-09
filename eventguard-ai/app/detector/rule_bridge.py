@@ -23,8 +23,9 @@ class RuleBridge:
         """调用规则引擎，命中返回 AnomalyResult，未命中返回 None"""
         request_body = self._build_request(event)
         try:
-            # ponytail: 单条同步阻塞硬超时=2.0s；规则引擎慢即整条事件检测被卡住，升级路径=异步/批量调用+熔断
-            with httpx.Client(timeout=2.0) as client:
+            # ponytail: 单条同步阻塞硬超时（默认 2.0s，EG_RULE_BRIDGE_TIMEOUT_SECONDS 可调）；
+            # 规则引擎慢即整条事件检测被卡住，升级路径=异步/批量调用+熔断
+            with httpx.Client(timeout=settings.rule_bridge_timeout_seconds) as client:
                 resp = client.post(
                     self.url,
                     json=request_body,

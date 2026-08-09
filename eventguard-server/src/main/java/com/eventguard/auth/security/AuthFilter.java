@@ -1,5 +1,6 @@
 package com.eventguard.auth.security;
 
+import com.eventguard.auth.config.ProductionSecurityGuard;
 import com.eventguard.auth.model.AppUser;
 import com.eventguard.auth.repository.UserRepository;
 import io.jsonwebtoken.Claims;
@@ -43,7 +44,8 @@ public class AuthFilter implements Filter {
     private final UserRepository userRepository;
 
     public AuthFilter(JwtService jwtService,
-                      @Value("${EG_MACHINE_API_KEY:dev-machine-key}") String machineApiKey,
+                      @Value("${EG_MACHINE_API_KEY:" + ProductionSecurityGuard.DEFAULT_MACHINE_KEY + "}")
+                      String machineApiKey,
                       UserRepository userRepository) {
         this.jwtService = jwtService;
         this.machineApiKey = machineApiKey;

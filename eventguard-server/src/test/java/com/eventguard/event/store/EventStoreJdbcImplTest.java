@@ -58,7 +58,8 @@ class EventStoreJdbcImplTest {
     void append_should_throw_OptimisticConcurrencyException_on_unique_violation() {
         UUID aggId = UUID.randomUUID();
         when(jdbc.queryForObject(anyString(), eq(Integer.class), eq(aggId))).thenReturn(0);
-        when(jdbc.update(anyString(), any(), any(), any(), any(), any(), any(), any()))
+        // 8 个占位参数：aggregate_type 已从 SQL 字面量改为绑定参数
+        when(jdbc.update(anyString(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new DuplicateKeyException("duplicate"));
         OrderCreatedEvent event = new OrderCreatedEvent(aggId, 1, "u1", new BigDecimal("99"), null);
 

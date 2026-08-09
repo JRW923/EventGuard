@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     llm_retry_backoff_seconds: float = 0.5
     # Item 8：根因分析是否注入相似案例 few-shot（默认关，开则每次分析前检索相似案例并入 prompt）
     ai_rag_fewshot: bool = False
+    # 流程级检测阈值（与 Java 侧规则阈值可配的风格对齐，改阈值不必改代码）
+    # P002 停滞：订单停在 PAID 超过该小时数视为停滞
+    stagnation_timeout_hours: int = 24
+    # P003 死循环：支付重试次数超过该值视为死循环
+    dead_loop_threshold: int = 5
+    # 规则引擎 HTTP 桥接超时（秒）：超时即降级为纯模型检测，不阻塞消费线程
+    rule_bridge_timeout_seconds: float = 2.0
+    # NL 查询 LLM 润色超时（秒）：超时降级为数据摘要
+    nl_answer_timeout_seconds: float = 8.0
     model_dir: str = "models"
     server_base_url: str = "http://eventguard-server:8080"
     # 用户 JWT 校验密钥（与 Java 后端共用 EG_JWT_SECRET，HS256）；生产必须注入强随机值

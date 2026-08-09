@@ -234,8 +234,9 @@ async def predict_order(aggregate_id: str, _: dict = Depends(require_permission(
     try:
         order = await BackendClient().get_order(aggregate_id)
         current_status = order.get("status")
-    except Exception:
-        pass
+    except Exception as exc:
+        # 当前状态只是展示用的补充信息，取不到不影响预测结果，但必须留下痕迹
+        logger.warning("取订单当前状态失败 aggregate_id=%s: %s", aggregate_id, exc)
     return {"aggregate_id": aggregate_id, "current_status": current_status, "prediction": pred}
 
 
@@ -254,7 +255,9 @@ async def predictions_watchlist(limit: int = 10, _: dict = Depends(require_permi
             continue
         try:
             pred = predictor.predict_order(o.get("orderId", ""))
-        except Exception:
+        except Exception as exc:
+            # 单笔预测失败不该让整个 watchlist 变空，跳过并记录
+            logger.warning("watchlist 单笔预测失败 orderId=%s: %s", o.get("orderId"), exc)
             pred = None
         if pred:
             items.append({"orderId": o.get("orderId"), "status": o.get("status"), **pred})

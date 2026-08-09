@@ -1,5 +1,6 @@
 package com.eventguard.auth.security;
 
+import com.eventguard.auth.config.ProductionSecurityGuard;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -23,8 +24,10 @@ import java.util.Map;
 @Component
 public class JwtService {
 
-    // 默认密钥须 ≥32 字节（HS256 要求）；生产必须用 EG_JWT_SECRET 注入强随机值
-    private static final String DEFAULT_SECRET = "eventguard-dev-secret-change-me-0123456789abcdef";
+    // 默认密钥须 ≥32 字节（HS256 要求）；生产必须用 EG_JWT_SECRET 注入强随机值。
+    // 字面量统一由 ProductionSecurityGuard 持有：它负责 prod 硬失败 + 非 prod 启动 WARN，
+    // 两处各写一份会出现「守卫认得、这里不认得」的漂移。
+    private static final String DEFAULT_SECRET = ProductionSecurityGuard.DEFAULT_JWT_SECRET;
     private static final long DEFAULT_EXPIRE_MINUTES = 720; // 12h
 
     private final SecretKey key;

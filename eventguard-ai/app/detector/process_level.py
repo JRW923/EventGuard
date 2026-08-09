@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from app.config import settings
 from app.model.anomaly import Anomaly
 
 logger = logging.getLogger(__name__)
@@ -41,10 +42,10 @@ EVENT_TO_STATE = {
     "OrderRefundedEvent": "REFUNDED",
 }
 
-# 停滞检测的超时时间
-STAGNATION_TIMEOUT = timedelta(hours=24)
-# 死循环检测的阈值
-DEAD_LOOP_THRESHOLD = 5
+# 停滞检测的超时时间（P002）与死循环阈值（P003）：默认值来自 settings，可用
+# EG_STAGNATION_TIMEOUT_HOURS / EG_DEAD_LOOP_THRESHOLD 覆盖，无需改代码。
+STAGNATION_TIMEOUT = timedelta(hours=settings.stagnation_timeout_hours)
+DEAD_LOOP_THRESHOLD = settings.dead_loop_threshold
 # 状态保留事件：补偿/意图类事件不改订单状态，不参与 P001 迁移校验
 STATE_PRESERVING_EVENTS = {"CompensationExecutedEvent", "PaymentRequestedEvent", "InventoryReservationFailedEvent", "OrderRefundRequestedEvent"}
 

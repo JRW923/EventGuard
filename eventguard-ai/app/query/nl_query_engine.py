@@ -7,6 +7,7 @@ from typing import Optional
 
 from app import metrics as egm
 from app.analyzer.llm_client import LLMClient
+from app.config import settings
 from app.query.conversation_store import Conversation
 from app.query.conversation_store import conversation_store as default_conversation_store
 from app.query.intent_classifier import IntentClassifier
@@ -20,7 +21,8 @@ logger = logging.getLogger(__name__)
 # LLM 润色回答的超时上界：LLM 底层 httpx 超时 30s，但前端 axios 只等 10s——
 # 不加这个上界，慢 LLM 会让前端先中止、用户看到「查询失败」而非降级摘要。
 # 8s 内 LLM 无响应 → _generate_answer 捕获超时 → 返回数据摘要，保证 10s 内必有回答。
-LLM_ANSWER_TIMEOUT_SECONDS = 8.0
+# 可用 EG_NL_ANSWER_TIMEOUT_SECONDS 覆盖；改这个值时要同步确认仍小于前端 axios 的 10s。
+LLM_ANSWER_TIMEOUT_SECONDS = settings.nl_answer_timeout_seconds
 
 # 缺参追问提示：目前唯一必填参数是 order_id（event_lookup / trace_replay 缺了无法查询）
 PENDING_PARAM_HINTS = {
