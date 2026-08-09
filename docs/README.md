@@ -22,6 +22,7 @@
 | [deploy-cloudflare-tunnel.md](部署运维/deploy-cloudflare-tunnel.md) | Cloudflare Tunnel 免备案 HTTPS（推荐方案） |
 | [deploy-linux-baota.md](部署运维/deploy-linux-baota.md) | 腾讯云轻量 + 宝塔面板部署 |
 | [gaps-prod-readiness.md](部署运维/gaps-prod-readiness.md) | 生产就绪缺口清单（P0/P1 已落地，P2 待排期） |
+| [deployment-notes-2026-08-09.md](部署运维/deployment-notes-2026-08-09.md) | 上线部署记录：服务器端偏差、alertmanager 回退、R002/R003 修复 |
 
 ## [使用指南/](使用指南/)
 
