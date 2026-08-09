@@ -11,6 +11,7 @@ import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 加载规则上下文：从 domain_events 与 order_view 表查询聚合数据。
@@ -33,8 +34,8 @@ public class RuleContextLoader {
         return RuleContext.builder()
                 .userMeanAmount(userMean)
                 .userStdAmount(estimateStdAmount(userMean))
-                .recentPaymentCompletions(loadRecentPaymentCompletions(event.getAggregateId().toString()))
-                .previousState(loadPreviousState(event.getAggregateId().toString()))
+                .recentPaymentCompletions(loadRecentPaymentCompletions(event.getAggregateId().toString(), event.getEventId()))
+                .previousState(loadPreviousState(event.getAggregateId().toString(), event.getVersion()))
                 .recentCreateOrders(loadRecentCreateOrders(userId))
                 .actualStock(loadActualStock(event))
                 .build();
@@ -69,24 +70,36 @@ public class RuleContextLoader {
         return mean.multiply(new BigDecimal("0.1"));
     }
 
-    private List<Instant> loadRecentPaymentCompletions(String aggregateId) {
+    /**
+     * R002 上下文：同订单的 PaymentCompleted 时间戳。
+     * 排除当前事件自身（AI 桥接评估时该事件已落库，若不排除则单次支付也会被 recent 计为一次，
+     * 导致「任意一次支付都命中重复支付」的假阳性）。
+     */
+    private List<Instant> loadRecentPaymentCompletions(String aggregateId, UUID excludeEventId) {
         try {
             List<Timestamp> ts = jdbc.queryForList(
                     "SELECT created_at FROM domain_events " +
-                            "WHERE aggregate_id=? AND event_type='PaymentCompletedEvent' " +
+                            "WHERE aggregate_id=? AND event_type='PaymentCompletedEvent' AND event_id<>? " +
                             "ORDER BY created_at DESC LIMIT 5",
-                    Timestamp.class, java.util.UUID.fromString(aggregateId));
+                    Timestamp.class, java.util.UUID.fromString(aggregateId), excludeEventId);
             return ts.stream().map(Timestamp::toInstant).toList();
         } catch (Exception e) {
             return List.of();
         }
     }
 
-    private String loadPreviousState(String aggregateId) {
+    /**
+     * R003 上下文：当前事件应用**之前**的聚合状态（order_view）。
+     * 按 version < 当前事件版本取最近一条：order_view 反映的是最新已应用状态，若不按版本过滤，
+     * 评估该事件时（AI 桥接调用）order_view 已含其自身效果，导致任何合法迁移（如 PENDING_PAYMENT→PAID）
+     * 都误报「状态跳跃」。
+     */
+    private String loadPreviousState(String aggregateId, int currentVersion) {
         try {
             List<String> states = jdbc.queryForList(
-                    "SELECT status FROM order_view WHERE order_id=?",
-                    String.class, java.util.UUID.fromString(aggregateId));
+                    "SELECT status FROM order_view WHERE order_id=? AND version < ? " +
+                            "ORDER BY version DESC LIMIT 1",
+                    String.class, java.util.UUID.fromString(aggregateId), currentVersion);
             return states.isEmpty() ? null : states.get(0);
         } catch (Exception e) {
             return null;
