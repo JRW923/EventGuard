@@ -34,10 +34,10 @@ class EventSourcingSuite(Suite):
                  actual=f"orderId={order_id[:8]}…")
 
         # 读己写：带期望版本查询，1 → 200（读模型追上）；99 → 409（投影滞后）
-        r, _ = self.client.get(f"/orders/{order_id}?expectedVersion=1", token=self.ctx.auth.token("operator"))
+        r, _ = self.ctx.client.get(f"/orders/{order_id}?expectedVersion=1", token=self.ctx.auth.token("operator"))
         self.add("read_your_write_ok", "读己写：expectedVersion=1 返回 200", r.status_code == 200,
                  expected="200", actual=f"{r.status_code}")
-        r2, _ = self.client.get(f"/orders/{order_id}?expectedVersion=99", token=self.ctx.auth.token("operator"))
+        r2, _ = self.ctx.client.get(f"/orders/{order_id}?expectedVersion=99", token=self.ctx.auth.token("operator"))
         self.add("read_your_write_lag", "读己写：expectedVersion=99 触发滞后 409",
                  r2.status_code in (409, 200), expected="409（或读模型已追上 200）", actual=f"{r2.status_code}")
 

@@ -100,6 +100,10 @@ def main() -> int:
                     print(f"[{phase}] {suite.id} SKIPPED（限流开启）")
                     result.features.append(suite.result)
                     continue
+                # 限流开启时套件间静置一个固定窗口边界：前一套件的请求在上一窗口计数，
+                # 本套件从干净窗口起步（s05 提速后曾出现同窗堆积导致 s07 全 429）。
+                if ctx.mode.get("rate_limit") and phase == "functional":
+                    time.sleep(ctx.cfg.inter_suite_settle_seconds)
                 print(f"[{phase}] 运行 {suite.id} {suite.name} …")
                 fr = suite.run()
                 result.features.append(fr)

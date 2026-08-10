@@ -39,8 +39,8 @@ class Suite:
         self.result.add(aid, desc, passed, expected, actual, method)
 
     def wait_until(self, fn: Callable[[], object], timeout: float | None = None,
-                   interval: float = 0.3) -> object | None:
-        """轮询直到 fn() 返回真值；超时返回 None。"""
+                   interval: float = 0.5) -> object | None:
+        """轮询直到 fn() 返回真值；超时返回 None。默认 0.5s（≤2 req/s）配合 60/10s 限流。"""
         deadline = time.time() + (timeout or self.ctx.cfg.assert_timeout_seconds)
         while time.time() < deadline:
             try:

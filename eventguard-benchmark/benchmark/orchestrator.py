@@ -19,6 +19,8 @@ class Context:
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
         self.client = ApiClient(cfg.server_base)
+        # AI 服务独立端点（/ai/* 路由在 eventguard-ai:8000，不走 server 反向代理）
+        self.ai_client = ApiClient(cfg.ai_base)
         self.auth = Auth(self.client, cfg)
         self.db = Db(cfg)
         self.prom = Prometheus(cfg.prometheus_url)

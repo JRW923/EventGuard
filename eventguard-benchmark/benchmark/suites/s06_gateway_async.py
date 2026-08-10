@@ -25,7 +25,7 @@ class GatewayAsyncSuite(Suite):
             intent_ok = pay.get("status") == "PAYMENT_REQUESTED"
             self.add(f"pay_intent_{i}", f"支付 {i}：返回异步意图 PAYMENT_REQUESTED", intent_ok,
                      expected="PAYMENT_REQUESTED", actual=str(pay.get("status")))
-            self.wait_until(lambda o=oid: self._status(o) == "PAID", timeout=20, interval=0.2)
+            self.wait_until(lambda o=oid: self._status(o) == "PAID", timeout=20, interval=0.5)
             roundtrips.append(time.time() * 1000.0 - t0)
             self.add(f"pay_complete_{i}", f"支付 {i}：mock 回调后 PAID", self._status(oid) == "PAID",
                      expected="PAID", actual=self._status(oid) or "timeout")

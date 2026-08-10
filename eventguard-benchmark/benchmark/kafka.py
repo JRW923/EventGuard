@@ -26,16 +26,23 @@ class AlertCollector:
         )
         self.alerts: deque[dict] = deque(maxlen=50000)
         self._stop = False
+        self._ready = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
-    def start(self) -> "AlertCollector":
+    def start(self, wait_ready: bool = True) -> "AlertCollector":
         self._thread.start()
+        if wait_ready:
+            # auto_offset_reset=latest 的消费组需 join 并定位到 latest 后才开始收；
+            # 不等就绪直接注入，最早产生的告警会被跳过（实测 R001 偶发漏收）。
+            self._ready.wait(timeout=10)
         return self
 
     def _run(self) -> None:
         try:
             while not self._stop:
                 records = self.consumer.poll(timeout_ms=200)
+                if self.consumer.assignment():
+                    self._ready.set()  # 已 join 分组并定位到 latest
                 for msgs in records.values():
                     for m in msgs:
                         if m.value:
@@ -72,16 +79,21 @@ class EventCollector:
         )
         self.events: deque[dict] = deque(maxlen=50000)
         self._stop = False
+        self._ready = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
-    def start(self) -> "EventCollector":
+    def start(self, wait_ready: bool = True) -> "EventCollector":
         self._thread.start()
+        if wait_ready:
+            self._ready.wait(timeout=10)
         return self
 
     def _run(self) -> None:
         try:
             while not self._stop:
                 records = self.consumer.poll(timeout_ms=200)
+                if self.consumer.assignment():
+                    self._ready.set()
                 for msgs in records.values():
                     for m in msgs:
                         if m.value:

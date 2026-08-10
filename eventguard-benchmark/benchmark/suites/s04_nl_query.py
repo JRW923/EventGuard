@@ -22,18 +22,18 @@ class NlQuerySuite(Suite):
         closed_id = str(uuid.uuid4())
         self.create_order(user, 120.0, closed_id)
         self.pay_order(closed_id)
-        self.wait_until(lambda: self._status(closed_id) == "PAID", timeout=20, interval=0.2)
+        self.wait_until(lambda: self._status(closed_id) == "PAID", timeout=20, interval=0.5)
         self._cmd("POST", f"/orders/{closed_id}/confirm")
         self._cmd("POST", f"/orders/{closed_id}/ship", payload={"trackingNo": "SF-NL"})
         self._cmd("POST", f"/orders/{closed_id}/deliver")
         self._cmd("POST", f"/orders/{closed_id}/close")
-        self.wait_until(lambda: self._status(closed_id) == "CLOSED", timeout=20, interval=0.2)
+        self.wait_until(lambda: self._status(closed_id) == "CLOSED", timeout=20, interval=0.5)
 
         # 另一笔停留 PAID
         paid_id = str(uuid.uuid4())
         self.create_order(user, 80.0, paid_id)
         self.pay_order(paid_id)
-        self.wait_until(lambda: self._status(paid_id) == "PAID", timeout=20, interval=0.2)
+        self.wait_until(lambda: self._status(paid_id) == "PAID", timeout=20, interval=0.5)
 
         # curated 问题集：每项 (question, expected_intent, 校验函数)
         cases = [
@@ -56,8 +56,8 @@ class NlQuerySuite(Suite):
         latencies: list[float] = []
         passed = 0
         for i, (question, expected_intent, check) in enumerate(cases):
-            resp, dt = self.ctx.client.post("/ai/query", token=self.ctx.auth.token("operator"),
-                                            json={"question": question}, timeout=30)
+            resp, dt = self.ctx.ai_client.post("/ai/query", token=self.ctx.auth.token("operator"),
+                                               json={"question": question}, timeout=30)
             latencies.append(dt)
             if resp.status_code != 200:
                 self.add(f"q{i}_{expected_intent}", f"查询 HTTP 200（{question[:20]}…）", False,

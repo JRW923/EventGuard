@@ -56,6 +56,7 @@ class AuthRbacSuite(Suite):
             passed += ok
             self.add(f"machine_{method}_{path.replace('/', '_')}", f"{desc}（期望 {expected}）",
                      ok, expected=str(expected), actual=str(status))
+            self.pace()
 
         # 匿名 / 坏 token
         for label, token in (("anonymous", None), ("bad_token", "not-a-jwt")):
@@ -64,6 +65,7 @@ class AuthRbacSuite(Suite):
             passed += ok
             total += 1
             self.add(f"unauth_{label}", f"{label} 访问被拒（期望 401）", ok, expected="401", actual=str(status))
+            self.pace()
 
         # WS 握手：operator/viewer（anomaly:view）通过；无 token / 坏 token 拒绝
         ws = self._try_import_ws()
@@ -75,11 +77,12 @@ class AuthRbacSuite(Suite):
                 ("no_token", None, False),
                 ("bad_token", "not-a-jwt", False),
             ):
-                ok = self._ws_handshake(ws, ws_url, token) == expect_ok
+                result = self._ws_handshake(ws, ws_url, token)
+                ok = result == expect_ok
                 passed += ok
                 total += 1
                 self.add(f"ws_{label}", f"WS 握手 {label}（{'应通过' if expect_ok else '应拒绝'}）",
-                         ok, expected=str(expect_ok), actual=str(not ok))
+                         ok, expected=str(expect_ok), actual=str(result))
         else:
             self.result.method_notes.append("websocket-client 未安装，WS 握手校验跳过（不影响 HTTP 矩阵）。")
 

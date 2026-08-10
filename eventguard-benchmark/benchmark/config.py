@@ -41,6 +41,9 @@ class Config:
         self.rate_limit_max = int(os.environ.get("EG_RATE_LIMIT_MAX", "60"))
         # 功能套件自节奏：默认 250ms/请求（≤4 req/s），配合有界轮询把单 10s 窗口压在限流阈值内
         self.pacing_ms = float(os.environ.get("BENCH_PACING_MS", "250"))
+        # 套件间 settle：跨过 per-IP 10s 固定窗口边界，避免前一套件请求堆满窗口导致下一套件 429
+        # （s05 提速后 s04+s05+s06 曾同窗堆积、s07 启动即 429）
+        self.inter_suite_settle_seconds = float(os.environ.get("BENCH_INTER_SUITE_SETTLE_SECONDS", "11"))
         # 预检等待 CDC 投影追上的最长时间
         self.cdc_warmup_seconds = float(os.environ.get("BENCH_CDC_WARMUP_SECONDS", "60"))
         # 断言轮询超时（异步事件/回调）
