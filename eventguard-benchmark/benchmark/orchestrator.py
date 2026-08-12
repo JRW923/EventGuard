@@ -119,11 +119,18 @@ def _warm_cdc(ctx: Context) -> None:
 
 
 def load_chaos_results(out_dir: str) -> dict:
-    """导入宿主机 chaos_run.sh 产出的韧性结果（缺失则空 dict）。"""
+    """导入宿主机 chaos_run.sh 产出的韧性结果（缺失则空 dict）。
+
+    chaos_run.sh 产出的是 JSON 数组；统一包成 {"scenarios": [...]}，
+    供 run.py / report 各处按 dict 消费（此前数组直返导致 KPI 汇总崩）。
+    """
     p = Path(out_dir) / "chaos-results.json"
     if not p.exists():
         return {}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(raw, list):
+            return {"scenarios": raw}
+        return raw
     except (json.JSONDecodeError, OSError):
         return {}
