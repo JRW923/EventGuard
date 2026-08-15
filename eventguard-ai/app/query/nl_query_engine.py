@@ -1,5 +1,6 @@
 """NL 查询引擎：意图分类 → 模板执行 → LLM 润色回答。"""
 import asyncio
+import inspect
 import json
 import logging
 import time
@@ -23,6 +24,8 @@ logger = logging.getLogger(__name__)
 # 8s 内 LLM 无响应 → _generate_answer 捕获超时 → 返回数据摘要，保证 10s 内必有回答。
 # 可用 EG_NL_ANSWER_TIMEOUT_SECONDS 覆盖；改这个值时要同步确认仍小于前端 axios 的 10s。
 LLM_ANSWER_TIMEOUT_SECONDS = settings.nl_answer_timeout_seconds
+NL_QUERY_TIMEOUT_SECONDS = settings.nl_query_timeout_seconds
+NL_INTENT_TIMEOUT_SECONDS = settings.nl_intent_timeout_seconds
 
 # 缺参追问提示：目前唯一必填参数是 order_id（event_lookup / trace_replay 缺了无法查询）
 PENDING_PARAM_HINTS = {
@@ -54,18 +57,26 @@ class NLQueryEngine:
     ) -> QueryResult:
         """处理用户问题（可携带会话 id 续聊），返回 QueryResult。"""
         # 1. 取/建会话（无 conversation_id 即开新会话）
+        _t0 = time.monotonic()
         conv = self.conversation_store.get_or_create(conversation_id)
 
         # 2. 意图分类
-        intent = await self.intent_classifier.classify(question)
+        try:
+            intent = await asyncio.wait_for(
+                self.intent_classifier.classify(question), timeout=NL_INTENT_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            intent = self.intent_classifier._classify_by_keyword(question)
+            logger.warning("NL 意图分类超时，使用关键词兜底：%s", intent)
         logger.info("NL 查询意图：%s（问题：%s，会话：%s）", intent, question, conv.conversation_id)
 
-        _t0 = time.time()
         fallback = "false"
         try:
             try:
                 # 3. 模板路由（缺订单号/未知意图时抛出，转追问）
-                data = await self._route(intent, question, conv)
+                data = await asyncio.wait_for(
+                    self._route(intent, question, conv), timeout=self._remaining_timeout(_t0)
+                )
             except ValueError as e:
                 fallback = "true"
                 hint = self._ask_for_param(intent, conv)
@@ -75,9 +86,19 @@ class NLQueryEngine:
                     intent=intent, data=None, answer=hint,
                     conversation_id=conv.conversation_id, needs_input=True,
                 )
+            except asyncio.TimeoutError:
+                fallback = "true"
+                answer = "查询处理超时，已停止等待，请稍后重试。"
+                self._append_history(conv, question, intent, None, answer)
+                return QueryResult(
+                    intent=intent, data=None, answer=answer,
+                    conversation_id=conv.conversation_id,
+                )
 
             # 4. LLM 润色回答
-            answer = await self._generate_answer(question, intent, data, trace_id=trace_id)
+            answer = await self._generate_answer(
+                question, intent, data, trace_id=trace_id, timeout=self._remaining_timeout(_t0)
+            )
             # LLM 失败时 _generate_answer 内部已降级为数据摘要，这里据此标记 fallback
             if answer == self._fallback_answer(intent, data):
                 fallback = "true"
@@ -86,13 +107,18 @@ class NLQueryEngine:
                 intent=intent, data=data, answer=answer, conversation_id=conv.conversation_id,
             )
         finally:
-            egm.nl_query_duration.labels(intent=intent).observe(time.time() - _t0)
+            elapsed = time.monotonic() - _t0
+            egm.nl_query_duration.labels(intent=intent).observe(elapsed)
             egm.nl_query_total.labels(intent=intent, fallback=fallback).inc()
             trace_log.record(
                 "nl_query", intent=intent, conversation_id=conv.conversation_id,
-                latency_ms=round((time.time() - _t0) * 1000, 1), fallback=fallback,
+                latency_ms=round(elapsed * 1000, 1), fallback=fallback,
                 trace_id=trace_id,
             )
+
+    @staticmethod
+    def _remaining_timeout(started: float) -> float:
+        return max(0.01, NL_QUERY_TIMEOUT_SECONDS - (time.monotonic() - started))
 
     async def _route(self, intent: str, question: str, conv: Conversation):
         """模板路由；缺 order_id 时若会话上下文已有订单号则补参重试一次。"""
@@ -111,6 +137,11 @@ class NLQueryEngine:
         """路由成功后把问题里的订单号存进会话上下文，供后续追问补参。"""
         try:
             order_id = self.template_executor.resolve_order_id(question)
+            if inspect.isawaitable(order_id):
+                # TemplateExecutor 的参数提取是同步纯函数；忽略错误注入的异步实现，避免泄漏协程。
+                if inspect.iscoroutine(order_id):
+                    order_id.close()
+                order_id = None
         except Exception:  # mock/异常执行器下防御
             order_id = None
         if isinstance(order_id, str) and order_id:
@@ -152,7 +183,7 @@ class NLQueryEngine:
             raise ValueError(f"未知意图：{intent}")
 
     async def _generate_answer(
-        self, question: str, intent: str, data, trace_id: Optional[str] = None
+        self, question: str, intent: str, data, trace_id: Optional[str] = None, timeout: Optional[float] = None
     ) -> str:
         """LLM 润色回答，失败时返回数据摘要。"""
         try:
@@ -162,7 +193,7 @@ class NLQueryEngine:
             )
             return (await asyncio.wait_for(
                 self.llm_client.generate(prompt, operation="nl_answer", trace_id=trace_id),
-                timeout=LLM_ANSWER_TIMEOUT_SECONDS,
+                timeout=min(LLM_ANSWER_TIMEOUT_SECONDS, timeout or LLM_ANSWER_TIMEOUT_SECONDS),
             )).strip()
         except Exception as e:
             logger.warning("LLM 润色失败，返回数据摘要：%s", e)

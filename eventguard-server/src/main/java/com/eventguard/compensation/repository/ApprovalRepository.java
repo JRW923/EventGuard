@@ -78,10 +78,11 @@ public class ApprovalRepository {
                         rs.getString("decided_by")));
     }
 
-    public void decide(UUID approvalId, String status, String decidedBy) {
-        jdbc.update(
-                "UPDATE compensation_approval SET status = ?, decided_by = ?, decided_at = ? WHERE approval_id = ?",
-                status, decidedBy, Timestamp.from(Instant.now()), approvalId);
+    public boolean decide(UUID approvalId, String status, String decidedBy) {
+        return jdbc.update(
+                "UPDATE compensation_approval SET status = ?, decided_by = ?, decided_at = ? " +
+                        "WHERE approval_id = ? AND status = 'PENDING'",
+                status, decidedBy, Timestamp.from(Instant.now()), approvalId) == 1;
     }
 
     @SuppressWarnings("unchecked")

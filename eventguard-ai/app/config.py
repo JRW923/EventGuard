@@ -1,7 +1,10 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="EG_", env_file=".env", protected_namespaces=("settings_",), extra="ignore"
+    )
     app_name: str = "EventGuard AI"
     kafka_bootstrap: str = "kafka:9092"
     kafka_group_id: str = "ai-event-detector"
@@ -27,17 +30,14 @@ class Settings(BaseSettings):
     rule_bridge_timeout_seconds: float = 2.0
     # NL 查询 LLM 润色超时（秒）：超时降级为数据摘要
     nl_answer_timeout_seconds: float = 8.0
+    nl_query_timeout_seconds: float = 8.0
+    nl_intent_timeout_seconds: float = 2.0
     model_dir: str = "models"
     server_base_url: str = "http://eventguard-server:8080"
     # 用户 JWT 校验密钥（与 Java 后端共用 EG_JWT_SECRET，HS256）；生产必须注入强随机值
     jwt_secret: str = "eventguard-dev-secret-change-me-0123456789abcdef"
     # 机器密钥：AI→后端内部调用（X-API-Key）用，与 Java 侧 EG_MACHINE_API_KEY 一致
     machine_api_key: str = "dev-machine-key"
-
-    class Config:
-        env_prefix = "EG_"
-        env_file = ".env"
-
 
 settings = Settings()
 

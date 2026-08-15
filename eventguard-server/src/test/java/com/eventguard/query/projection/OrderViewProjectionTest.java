@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -28,6 +29,7 @@ class OrderViewProjectionTest {
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
         projection = new OrderViewProjection(jdbc, deserializer, idempotentConsumer);
+        lenient().when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
     }
 
     @Test
@@ -37,8 +39,7 @@ class OrderViewProjectionTest {
         projection.handle(e);
         verify(jdbc).update(
                 eq("INSERT INTO order_view (order_id, status, total_amount, version, updated_at) VALUES (?, ?, ?, ?, now()) " +
-                   "ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status, total_amount = EXCLUDED.total_amount, version = EXCLUDED.version, updated_at = now() " +
-                   "WHERE order_view.version IS NULL OR order_view.version < EXCLUDED.version"),
+                   "ON CONFLICT (order_id) DO NOTHING"),
                 eq(orderId), eq("PENDING_PAYMENT"), eq(new BigDecimal("99.00")), eq(1));
     }
 
@@ -49,8 +50,8 @@ class OrderViewProjectionTest {
         projection.handle(e);
         verify(jdbc).update(
                 eq("UPDATE order_view SET status = 'PAID', payment_time = ?, version = ?, updated_at = now() " +
-                   "WHERE order_id = ? AND (version IS NULL OR version < ?)"),
-                any(), eq(2), eq(orderId), eq(2));
+                   "WHERE order_id = ? AND version = ?"),
+                any(), eq(2), eq(orderId), eq(1));
     }
 
     @Test
@@ -60,8 +61,8 @@ class OrderViewProjectionTest {
         projection.handle(e);
         verify(jdbc).update(
                 eq("UPDATE order_view SET status = 'CONFIRMED', version = ?, updated_at = now() " +
-                   "WHERE order_id = ? AND (version IS NULL OR version < ?)"),
-                eq(4), eq(orderId), eq(4));
+                   "WHERE order_id = ? AND version = ?"),
+                eq(4), eq(orderId), eq(3));
     }
 
     @Test
@@ -71,8 +72,8 @@ class OrderViewProjectionTest {
         projection.handle(e);
         verify(jdbc).update(
                 eq("UPDATE order_view SET status = 'SHIPPED', shipping_time = ?, version = ?, updated_at = now() " +
-                   "WHERE order_id = ? AND (version IS NULL OR version < ?)"),
-                any(), eq(5), eq(orderId), eq(5));
+                   "WHERE order_id = ? AND version = ?"),
+                any(), eq(5), eq(orderId), eq(4));
     }
 
     @Test
@@ -82,14 +83,15 @@ class OrderViewProjectionTest {
         projection.handle(e);
         verify(jdbc).update(
                 eq("UPDATE order_view SET status = 'CLOSED', version = ?, updated_at = now() " +
-                   "WHERE order_id = ? AND (version IS NULL OR version < ?)"),
-                eq(7), eq(orderId), eq(7));
+                   "WHERE order_id = ? AND version = ?"),
+                eq(7), eq(orderId), eq(6));
     }
 
     @Test
     void reset_should_truncate_order_view() {
         projection.reset();
         verify(jdbc).update("TRUNCATE TABLE order_view");
+        verify(jdbc).update("DELETE FROM idempotent_consumers WHERE consumer_group = ?", "order-view");
     }
 
     @Test
@@ -115,5 +117,31 @@ class OrderViewProjectionTest {
         projection.on(new ConsumerRecord<>("domain-events", 0, 0, orderId.toString(), "{}"));
 
         verify(idempotentConsumer).markProcessed("order-view", e.getEventId());
+    }
+
+    @Test
+    void handle_stateless_event_should_advance_version() {
+        UUID orderId = UUID.randomUUID();
+        PaymentRequestedEvent event = new PaymentRequestedEvent(orderId, 2, UUID.randomUUID(), null);
+
+        projection.handle(event);
+
+        verify(jdbc).update(
+                "UPDATE order_view SET version = ?, updated_at = now() WHERE order_id = ? AND version = ?",
+                2, orderId, 1);
+    }
+
+    @Test
+    void on_version_gap_should_not_mark_event_processed() {
+        UUID orderId = UUID.randomUUID();
+        PaymentCompletedEvent event = new PaymentCompletedEvent(orderId, 3, "pay-1", null);
+        when(deserializer.deserializeFromKafka(any(Object.class))).thenReturn(event);
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(0);
+        when(jdbc.queryForList("SELECT version FROM order_view WHERE order_id = ?", Integer.class, orderId))
+                .thenReturn(java.util.List.of(1));
+
+        assertThatThrownBy(() -> projection.on(new ConsumerRecord<>("domain-events", 0, 0, orderId.toString(), "{}")))
+                .isInstanceOf(IllegalStateException.class);
+        verify(idempotentConsumer, never()).markProcessed(anyString(), any(UUID.class));
     }
 }

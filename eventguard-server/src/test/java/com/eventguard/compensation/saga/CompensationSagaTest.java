@@ -79,6 +79,7 @@ class CompensationSagaTest {
                 approvalId, sagaId, "RISKY", aggregateId, Map.of("amount", BigDecimal.valueOf(200)),
                 "PENDING", "saga", Instant.now(), null, null);
         when(approvalRepository.findByApprovalId(approvalId)).thenReturn(Optional.of(approval));
+        when(approvalRepository.decide(approvalId, "APPROVED", "operator")).thenReturn(true);
 
         SagaStatus resumed = saga.onApproved(approvalId, true, "operator");
 
@@ -119,6 +120,7 @@ class CompensationSagaTest {
         ApprovalRepository.Approval approval = new ApprovalRepository.Approval(
                 approvalId, sagaId, "RISKY", aggregateId, params, "PENDING", "saga", Instant.now(), null, null);
         when(approvalRepository.findByApprovalId(approvalId)).thenReturn(Optional.of(approval));
+        when(approvalRepository.decide(approvalId, "APPROVED", "operator")).thenReturn(true);
 
         // 启动恢复 → 实例回到内存，状态 AWAITING_APPROVAL
         saga.recoverPending(approval);
@@ -143,6 +145,20 @@ class CompensationSagaTest {
                 "APPROVED", "saga", Instant.now(), Instant.now(), "operator");
         when(approvalRepository.findByApprovalId(any())).thenReturn(Optional.of(approval));
         assertThat(saga.onApproved(UUID.randomUUID(), true, "operator")).isEqualTo(SagaStatus.FAILED);
+    }
+
+    @Test
+    void failed_step_stops_saga_without_running_following_steps() {
+        when(registry.get("FAIL")).thenReturn(action(false));
+        when(registry.get("NEXT")).thenReturn(action(false));
+        when(compensationService.execute(any(CompensationRequest.class)))
+                .thenReturn(CompensationResult.failure("gateway unavailable"));
+
+        SagaStatus status = saga.start(UUID.randomUUID(), List.of(
+                new SagaStep("FAIL", Map.of()), new SagaStep("NEXT", Map.of())));
+
+        assertThat(status).isEqualTo(SagaStatus.FAILED);
+        verify(compensationService, times(1)).execute(any(CompensationRequest.class));
     }
 
     @Test

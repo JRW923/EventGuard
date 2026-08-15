@@ -11,6 +11,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
+import java.util.TreeMap;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 补偿服务：校验白名单 → 转 CompensationCommand → dispatch 到 CompensationCommandHandler。
@@ -48,19 +52,25 @@ public class CompensationService {
             return CompensationResult.failure("动作 " + actionType + " 不在白名单");
         }
 
-        // 2. 转补偿命令并 dispatch
+        var action = registry.get(actionType);
+        Map<String, Object> actionParams = request.getParams() == null
+                ? new HashMap<>() : new HashMap<>(request.getParams());
+        String idempotencyKey = aggregateId + ":" + actionType + ":" + new TreeMap<>(actionParams);
+        actionParams.putIfAbsent("__idempotency_key", idempotencyKey);
+        CompensationResult actionResult = action.executeResult(aggregateId, actionParams);
+        if (!actionResult.isSuccess()) {
+            log.warn("[补偿] 动作执行失败，未写入完成事件：{}", actionResult.getMessage());
+            return actionResult;
+        }
+
+        // 2. 外部动作成功后再记录完成事件，避免事件语义与真实结果相反。
         CompensationCommand cmd = new CompensationCommand(
-                UUID.randomUUID(), aggregateId, actionType, request.getParams());
+                UUID.nameUUIDFromBytes(idempotencyKey.getBytes(StandardCharsets.UTF_8)), aggregateId, actionType, actionParams);
         try {
             CommandResult result = commandHandler.handle(cmd);
             if (result.success()) {
-                // MVP：动作 execute 仅生成人工可读的执行描述，不触发真实业务副作用（见 ponytail 注释）
-                var action = registry.get(actionType);
-                String detail = action != null
-                        ? action.execute(aggregateId, request.getParams())
-                        : "补偿已执行";
-                log.info("[补偿] 执行成功：{}", detail);
-                return CompensationResult.success(detail + "（事件版本 " + result.version() + "）");
+                log.info("[补偿] 执行成功：{}", actionResult.getMessage());
+                return CompensationResult.success(actionResult.getMessage() + "（事件版本 " + result.version() + "）");
             } else {
                 return CompensationResult.failure(result.error());
             }

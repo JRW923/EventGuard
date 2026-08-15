@@ -44,7 +44,15 @@ public class CompensationController {
     }
 
     @PostMapping
-    public ResponseEntity<CompensationResult> execute(@RequestBody CompensationRequest request) {
+    public ResponseEntity<?> execute(@RequestBody CompensationRequest request) {
+        var action = registry.get(request.getActionType());
+        if (action != null && action.requiresApproval(request.getAggregateId(),
+                request.getParams() != null ? request.getParams() : Map.of())) {
+            SagaStatus status = saga.start(request.getAggregateId(),
+                    List.of(new SagaStep(request.getActionType(),
+                            request.getParams() != null ? request.getParams() : Map.of())));
+            return ResponseEntity.accepted().body(Map.of("status", status.name(), "message", "高风险补偿已提交人工审批"));
+        }
         CompensationResult result = service.execute(request);
         // ponytail: 计划 verify 清单要求 unknown action 返回 400；白名单拒绝属失败，统一按成功/失败映射 200/400
         return result.isSuccess() ? ResponseEntity.ok(result) : ResponseEntity.badRequest().body(result);

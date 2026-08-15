@@ -38,7 +38,10 @@ public class AggregateRepository {
         if (snapOpt.isPresent()) {
             Snapshot snap = snapOpt.get();
             agg = OrderAggregate.fromStateMap(snap.getState());
-            fromVersion = snap.getVersion() + 1;
+            // EventStore.loadFrom uses a strict `event_version > fromVersion` boundary.
+            // Pass the version already covered by the snapshot so the first incremental
+            // event is not skipped after a version-100 snapshot.
+            fromVersion = snap.getVersion();
         } else {
             agg = new OrderAggregate();
             fromVersion = 0;

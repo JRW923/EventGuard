@@ -3,6 +3,8 @@ package com.eventguard.compensation.action;
 import java.util.Map;
 import java.util.UUID;
 
+import com.eventguard.compensation.model.CompensationResult;
+
 /**
  * 补偿动作接口（白名单动作实现此接口）。
  */
@@ -32,4 +34,8 @@ public interface CompensationAction {
      * @return 动作执行结果描述
      */
     String execute(UUID aggregateId, Map<String, Object> params);
+
+    default CompensationResult executeResult(UUID aggregateId, Map<String, Object> params) {
+        return CompensationResult.success(execute(aggregateId, params));
+    }
 }

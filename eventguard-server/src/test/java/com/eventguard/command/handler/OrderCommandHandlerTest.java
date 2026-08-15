@@ -44,6 +44,7 @@ class OrderCommandHandlerTest {
                 new GatewayProperties("mock", "mock", "mock", 0.0, 0, "SKU-A:100"));
         handler = new OrderCommandHandler(aggregateRepository, commandLogRepository, retryTemplate, transactionManager,
                 inventoryGateway);
+        lenient().when(commandLogRepository.find(any())).thenReturn(Optional.empty());
     }
 
     @Test
@@ -60,7 +61,7 @@ class OrderCommandHandlerTest {
         CommandResult result = handler.handle(cmd);
 
         assertThat(result.success()).isTrue();
-        verify(commandLogRepository).save(eq(cmd.getCommandId()), eq(orderId), eq("CreateOrderCommand"), any());
+        verify(commandLogRepository).save(eq(cmd.getCommandId()), eq(orderId), eq("CreateOrderCommand"), any(), any());
     }
 
     @Test
@@ -68,9 +69,16 @@ class OrderCommandHandlerTest {
         UUID commandId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         CommandResult previous = CommandResult.success(1);
-        when(commandLogRepository.loadResult(commandId)).thenReturn(Optional.of(previous));
-
         CreateOrderCommand cmd = new CreateOrderCommand(commandId, orderId, "u1", new BigDecimal("99"));
+        CommandLogRepository.Entry entry = new CommandLogRepository.Entry(
+                commandId, orderId, "CreateOrderCommand", commandLogRepository.fingerprint(cmd), previous);
+        when(commandLogRepository.find(commandId)).thenReturn(Optional.of(entry));
+        when(retryTemplate.executeWithRetry(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Supplier<CommandResult> supplier = inv.getArgument(0);
+            return supplier.get();
+        });
+
         CommandResult result = handler.handle(cmd);
 
         assertThat(result).isEqualTo(previous);
@@ -90,8 +98,6 @@ class OrderCommandHandlerTest {
             Supplier<CommandResult> s = inv.getArgument(0);
             return s.get();
         });
-        when(commandLogRepository.loadResult(any())).thenReturn(Optional.empty());
-
         PayOrderCommand cmd = new PayOrderCommand(UUID.randomUUID(), orderId, "pay-1");
         CommandResult result = handler.handle(cmd);
 

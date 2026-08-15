@@ -1,6 +1,7 @@
 package com.eventguard.compensation.action;
 
 import com.eventguard.gateway.InventoryGateway;
+import com.eventguard.compensation.model.CompensationResult;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -24,11 +25,16 @@ public class MarkOutOfStockAction implements CompensationAction {
 
     @Override
     public String execute(UUID aggregateId, Map<String, Object> params) {
+        return executeResult(aggregateId, params).getMessage();
+    }
+
+    @Override
+    public CompensationResult executeResult(UUID aggregateId, Map<String, Object> params) {
         Object sku = params.get("sku");
         InventoryGateway.MarkOutOfStockResult result = inventoryGateway.markOutOfStock(
                 sku != null ? sku.toString() : "SKU-unknown");
         return result.success()
-                ? "已标记 SKU " + sku + " 缺货"
-                : "标记缺货失败：" + result.error();
+                ? CompensationResult.success("已标记 SKU " + sku + " 缺货")
+                : CompensationResult.failure("标记缺货失败：" + result.error());
     }
 }

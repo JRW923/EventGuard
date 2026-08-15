@@ -3,9 +3,11 @@ package com.eventguard.compensation.service;
 import com.eventguard.command.handler.CompensationCommandHandler;
 import com.eventguard.common.dto.CommandResult;
 import com.eventguard.compensation.action.CompensationActionRegistry;
+import com.eventguard.compensation.action.CompensationAction;
 import com.eventguard.compensation.model.CompensationRequest;
 import com.eventguard.compensation.model.CompensationResult;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -21,6 +23,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class CompensationServiceTest {
@@ -31,8 +34,17 @@ class CompensationServiceTest {
     @Mock
     CompensationActionRegistry registry;
 
+    @Mock
+    CompensationAction action;
+
     @InjectMocks
     CompensationService service;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(registry.get(any())).thenReturn(action);
+        lenient().when(action.executeResult(any(), any())).thenReturn(CompensationResult.success("done"));
+    }
 
     @Test
     void execute_should_reject_unknown_action_type() {
@@ -82,5 +94,17 @@ class CompensationServiceTest {
 
         assertThat(result.isSuccess()).isFalse();
         assertThat(result.getMessage()).contains("db error");
+    }
+
+    @Test
+    void execute_should_not_write_completion_event_when_action_fails() {
+        CompensationRequest req = new CompensationRequest("REFUND", UUID.randomUUID(), Map.of());
+        when(registry.isSupported("REFUND")).thenReturn(true);
+        when(action.executeResult(any(), any())).thenReturn(CompensationResult.failure("gateway failed"));
+
+        CompensationResult result = service.execute(req);
+
+        assertThat(result.isSuccess()).isFalse();
+        verify(commandHandler, never()).handle(any());
     }
 }

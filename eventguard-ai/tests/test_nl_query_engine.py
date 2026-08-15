@@ -145,6 +145,56 @@ class TestNLQueryEngine:
         # 返回降级摘要而非抛出超时异常
         assert "PAID" in result.answer or "abc" in result.answer
 
+    @pytest.mark.asyncio
+    async def test_query_intent_timeout_uses_keyword_fallback(self, monkeypatch):
+        monkeypatch.setattr("app.query.nl_query_engine.NL_INTENT_TIMEOUT_SECONDS", 0.05)
+        mock_classifier = AsyncMock()
+
+        async def slow_classify(_question: str):
+            await asyncio.sleep(1.0)
+            return "trace_replay"
+
+        mock_classifier.classify.side_effect = slow_classify
+        mock_classifier._classify_by_keyword = MagicMock(return_value="event_lookup")
+        mock_executor = AsyncMock()
+        mock_executor.execute_event_lookup.return_value = {"orderId": "abc", "status": "PAID"}
+        mock_llm = AsyncMock()
+        mock_llm.generate.return_value = "订单 abc 当前状态为 PAID。"
+        engine = NLQueryEngine(
+            intent_classifier=mock_classifier,
+            template_executor=mock_executor,
+            llm_client=mock_llm,
+        )
+
+        result = await engine.query("查询订单 abc")
+
+        assert result.intent == "event_lookup"
+        mock_classifier._classify_by_keyword.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_query_template_timeout_returns_controlled_fallback(self, monkeypatch):
+        monkeypatch.setattr("app.query.nl_query_engine.NL_QUERY_TIMEOUT_SECONDS", 0.05)
+        mock_classifier = AsyncMock()
+        mock_classifier.classify.return_value = "event_lookup"
+        mock_executor = AsyncMock()
+
+        async def slow_lookup(_question: str):
+            await asyncio.sleep(1.0)
+            return {"orderId": "abc"}
+
+        mock_executor.execute_event_lookup.side_effect = slow_lookup
+        mock_llm = AsyncMock()
+        engine = NLQueryEngine(
+            intent_classifier=mock_classifier,
+            template_executor=mock_executor,
+            llm_client=mock_llm,
+        )
+
+        result = await engine.query("查询订单 abc")
+
+        assert result.data is None
+        assert "超时" in result.answer
+
     # ---------- 多轮对话 / 追问澄清（Item 1） ----------
 
     @pytest.mark.asyncio

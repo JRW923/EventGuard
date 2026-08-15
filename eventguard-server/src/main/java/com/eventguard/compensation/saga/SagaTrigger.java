@@ -1,6 +1,7 @@
 package com.eventguard.compensation.saga;
 
 import com.eventguard.common.metrics.EventGuardMetrics;
+import com.eventguard.common.idempotent.IdempotentConsumer;
 import com.eventguard.event.model.DomainEvent;
 import com.eventguard.event.model.InventoryReservationFailedEvent;
 import com.eventguard.event.model.OrderCancelledEvent;
@@ -14,6 +15,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -40,17 +42,21 @@ public class SagaTrigger {
     private final CompensationSaga compensationSaga;
     private final EventDeserializer deserializer;
     private final JdbcTemplate jdbc;
+    private final IdempotentConsumer idempotentConsumer;
 
     @Autowired(required = false)
     private EventGuardMetrics metrics;
 
-    public SagaTrigger(CompensationSaga compensationSaga, EventDeserializer deserializer, JdbcTemplate jdbc) {
+    public SagaTrigger(CompensationSaga compensationSaga, EventDeserializer deserializer, JdbcTemplate jdbc,
+                       IdempotentConsumer idempotentConsumer) {
         this.compensationSaga = compensationSaga;
         this.deserializer = deserializer;
         this.jdbc = jdbc;
+        this.idempotentConsumer = idempotentConsumer;
     }
 
     @KafkaListener(topics = "domain-events", groupId = "saga-trigger")
+    @Transactional
     public void on(ConsumerRecord<String, Object> record) {
         DomainEvent event;
         try {
@@ -59,8 +65,13 @@ public class SagaTrigger {
             log.error("[Saga] 反序列化失败 offset={}", record.offset(), e);
             throw new IllegalStateException("Saga 事件反序列化失败", e);
         }
+        if (idempotentConsumer.isProcessed("saga-trigger", event.getEventId())) {
+            log.debug("[Saga] 触发事件已处理，跳过 eventId={}", event.getEventId());
+            return;
+        }
         try {
             handle(event);
+            idempotentConsumer.markProcessed("saga-trigger", event.getEventId());
         } catch (Exception e) {
             log.error("[Saga] 处理事件失败 eventId={}", event.getEventId(), e);
             throw new IllegalStateException("Saga 事件处理失败", e);

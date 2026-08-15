@@ -51,6 +51,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_NUM_PARTITIONS: 3
       TZ: Asia/Shanghai
     healthcheck:
       test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
@@ -100,6 +101,8 @@ services:
     environment:
       TZ: Asia/Shanghai
       JAVA_TOOL_OPTIONS: "-Xms128m -Xmx384m"
+      EG_RATE_LIMIT_ENABLED: ${EG_RATE_LIMIT_ENABLED:-true}
+      EG_PROJECTION_CONCURRENCY: ${EG_PROJECTION_CONCURRENCY:-3}
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
@@ -192,6 +195,11 @@ services:
       EG_SAGA_ENABLED: ${EG_SAGA_ENABLED:-true}
       BENCH_SUITES: ${BENCH_SUITES:-functional}
       BENCH_OUT: /out
+      BENCH_LOAD_WARMUP_SECONDS: ${BENCH_LOAD_WARMUP_SECONDS:-10}
+      BENCH_LOAD_RAMP_SECONDS: ${BENCH_LOAD_RAMP_SECONDS:-35}
+      BENCH_LOAD_HOLD_SECONDS: ${BENCH_LOAD_HOLD_SECONDS:-30}
+      BENCH_READ_YOUR_WRITE_TARGET: ${BENCH_READ_YOUR_WRITE_TARGET:-520}
+      BENCH_READ_YOUR_WRITE_WORKERS: ${BENCH_READ_YOUR_WRITE_WORKERS:-16}
     volumes:
       - "./eventguard-benchmark/out:/out:rw"
     depends_on:

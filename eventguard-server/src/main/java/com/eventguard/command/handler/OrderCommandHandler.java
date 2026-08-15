@@ -68,8 +68,8 @@ public class OrderCommandHandler {
     }
 
     public CommandResult handle(ReserveInventoryCommand cmd) {
-        // 幂等先行（避免重放/重试重复触发网关副作用）
-        Optional<CommandResult> existing = commandLogRepository.loadResult(cmd.getCommandId());
+        // 顺序重复请求直接返回；并发请求由 execute 内的数据库事务锁串行化。
+        Optional<CommandResult> existing = commandLogRepository.loadFor(cmd);
         if (existing.isPresent()) {
             return existing.get();
         }
@@ -120,19 +120,22 @@ public class OrderCommandHandler {
      * （如库存不足 reserve 失败）。command_log 记录相同结果，保证幂等回放一致。
      */
     private CommandResult execute(Command cmd, Consumer<OrderAggregate> action, String error) {
-        // 1. 幂等检查（事务外）
-        Optional<CommandResult> existing = commandLogRepository.loadResult(cmd.getCommandId());
-        if (existing.isPresent()) {
-            if (metrics != null) {
-                metrics.counter("eventguard.command.total", "command", cmd.getClass().getSimpleName(),
-                        "result", "idempotent");
-            }
-            return existing.get();
-        }
         long start = System.currentTimeMillis();
         try {
-            // 2. 事务内执行（含重试）：加载/处理/保存事件 + 写命令日志（同事务，保证原子性）
+            // 事务内先按 commandId 获取数据库事务锁，再检查日志。并发相同命令因此会
+            // 读取首个事务的结果，而不是在事务外预查后各自执行一次领域逻辑。
             CommandResult result = retryTemplate.executeWithRetry(() -> transactionTemplate.execute((TransactionCallback<CommandResult>) status -> {
+                commandLogRepository.lock(cmd.getCommandId());
+                Optional<CommandLogRepository.Entry> existing = commandLogRepository.find(cmd.getCommandId());
+                String requestHash = commandLogRepository.fingerprint(cmd);
+                if (existing.isPresent()) {
+                    commandLogRepository.assertCompatible(existing.get(), cmd, requestHash);
+                    if (metrics != null) {
+                        metrics.counter("eventguard.command.total", "command", cmd.getClass().getSimpleName(),
+                                "result", "idempotent");
+                    }
+                    return existing.get().result();
+                }
                 OrderAggregate order = aggregateRepository.load(cmd.getAggregateId());
                 action.accept(order);
                 aggregateRepository.save(order);
@@ -140,7 +143,7 @@ public class OrderCommandHandler {
                         ? CommandResult.success(order.getVersion())
                         : new CommandResult(true, order.getVersion(), error, cmd.getAggregateId());
                 commandLogRepository.save(cmd.getCommandId(), cmd.getAggregateId(),
-                        cmd.getClass().getSimpleName(), r);
+                        cmd.getClass().getSimpleName(), r, requestHash);
                 return r;
             }));
             if (metrics != null) {

@@ -31,43 +31,56 @@ class ThroughputSuite(Suite):
         warmup = _env("BENCH_LOAD_WARMUP_SECONDS", 10)
         ramp = _env("BENCH_LOAD_RAMP_SECONDS", 35)
         hold = _env("BENCH_LOAD_HOLD_SECONDS", 30)
+        read_target = int(_env("BENCH_READ_YOUR_WRITE_TARGET", 520))
+        reader_count = int(_env("BENCH_READ_YOUR_WRITE_WORKERS", 16))
         token = self.ctx.auth.token("operator")
         run_id = self.ctx.run_id
 
         stop = threading.Event()
         lock = threading.Lock()
         results: list[tuple[float, bool]] = []  # (write_lat_ms, core_ok) — 写路径
-        read_results: list[bool] = []  # 读己写抽样结果（最终一致语义，独立于写吞吐）
-        read_pool: list[str] = []  # 待读回己写的 orderId 池
+        read_results: list[bool] = []  # 读己写抽样结果（目标版本及关键字段均匹配）
+        read_pool: list[tuple[str, int, float]] = []  # (orderId, expectedVersion, totalAmount)
         failures: dict[str, int] = {}  # 失败原因（状态码/异常类型）→ 次数，诊断用
         workers: list[threading.Thread] = []
         active = 0
 
         def reader() -> None:
-            """读己写抽样：从池里取 orderId，GET 轮询到投影追上（≤2s）。"""
+            """读己写抽样：轮询至投影版本追上，并核对状态、金额。"""
             client = ApiClient(self.ctx.cfg.server_base)
             try:
-                while not stop.is_set():
-                    oid: str | None = None
+                while True:
+                    sample: tuple[str, int, float] | None = None
                     with lock:
-                        if read_pool:
-                            oid = read_pool.pop(0)
-                    if oid is None:
+                        if len(read_results) < read_target and read_pool:
+                            sample = read_pool.pop(0)
+                    if sample is None:
+                        if stop.is_set():
+                            return
                         time.sleep(0.02)
                         continue
-                    r3, _ = client.get(f"/orders/{oid}", token=token, timeout=15)
-                    ok = r3.status_code == 200
-                    if not ok and r3.status_code == 404:
-                        # CDC 异步投影实测滞后 ~0.4-0.6s，轮询追赶（最终一致语义）
-                        deadline = time.time() + 2.0
-                        while time.time() < deadline and r3.status_code == 404:
-                            time.sleep(0.1)
-                            r3, _ = client.get(f"/orders/{oid}", token=token, timeout=15)
-                        ok = r3.status_code == 200
+                    oid, expected_version, total_amount = sample
+                    r3, _ = client.get(
+                        f"/orders/{oid}", token=token, timeout=3,
+                        params={"expectedVersion": expected_version},
+                    )
+                    ok = False
+                    if r3.status_code == 200:
+                        try:
+                            body = r3.json()
+                            ok = (
+                                int(body.get("version", -1)) >= expected_version
+                                # Mock 网关可在 pay 响应返回前同步完成回调，PAID 是合法的更晚状态。
+                                and body.get("status") in {"PENDING_PAYMENT", "PAID"}
+                                and float(body.get("totalAmount", -1)) == total_amount
+                            )
+                        except (TypeError, ValueError):
+                            pass
                     with lock:
                         read_results.append(ok)
                         if not ok:
-                            failures[f"get:{r3.status_code}"] = failures.get(f"get:{r3.status_code}", 0) + 1
+                            key = f"get:{r3.status_code}"
+                            failures[key] = failures.get(key, 0) + 1
             finally:
                 client.close()
 
@@ -90,10 +103,15 @@ class ThroughputSuite(Suite):
                             if not core_ok:
                                 with lock:
                                     failures[f"pay:{r2.status_code}"] = failures.get(f"pay:{r2.status_code}", 0) + 1
-                            # 写路径延迟在 pay 完成即采样（不含读轮询），并把 orderId 交给读己写抽样
+                            # 写路径延迟在 pay 完成即采样（不含读轮询），读侧以支付命令返回版本为目标。
                             with lock:
                                 results.append((time.time() * 1000.0 - t0, core_ok))
-                                read_pool.append(oid)
+                                if core_ok:
+                                    try:
+                                        expected_version = int(r2.json()["version"])
+                                        read_pool.append((oid, expected_version, 99.0))
+                                    except (KeyError, TypeError, ValueError):
+                                        failures["pay:missing_version"] = failures.get("pay:missing_version", 0) + 1
                         else:
                             with lock:
                                 failures[f"create:{r1.status_code}"] = failures.get(f"create:{r1.status_code}", 0) + 1
@@ -122,7 +140,7 @@ class ThroughputSuite(Suite):
             for _ in range(2):
                 spawn()
             # 读己写抽样线程：独立于写吞吐，异步轮询池内 orderId 的最终一致性
-            for _ in range(4):
+            for _ in range(reader_count):
                 spawn_reader()
             time.sleep(warmup)
 
@@ -138,6 +156,7 @@ class ThroughputSuite(Suite):
             with lock:
                 results.clear()
                 read_results.clear()
+                read_pool.clear()
             hold_start = time.time()
             time.sleep(hold)
         finally:
@@ -169,12 +188,19 @@ class ThroughputSuite(Suite):
                  expected="<5%", actual=f"{error_rate:.2%}")
         self.add("load_p95", "写路径 p95 延迟 < 500ms", (lat_p.get("p95_ms") or 9999) < 500,
                  expected="<500ms", actual=f"{lat_p.get('p95_ms')}ms")
+        read_ok = len(read_results) >= read_target and all(read_results[:read_target])
+        self.add("load_read_your_write",
+                 f"至少 {read_target} 次读己写达到目标版本且关键字段一致", read_ok,
+                 expected=f">={read_target} 次且全部匹配",
+                 actual=f"{len(read_results)} 次，成功 {sum(read_results)} 次")
 
         self.result.metrics = {
             "qps": round(qps, 2),
             "error_rate": round(error_rate, 4),
             "get_read_your_write_rate": round(get_rate, 4),
             "read_samples": len(read_results),
+            "read_target": read_target,
+            "read_successes": sum(read_results),
             "iterations": total,
             "concurrency": levels[-1],
             "hold_seconds": round(hold_seconds, 1),
@@ -186,10 +212,11 @@ class ThroughputSuite(Suite):
         self.result.conclusion = (
             f"稳态 {levels[-1]} 并发：QPS={qps:.1f}，写路径错误率={error_rate:.2%}，"
             f"p50={lat_p.get('p50_ms')}ms p95={lat_p.get('p95_ms')}ms p99={lat_p.get('p99_ms')}ms，"
-            f"读己写(异步抽样)成功率={get_rate:.1%}。"
+            f"读己写(目标版本、状态、金额)={sum(read_results)}/{len(read_results)}，目标样本={read_target}。"
         )
         self.result.method_notes.append(
             f"限流关闭（eg.rate-limit.enabled=false）下运行；Profile=warmup {warmup:.0f}s → 爬坡 {ramp:.0f}s → "
-            f"稳态 {hold:.0f}s；写路径延迟在 pay 完成即采样；读己写由独立线程异步抽样（CDC 最终一致，≤2s 轮询），"
+            f"稳态 {hold:.0f}s；写路径延迟在 pay 完成即采样；读己写从支付响应提取目标版本，独立线程以 "
+            f"expectedVersion 查询并断言版本、状态、金额（服务端≤2s 轮询，目标 {read_target} 次），"
             f"不阻塞写吞吐。"
         )

@@ -61,7 +61,7 @@ class AggregateRepositoryTest {
                 "retryCount", 0);
         when(snapshotStore.load(orderId)).thenReturn(Optional.of(
                 new Snapshot(orderId, "Order", 2, state, java.time.Instant.now())));
-        when(eventStore.loadFrom(orderId, 3)).thenReturn(List.of());
+        when(eventStore.loadFrom(orderId, 2)).thenReturn(List.of());
 
         OrderAggregate agg = repo.load(orderId);
 

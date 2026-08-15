@@ -105,7 +105,7 @@ public class CompensationSaga {
                 log.info("[Saga] {} 步骤 {} 需审批，挂起 approvalId={}", saga.sagaId, step.actionType(), approvalId);
                 return saga.status;
             }
-            executeStep(saga, step);
+            if (!executeStep(saga, step)) return fail(saga);
             saga.index++;
         }
         saga.status = SagaStatus.COMPLETED;
@@ -117,18 +117,29 @@ public class CompensationSaga {
         return saga.status;
     }
 
-    private void executeStep(SagaInstance saga, SagaStep step) {
+    private boolean executeStep(SagaInstance saga, SagaStep step) {
         long start = System.currentTimeMillis();
         try {
             CompensationResult result = compensationService.execute(new CompensationRequest(
                     step.actionType(), saga.aggregateId, step.params()));
             log.info("[Saga] 步骤 {} 执行结果 success={} {}", step.actionType(), result.isSuccess(), result.getMessage());
+            return result.isSuccess();
+        } catch (Exception e) {
+            log.error("[Saga] 步骤 {} 执行异常", step.actionType(), e);
+            return false;
         } finally {
             if (metrics != null) {
                 metrics.record("eventguard.saga.step.duration", System.currentTimeMillis() - start,
                         "action", step.actionType());
             }
         }
+    }
+
+    private SagaStatus fail(SagaInstance saga) {
+        saga.status = SagaStatus.FAILED;
+        instances.remove(saga.sagaId);
+        if (metrics != null) metrics.counter("eventguard.saga.final_status", "status", "FAILED");
+        return saga.status;
     }
 
     /**
@@ -145,7 +156,10 @@ public class CompensationSaga {
             log.warn("[Saga] 审批单已处理过 approvalId={} status={}", approvalId, approval.status());
             return SagaStatus.FAILED;
         }
-        approvalRepository.decide(approvalId, approved ? "APPROVED" : "REJECTED", decidedBy);
+        if (!approvalRepository.decide(approvalId, approved ? "APPROVED" : "REJECTED", decidedBy)) {
+            log.warn("[Saga] 审批单已被其他请求处理 approvalId={}", approvalId);
+            return SagaStatus.FAILED;
+        }
 
         SagaInstance saga = instances.get(approval.sagaId());
         if (saga == null) {
@@ -153,17 +167,13 @@ public class CompensationSaga {
             return SagaStatus.FAILED;
         }
         if (!approved) {
-            saga.status = SagaStatus.FAILED;
-            instances.remove(saga.sagaId);
-            if (metrics != null) {
-                metrics.counter("eventguard.saga.final_status", "status", "FAILED");
-            }
+            fail(saga);
             log.info("[Saga] {} 被拒绝，标记 FAILED", saga.sagaId);
             return saga.status;
         }
         // 已审批通过：该步骤执行，index 前进后继续
         SagaStep step = saga.steps.get(saga.index);
-        executeStep(saga, step);
+        if (!executeStep(saga, step)) return fail(saga);
         saga.index++;
         return run(saga);
     }
