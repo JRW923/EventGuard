@@ -19,6 +19,11 @@ scrape_configs:
     static_configs:
       - targets: ["eventguard-ai:8000"]
 
+  # 主机指标（node_exporter），支撑 HostMemoryLow / HostMemoryCritical 告警
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
   # 如需抓取 Postgres / 容器指标，取消注释并确保对应服务存在：
   # - job_name: "postgres"
   #   static_configs: [{ targets: ["postgres-exporter:9187"] }]

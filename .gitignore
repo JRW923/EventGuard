@@ -21,6 +21,8 @@ dist/
 # Env
 .env
 *.env.local
+# 飞书告警中继的密钥文件（含 webhook + 签名 secret，禁止入库）
+feishu-relay/feishu.env
 
 # OS
 .DS_Store

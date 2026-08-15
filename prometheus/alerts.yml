@@ -22,3 +22,24 @@ groups:
         annotations:
           summary: "EventGuard 5xx 错误率偏高"
           description: "过去 5 分钟 5xx 占比超过 5%（{{ $value | humanizePercentage }}）"
+
+  # ===== 主机内存告警（node_exporter）=====
+  # 上次宕机(08-15)时可用内存仅 ~372MB（约 10%），故设 20% 预警、10% 临界，留足处理时间。
+  - name: host
+    rules:
+      - alert: HostMemoryLow
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "主机可用内存低于 20%"
+          description: "可用内存仅剩 {{ $value | printf \"%.1f\" }}%，已低于 20% 预警线。请尽快释放内存或扩容，避免重演 08-15 宕机。"
+      - alert: HostMemoryCritical
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 10
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "主机可用内存低于 10%（临界）"
+          description: "可用内存仅剩 {{ $value | printf \"%.1f\" }}%，已逼近 08-15 宕机时的水平，请立即处理！"

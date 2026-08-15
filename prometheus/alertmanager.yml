@@ -12,6 +12,6 @@ route:
 receivers:
   - name: "webhook"
     webhook_configs:
-      # 未配置时使用黑洞地址，避免误把告警发到宿主机。
-      - url: "http://127.0.0.1:65534/alert"
+      # 转发到本机飞书中继(监听 eventguard 网桥网关 172.18.0.1:9102，再转成飞书格式外发)
+      - url: "http://172.18.0.1:9102/webhook"
         send_resolved: true

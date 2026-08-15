@@ -15,6 +15,8 @@ services:
     image: postgres:16
     ports: ["5432:5432"]
     logging: *default-logging
+    # ponytail: 防止 PG 在长时间运行后缓存膨胀吃掉整机内存（上次宕机根因之一）；1.5g 远高于当前占用，仅作兜底封顶
+    mem_limit: 1.5g
     environment:
       TZ: Asia/Shanghai
       POSTGRES_DB: ${POSTGRES_DB}
@@ -114,6 +116,8 @@ services:
       args:
         PIP_INDEX_URL: ${PIPE_INDEX_URL:-https://pypi.org/simple}
     logging: *default-logging
+    # ponytail: AI 服务兜底内存封顶（Python 进程可能随模型/缓存膨胀）；1.5g 留足余量，不会误杀
+    mem_limit: 1.5g
     # ponytail: 开发期在宿主跑 Vite dev server 时，需经 localhost:8000 代理到 AI 服务（与 server 的 8080 同理）
     ports: ["8000:8000"]
     stop_grace_period: 15s
@@ -138,6 +142,7 @@ services:
       # 当前 Cloudflare 代理走 Flexible，源站只用 80，证书由 Cloudflare 边缘提供。
       - "/var/www/letsencrypt:/var/www/letsencrypt"
     logging: *default-logging
+    mem_limit: 512m
     depends_on: [eventguard-server]
 
   # ponytail: Cloudflare Tunnel 出网代理，绕过未备案域名的 Host 拦截。
@@ -151,6 +156,7 @@ services:
     env_file: .env
     # ponytail: 隧道是长连接，断了要能自恢复；其余服务沿用默认 no-restart 策略，此处单独开。
     logging: *default-logging
+    mem_limit: 512m
     depends_on: [eventguard-ui]
 
   pumba:
@@ -229,6 +235,22 @@ services:
     mem_limit: 300m
     logging: *default-logging
     depends_on: [eventguard-server]
+
+  # ===== P0-2 主机指标（node_exporter）：让 Prometheus 能采集宿主机内存/负载，支撑主机内存告警 =====
+  # 仅挂只读 /proc /sys，禁用 filesystem 采集（内存告警只需 meminfo），开销极小，不影响业务容器。
+  node-exporter:
+    <<: *default-restart
+    image: prom/node-exporter:v1.8.2
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--no-collector.filesystem"
+    volumes:
+      - "/proc:/host/proc:ro"
+      - "/sys:/host/sys:ro"
+    ports: ["9100:9100"]
+    mem_limit: 100m
+    logging: *default-logging
 
   alertmanager:
     <<: *default-restart
