@@ -114,6 +114,6 @@ def render_all(result: RunResult, out_dir: str | Path) -> list[tuple[str, Path]]
         p = out / "chaos-recovery.png"
         fig.savefig(p, dpi=120)
         plt.close(fig)
-        charts.append("混沌恢复时间", p)
+        charts.append(("混沌恢复时间", p))
 
     return charts

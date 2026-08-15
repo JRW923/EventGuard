@@ -36,7 +36,7 @@ public class EventDeserializer {
                 case "PaymentFailedEvent" -> new PaymentFailedEvent(eventId, aggregateId, version, occurredAt, metadata,
                         p.get("reason").asText());
                 case "PaymentRetriedEvent" -> new PaymentRetriedEvent(eventId, aggregateId, version, occurredAt, metadata,
-                        p.get("retryCount").asInt());
+                        p.has("retryCount") ? p.get("retryCount").asInt() : p.path("attempt").asInt());
                 case "PaymentRequestedEvent" -> new PaymentRequestedEvent(eventId, aggregateId, version, occurredAt, metadata,
                         p.hasNonNull("commandId") ? UUID.fromString(p.get("commandId").asText()) : null);
                 case "InventoryReservedEvent" -> new InventoryReservedEvent(eventId, aggregateId, version, occurredAt, metadata,

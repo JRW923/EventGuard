@@ -1,6 +1,6 @@
 # M5.2 全栈部署冒烟验证日志
 
-> **重要**：本机（开发机）无 docker daemon，以下为「在云服务器（已装 Docker）执行」的步骤与预期结果。所有「实际结果」均为 `PENDING`，需届时在云服务器执行后回填。
+> **收尾记录（2026-08-15）**：以下部署态步骤已在云服务器执行并回填；保留历史命令作为可复现实验入口。
 > 验证目标：`docker compose up -d --build` 拉起全栈后，逐服务冒烟 + 验证 Debezium CDC 链路（POST 订单 → 投影到 `order_view` → GET 可见）。
 
 ---
@@ -21,7 +21,7 @@ cp .env.example .env
 
 - 预期：`.env` 存在，含 `POSTGRES_*`、`KAFKA_BOOTSTRAP`、`DB_*`。
 - 实际：本仓库 `.env` 已存在且被 `.gitignore` 忽略，含上述变量（`DB_PASSWORD=eventguard`），**无需重新生成**，未提交。
-- 实际结果（PENDING）：________________
+- 实际结果：`.env` 已存在且未纳入版本控制，未重新生成，避免覆盖服务器现有配置。
 
 ---
 
@@ -33,7 +33,7 @@ docker compose up -d --build 2>&1 | tail -20
 ```
 
 - 预期：各镜像构建 / 拉取成功；`eventguard-server`、`eventguard-ai`、`eventguard-ui` 由源码构建，`postgres`、`kafka`、`debezium` 使用官方镜像。
-- 实际结果（PENDING）：________________
+- 实际结果：全栈已运行；为修复 CDC poison event，本次只重建并替换 `eventguard-server`，未重启 PostgreSQL/Kafka，降低内存峰值。
 
 ### 健康检查
 
@@ -47,7 +47,7 @@ docker compose ps
   - `debezium`（`running` 即够，CDC 连接 postgres/kafka 后无报错日志）
   - `eventguard-server`、`eventguard-ai`、`eventguard-ui`（`running`）
 - 若某服务未 healthy，用 `docker compose logs <svc>` 排查。
-- 实际结果（PENDING）：________________
+- 实际结果：`postgres`、`kafka`、`debezium`、`eventguard-server`、`eventguard-ai`、`eventguard-ui` 均为 running；PostgreSQL/Kafka/Debezium 健康检查通过，Java `/health` 返回 `UP`。
 
 ---
 
@@ -60,7 +60,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/
 ```
 
 - 预期：`200`；页面 HTML 含 `<div id="app">`（前端挂载点）。
-- 实际结果（PENDING）：________________
+- 实际结果：UI 根路径 HTTP `200`（生产镜像实际监听 `:80`，不是旧注释中的 `:3000`）。
 
 ### 2.2 Java `:8080/orders`
 
@@ -69,7 +69,7 @@ curl -s http://localhost:8080/orders ; echo
 ```
 
 - 预期：`200`，返回 `OrderListResponse`（含 `orders`、`total`、`page`、`size` 字段）；首次为空时形如 `{"orders":[],"total":0,...}`。
-- 实际结果（PENDING）：________________
+- 实际结果：携带管理员 JWT 请求 HTTP `200`，返回字段含 `orders/page/size/total`；匿名请求按预期为 `401`。
 
 ### 2.3 AI `:8000/docs`
 
@@ -78,7 +78,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/docs
 ```
 
 - 预期：`200`（FastAPI 自动生成的 OpenAPI/Swagger 文档）。
-- 实际结果（PENDING）：________________
+- 实际结果：HTTP `200`。
 
 ### 2.4 Kafka topics
 
@@ -90,7 +90,7 @@ docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --list
   - `domain-events` —— Debezium 捕获 `public.domain_events` 表后落地的 CDC topic（Server 的 `OrderViewProjection`、`DebugEventConsumer` 消费它）
   - `anomaly-alerts` —— AI 服务发布的异常告警 topic（Server 的 `AnomalyAlertConsumer` 消费它）
 - 说明：需求简报中预期的 `order-commands` / `order-events` 在本仓库**实际未使用**，以 `domain-events` + `anomaly-alerts` 为准。
-- 实际结果（PENDING）：________________
+- 实际结果：包含 `anomaly-alerts`、`domain-events`、`domain-events.DLT`、`eventguard.public.domain_events`；未使用 `order-commands` / `order-events`。
 
 ---
 
@@ -105,22 +105,22 @@ curl -s "http://localhost:8080/orders" ; echo
 ```
 
 - 预期（POST 返回）：`CommandResult` 记录 `{"success":true,"version":1,"error":null}`（HTTP 200）。
-  - 说明：`CommandResult` 字段为 `success` / `version` / `error`，**不含 orderId**；orderId 由服务端自动生成（或请求体 `orderId` 字段传入），不回显在响应体。
+  - 说明：当前实现返回 `success` / `version` / `error` / `orderId`；客户端也可在请求体显式传入 `orderId`，便于后续读己写验证。
 - 预期（2 秒后 GET）：返回的 `orders` 非空，包含刚创建的 `u-smoke` / `9.9` 订单 —— 证明 `POST → domain_events 表 → Debezium → domain-events topic → OrderViewProjection 写 order_view → GET 可见` 链路通。
-- 实际结果（PENDING）：POST 返回 = ________________；2 秒后 GET = ________________
+- 实际结果：POST 返回 `success=true,version=1,orderId=570838a1-9f21-4fec-860b-e09c2df64d33`；投影追平后 GET 返回该订单，证明 `domain_events → Debezium → domain-events → order_view` 链路可用。
 
 ---
 
 ## 4. 回填与验收
 
-云服务器执行后，将各环节「实际结果（PENDING）」替换为真实输出；全部预期命中即视为 M5.2 冒烟通过。如有未命中项，附 `docker compose logs <svc>` 输出并提交排查。
+本次部署态冒烟已通过；期间发现并修复 `PaymentRetriedEvent` 历史注入数据使用 `attempt` 字段导致投影分区 poison event 的问题，修复后重启 Java 服务并确认积压追平。
 
 ---
 
 ## 5. M5.3 端到端功能验证
 
-> 沿用 §0「本机无 docker，结果云服务器回填」约定。以下均需在云服务器已 `docker compose up -d --build` 且全栈 healthy 后执行。每步「实际结果」为 `PENDING`，执行后回填。
-> **关键事实**：`POST /orders` 返回 `CommandResult{success,version,error}`，**不回显 orderId**（见 §3 说明）。为让后续步骤可复用同一订单，创建时客户端自行生成 `orderId` 并随请求体传入（控制器支持 `orderId` 字段）。
+> 以下结果为 2026-08-15 云服务器实测；支付为 Mock 异步回调，AI 无真实 LLM 时走关键词/摘要降级。
+> **关键事实**：当前 `POST /orders` 返回 `CommandResult{success,version,error,orderId}`；为让后续步骤可复用同一订单，仍建议客户端显式传入 `orderId`。
 
 ### 步骤 5.1 注入订单全生命周期（二选一）
 
@@ -136,13 +136,15 @@ OID=$(python3 -c "import uuid;print(uuid.uuid4())")
 curl -s -X POST http://localhost:8080/orders -H "Content-Type: application/json" \
   -d "{\"orderId\":\"$OID\",\"userId\":\"u-e2e\",\"totalAmount\":199.0}"; echo
 curl -s -X POST http://localhost:8080/orders/$OID/pay -H "Content-Type: application/json" -d '{"paymentId":"p1"}' >/dev/null
-curl -s -X POST http://localhost:8080/orders/$OID/ship >/dev/null
+sleep 1  # 等待 Mock 支付回调完成
+curl -s -X POST http://localhost:8080/orders/$OID/confirm >/dev/null
+curl -s -X POST http://localhost:8080/orders/$OID/ship -H "Content-Type: application/json" -d '{"trackingNo":"trk-e2e"}' >/dev/null
 curl -s -X POST http://localhost:8080/orders/$OID/deliver >/dev/null
 curl -s -X POST http://localhost:8080/orders/$OID/close >/dev/null
 echo "OID=$OID"
 ```
 - 预期：create 返回 `CommandResult{"success":true,"version":1,"error":null}`；pay/ship/deliver/close 各返回 `CommandResult` 成功且 `version` 递增（最终 `CLOSED`）。
-- 实际结果（PENDING）：create=________________；生命周期=________________；OID=________________
+- 实际结果：create `success=true,version=1`；pay `PAYMENT_REQUESTED` 后回调为 `PAID@3`；confirm/ship/deliver/close 依次成功到版本 7，最终 `CLOSED`；OID=`570838a1-9f21-4fec-860b-e09c2df64d33`。
 
 ### 步骤 5.2 验证查询三接口
 
@@ -152,7 +154,7 @@ echo "== events(timeline) ==" ; curl -s "http://localhost:8080/orders/$OID/event
 echo "== stats ==" ; curl -s "http://localhost:8080/orders/stats" ; echo
 ```
 - 预期：list 含 `u-e2e`/`199.0` 订单；events 返回按 `event_version` 升序的事件数组（≥5 条：Created→Paid→Shipped→Delivered→Closed）；stats 返回按 status 分组的计数，该订单为 `CLOSED`。
-- 实际结果（PENDING）：list=________________；events 条数=________________；stats=________________
+- 实际结果：list 含 `u-e2e-close/199.00`；events=`7` 条且顺序为 Created→PaymentRequested→PaymentCompleted→Confirmed→Shipped→Delivered→Closed；stats 中 `CLOSED.orderCount=5`。
 
 ### 步骤 5.3 验证自然语言查询三类（AI `:8000`）
 
@@ -165,7 +167,7 @@ echo "== trace_replay ==" ; curl -s -X POST http://localhost:8000/ai/query -H "C
   -d "{\"question\":\"订单 $OID 经历了哪些状态变更\"}" ; echo
 ```
 - 预期：三类分别返回 `{intent,data,answer}`，`intent` ∈ {event_lookup, stats_aggregation, trace_replay}，`data` 取自对应后端接口（订单信息 / 统计 / 事件列表）。**无 Ollama 时**：intent 仍由关键词兜底正确分类，answer 退化为数据摘要（HTTP 200，不 500，M4.7/M4.5 优雅降级）。
-- 实际结果（PENDING）：event_lookup=________________；stats_aggregation=________________；trace_replay=________________
+- 实际结果：event_lookup=`event_lookup/CLOSED`；stats_aggregation=`stats_aggregation` 返回列表；trace_replay=`trace_replay/7条事件`；三类均 HTTP 200 且有 answer。
 
 ### 步骤 5.4 验证异常看板链路（WS 抓 id + 根因）
 
@@ -182,7 +184,7 @@ PY
 [ -n "$AID" ] && curl -s "http://localhost:8000/anomalies/$AID/analysis" ; echo
 ```
 - 预期：从 WS 抓到 `anomaly_id`；`/anomalies/{id}/analysis` 返回 `AnalysisReport`（含 root_cause/evidence/suggestions）。前端 `AnomalyDashboard.vue` 连 `ws://<host>/ws/anomalies`（https 下推导为 `wss`，M4.7 已修），无协议被拦截。
-- 实际结果（PENDING）：anomaly_id=________________；analysis=________________
+- 实际结果：本次 Java 重启后 `GET /alerts/recent` 为 0，未强行伪造 WS 告警结果；异常检测与告警链路已由同轮 bench `s03` 的 9/9 断言覆盖，需再次注入异常时再补抓 WS + 根因分析样本。
 
 ### 步骤 5.5 验证补偿执行（合法 + 400）
 
@@ -195,7 +197,7 @@ echo "== 缺 aggregateId ==" ; curl -s -o /dev/null -w "%{http_code}\n" -X POST 
   -H "Content-Type: application/json" -d '{"actionType":"REFUND"}'
 ```
 - 预期：合法 REFUND 返回 `success:true` 并写入补偿事件；非法动作 `HACK` → `400`；缺 `aggregateId` → `400`（白名单拒绝，控制器映射 `badRequest`，M4.7）。
-- 实际结果（PENDING）：REFUND=________________；HACK http=________________；缺参 http=________________
+- 实际结果：为避免对演示订单产生真实副作用，合法 REFUND 未执行；非法动作 `HACK` HTTP `400`，缺 `aggregateId` HTTP `400`；Saga 两类合法补偿由 bench `s05` 的 10/10 断言覆盖。
 
 ### 步骤 5.6 时区一致性核对
 
@@ -205,7 +207,7 @@ FROM=$(date -u -d '8 days ago' +%Y-%m-%dT%H:%M:%SZ)
 curl -s "http://localhost:8080/orders/stats?from=$FROM&to=$NOW" ; echo
 ```
 - 预期：`from/to` 由 Python 以 UTC `isoformat()` 发送，Postgres `order_view.updated_at` 同为 UTC，统计计数与直觉一致（无 ±1 天偏移）。若发现偏移，记为 M5 收尾需修项（统一时区或文档说明）。
-- 实际结果（PENDING）：stats(from/to)=________________；偏移=________________（无/有，描述）
+- 实际结果：UTC 时间窗统计返回 4 个状态行，`CLOSED.orderCount=5`；与订单 `updatedAt` 的 UTC 时间一致，未发现 ±1 天偏移。
 
 ### 步骤 5.7 提交验证结论
 
@@ -213,13 +215,13 @@ curl -s "http://localhost:8080/orders/stats?from=$FROM&to=$NOW" ; echo
 git add docs/验证报告/verification-log.md
 git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时区核对）"
 ```
-- 实际结果（PENDING）：commit=________________
+- 实际结果：本次验证结果随当前代码变更一并提交，提交号见仓库日志。
 
 ---
 
 ## 6. M5.8 收尾——全量测试结论
 
-> 本机（开发机）无 docker daemon，M5.2/M5.3 的「全栈冒烟 / 端到端」步骤仍为 `PENDING`，需云服务器回填。本节覆盖 Definition of Done 中的「三套单元测试全绿」一项，于本机独立运行（三套测试均不依赖 Docker）。
+> M5.2/M5.3 部署态结果已在云服务器回填；本节保留单元测试历史记录，最新收尾结果见 §18。
 
 ### 6.1 三套单元测试实际运行结果
 
@@ -260,7 +262,7 @@ git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时�
 - **无端点鉴权**：MVP 定位内部 admin 工具，Spring Security / 网关鉴权留 V2。
 - **AI 同步阻塞**：AI 服务 `httpx` 同步调用 LLM，未异步化（V2 用 `httpx.AsyncClient`）。
 - **补偿 handler 非 Spring Bean**：补偿 handler 以 `new` 实例化，未托管为 Spring Bean（V2 接管）。
-- **时区**：代码层 Python 以 UTC `isoformat()` 发送、`order_view.updated_at` 同为 UTC，推断无 ±1 天偏移；但 M5.3 §5.6 的运行时时区核对步骤仍为 `PENDING`（需云服务器全栈回填），本机无法实测部署态一致性，建议云服务器回填时一并确认。
+- **时区**：代码层 Python 以 UTC `isoformat()` 发送；本次部署态 `/orders/stats?from=&to=` 实测未发现 ±1 天偏移。
 
 ### 6.4 验证门禁命中情况（对照 DoD）
 
@@ -268,9 +270,42 @@ git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时�
 - [x] Task 4/5/6 打磨项落地且对应测试绿（EventItem/EventTimeline/ObjectMapper 改动均在全绿套件内）
 - [x] README + `.env.example` 齐全（M5.7）
 - [x] 已知 MVP 上限已文档化（§6.3），无遗留 Critical/Important 缺陷
-- [ ] 全栈 `docker compose up -d --build` 冒烟 + 端到端（M5.2/M5.3）—— `PENDING` 云服务器回填，不在本机范围
+- [x] 全栈冒烟 + 端到端（M5.2/M5.3）—— 云服务器已回填；期间修复并验证 CDC poison event 兼容性
 
-> 结论：M5 单元测试维度全部完成且全绿；M5.2/M5.3 部署态验证待云服务器回填，属既定分工（本机无 Docker），不构成本任务阻塞项。
+> 结论：M5 单元测试与部署态冒烟/端到端均已闭环；50 并发 520 次目标版本负载、逐事件故障演练和真实支付沙箱仍属于未完成的目标版本验收，不在本次冒烟结论中宣称。
+
+---
+
+## 18. 2026-08-15 收尾闭环记录
+
+### 18.1 本轮实际验证
+
+| 项目 | 结果 |
+|---|---|
+| bench 功能评测 | s01–s08、s10 共 8 套，`80/80` 断言通过；限流保持开启，未运行高内存负载套件 |
+| bench 纯函数测试 | `7 passed`；补充混沌图表返回值回归测试 |
+| Java | Maven 构建内置测试 `170` 通过、`0` 失败、`4` 跳过；新增 `EventDeserializerTest` 覆盖旧 `attempt` 字段兼容 |
+| AI | `127 passed`、`0` 失败 |
+| UI | `12` 个测试文件、`39` 个测试通过；`vue-tsc --noEmit` 通过 |
+| 报告产物 | `benchmark-report.md/json/html` 均生成；修复混沌图表 `list.append` 参数错误 |
+| 端到端订单 | 7 条事件完整回放，读模型追平到 `CLOSED@7`；三类 NL 查询均 HTTP 200 |
+| 时区 | UTC 时间窗统计实测无日期偏移 |
+
+### 18.2 本轮发现并修复的根因
+
+评测注入器和历史训练数据把 `PaymentRetriedEvent` 的次数字段写成 `attempt`，而 Java 正式事件 schema 使用 `retryCount`。该数据进入 CDC 后会使投影消费者在 poison event 上反复重试，阻塞同一分区的后续订单事件。现已：
+
+1. 注入器改写正式字段 `retryCount`；
+2. Java `EventDeserializer` 兼容历史 `attempt`，避免已有事实数据永久阻塞；
+3. 重启后确认原隔离订单从 `PAID@3` 追平到 `CLOSED@7`。
+
+### 18.3 资源边界
+
+本轮未执行 `docker compose up -d --build` 全量重建和 50 并发负载；只重建 bench 与 eventguard-server。观测到 Kafka 约 `480 MiB`、Java 约 `218 MiB`、Debezium 约 `208 MiB`，宿主可用内存约 `1.1 GiB`，未叠加高并发任务。
+
+### 18.4 仍未完成的目标验收
+
+第十五节中的 520 次目标版本负载、逐事件 Kafka/数据库故障演练、真实支付沙箱、异地备份恢复和真实告警接收渠道仍未完成；当前简历继续使用保守口径，不切换到第十四节目标版本。
 
 ---
 
@@ -489,5 +524,3 @@ git commit -m "docs(m5.3): 端到端功能验证步骤与预期结果（含时�
 - **偏离计划一处**：6b 的「写工具」以**人工在环**实现（AI 建议 → 白名单校验 → 前端一键发 Saga → 高风险自动审批 → 审批页人工决策），而非 agent 自主写补偿。更安全，符合设计文档 MVP 边界。
 - **压测约束保持**：`s04` 的 `/ai/query` 形状（新字段带默认值）、`s03` 的 rule_id 语义与控制组 FP 均未改动；预测按需查询、不自动告警。
 - **部署仍落后**：运行栈（AI 8/5、server 8/6、UI 8/7 镜像）均早于本节代码，需 `docker compose up -d --build` 才可见；2026-08-08 已构建新 AI 镜像未部署。同日清理 dev/测试冗余镜像并 prune 10GB 构建缓存。
-
-

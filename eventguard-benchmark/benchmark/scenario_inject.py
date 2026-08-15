@@ -55,5 +55,5 @@ def dead_loop_retries(order_id: str, start_version: int, user: str, count: int =
     events = []
     for i in range(count):
         events.append(_base(order_id, "PaymentRetriedEvent", start_version + i,
-                            {"orderId": order_id, "attempt": i + 1}, _iso(ts + timedelta(minutes=i)), user))
+                            {"orderId": order_id, "retryCount": i + 1}, _iso(ts + timedelta(minutes=i)), user))
     return events

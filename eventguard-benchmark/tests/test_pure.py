@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from benchmark.report.model import FeatureResult, Kpi, RunResult
+from benchmark.report.charts import render_all
 from benchmark.scenario_inject import dead_loop_retries, duplicate_payment, stale_paid
 from benchmark.state_machine import replay_status
 from benchmark.timeutil import iso_to_epoch_ms, percentile, percentiles
@@ -53,6 +54,7 @@ def test_scenario_injectors():
 
     retries = dead_loop_retries("agg-3", 2, "u3", count=7)
     assert len(retries) == 7
+    assert retries[0]["payload"]["retryCount"] == 1
     assert retries[0]["event_version"] == 2
     assert retries[6]["event_version"] == 8
 
@@ -69,3 +71,10 @@ def test_report_model():
     d = r.to_dict()
     assert d["features"][0]["assertions"][1]["passed"] is False
     assert d["executive_summary"]["headline_kpis"][0]["value"] == 1.0
+
+
+def test_render_chaos_chart_returns_title_path_tuple(tmp_path):
+    result = RunResult(chaos={"scenarios": [{"name": "db", "recovery_seconds": 1.2, "pass": True}]})
+    charts = render_all(result, tmp_path)
+    assert ("混沌恢复时间", tmp_path / "chaos-recovery.png") in charts
+    assert (tmp_path / "chaos-recovery.png").is_file()
