@@ -1,0 +1,23 @@
+# Cloudflare Tunnel 本地 ingress：按 hostname 把流量路由到各内部服务。
+# 配合 `cloudflared --token $TUNNEL_TOKEN --config /etc/cloudflared/config.yml tunnel run` 使用：
+# token 负责隧道身份认证，本文件负责"哪个子域名 → 哪个 docker 服务"。
+# 注意：Cloudflare Zero Trust 面板仍需为下列子域名各加一条 Public Hostname（指向本隧道），
+# 边缘才会把对应 Host 的请求送进隧道；cloudflared 收到后按下面的 hostname 匹配转发。
+tunnel: 343ed7a5-adbf-4ad9-8978-a3d997d5e558
+credentials-file: /etc/cloudflared/credentials.json
+ingress:
+  - hostname: jrwdev.site
+    service: http://eventguard-ui:80
+  - hostname: www.jrwdev.site
+    service: http://eventguard-ui:80
+  - hostname: grafana.jrwdev.site
+    service: http://caddy:8088
+  - hostname: prometheus.jrwdev.site
+    service: http://caddy:8088
+  - hostname: alerts.jrwdev.site
+    service: http://caddy:8088
+  - hostname: kafka.jrwdev.site
+    service: http://caddy:8088
+  - hostname: db.jrwdev.site
+    service: http://caddy:8088
+  - service: http_status:404

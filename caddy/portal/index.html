@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EventGuard 面板门户</title>
+<style>
+  :root { --bg:#0f1420; --card:#1a2233; --accent:#4f9dff; --text:#e6edf3; --muted:#8b98ad; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         background:var(--bg); color:var(--text); min-height:100vh; padding:40px 20px; }
+  .wrap { max-width:980px; margin:0 auto; }
+  h1 { font-size:24px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 28px; font-size:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
+  a.card { display:block; background:var(--card); border:1px solid #26304a; border-radius:12px;
+           padding:18px 20px; text-decoration:none; color:var(--text); transition:.15s; }
+  a.card:hover { border-color:var(--accent); transform:translateY(-2px); }
+  .name { font-size:16px; font-weight:600; margin-bottom:6px; }
+  .desc { font-size:13px; color:var(--muted); line-height:1.5; }
+  .tag { display:inline-block; margin-top:10px; font-size:11px; color:var(--accent);
+         border:1px solid #2c4a78; border-radius:6px; padding:2px 8px; }
+  footer { margin-top:32px; color:var(--muted); font-size:12px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>EventGuard 面板门户</h1>
+  <p class="sub">所有运维面板统一入口 · 经 SSH 隧道本机访问</p>
+  <div class="grid">
+    <a class="card" href="/grafana/">
+      <div class="name">Grafana 监控大屏</div>
+      <div class="desc">指标 + 日志 + 数据库统一可视化；看 “EventGuard 概览” Dashboard。登录 admin/admin。</div>
+      <span class="tag">/grafana</span>
+    </a>
+    <a class="card" href="/prometheus/">
+      <div class="name">Prometheus</div>
+      <div class="desc">原始指标查询，输入 PromQL 实时绘图。</div>
+      <span class="tag">/prometheus</span>
+    </a>
+    <a class="card" href="/alerts/">
+      <div class="name">Alertmanager</div>
+      <div class="desc">告警列表与静默管理。</div>
+      <span class="tag">/alerts</span>
+    </a>
+    <a class="card" href="/kafka/">
+      <div class="name">Kafka UI</div>
+      <div class="desc">浏览 topic、消息内容与消费组 lag。</div>
+      <span class="tag">/kafka</span>
+    </a>
+    <a class="card" href="/db/">
+      <div class="name">Adminer 数据库</div>
+      <div class="desc">Postgres 表结构 / 数据 / 执行 SQL。库 eventguard，用户 eventguard。</div>
+      <span class="tag">/db</span>
+    </a>
+    <a class="card" href="https://jrwdev.site">
+      <div class="name">业务 UI</div>
+      <div class="desc">主应用界面（外网直接访问）。</div>
+      <span class="tag">外网</span>
+    </a>
+  </div>
+  <footer>EventGuard · 本地门户 · 仅经 SSH 隧道可达</footer>
+</div>
+</body>
+</html>

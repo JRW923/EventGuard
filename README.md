@@ -209,16 +209,16 @@ cd eventguard-ui && npm run test && npm run type-check   # 前端 39 项 + 类�
 
 ## 文档
 
-- 文档索引：[docs/README.md](docs/README.md)
-- 完整设计文档：[docs/架构设计/eventguard-design.md](docs/架构设计/eventguard-design.md)
-- 架构拓扑图：[docs/架构设计/architecture.svg](docs/架构设计/architecture.svg)
-- 架构评审记录：[docs/架构设计/architecture-review-2026-08.md](docs/架构设计/architecture-review-2026-08.md)
-- 本地开发启动顺序：[docs/使用指南/local-development.md](docs/使用指南/local-development.md)
-- 逐场景走查脚本：[docs/使用指南/demo-script.md](docs/使用指南/demo-script.md)
-- Cloudflare Tunnel 部署：[docs/部署运维/deploy-cloudflare-tunnel.md](docs/部署运维/deploy-cloudflare-tunnel.md)
-- Linux 服务器部署：[docs/部署运维/deploy-linux-baota.md](docs/部署运维/deploy-linux-baota.md)
-- 生产就绪缺口清单：[docs/部署运维/gaps-prod-readiness.md](docs/部署运维/gaps-prod-readiness.md)
-- 上线部署记录与已知偏差：[docs/部署运维/deployment-notes-2026-08-09.md](docs/部署运维/deployment-notes-2026-08-09.md)
-- 验证记录与实测结果：[docs/验证报告/verification-log.md](docs/验证报告/verification-log.md)
+- 文档索引：[docs/文档索引.md](docs/文档索引.md)
+- 完整设计文档：[docs/架构设计/系统设计.md](docs/架构设计/系统设计.md)
+- 架构拓扑图：[docs/架构设计/架构图.svg](docs/架构设计/架构图.svg)
+- 架构评审记录：[docs/架构设计/架构审查-2026-08.md](docs/架构设计/架构审查-2026-08.md)
+- 本地开发启动顺序：[docs/使用指南/本地运行.md](docs/使用指南/本地运行.md)
+- 逐场景走查脚本：[docs/使用指南/演示脚本.md](docs/使用指南/演示脚本.md)
+- Cloudflare Tunnel 部署：[docs/部署运维/云端隧道部署.md](docs/部署运维/云端隧道部署.md)
+- Linux 服务器部署：[docs/部署运维/服务器部署.md](docs/部署运维/服务器部署.md)
+- 生产就绪缺口清单：[docs/部署运维/生产就绪缺口.md](docs/部署运维/生产就绪缺口.md)
+- 上线部署记录与已知偏差：[docs/部署运维/部署记录-2026-08-09.md](docs/部署运维/部署记录-2026-08-09.md)
+- 验证记录与实测结果：[docs/验证报告/验证记录.md](docs/验证报告/验证记录.md)
 - 评测器说明：[eventguard-benchmark/README.md](eventguard-benchmark/README.md)
 

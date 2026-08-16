@@ -147,17 +147,24 @@ services:
 
   # ponytail: Cloudflare Tunnel 出网代理，绕过未备案域名的 Host 拦截。
   # 服务器主动连 Cloudflare（非外部连入 Tencent IP），故永不带"未备案 Host"入站；
-  # --url 指定隧道把流量转发到 docker 内部 eventguard-ui:80，浏览器→Cloudflare(有效证书)→隧道→源站，
-  # WebSocket/TLS 由 Cloudflare 透明处理。TUNNEL_TOKEN 在 .env 中提供。
+  # 用本地 --config ingress 按 hostname 路由（见 ./cloudflared/config.yml）：
+  #   jrwdev.site→eventguard-ui，grafana/prometheus/alerts/kafka/db.jrwdev.site→各自服务。
+  # --token 负责隧道身份认证，config 负责源站路由。新增面板只需在 config.yml 加一条 + 面板加 Public Hostname。
+  # 注意：之前用 --url 单源模式会忽略 hostname；纯默认模式依赖面板 ingress 配置，本环境未配会 503，
+  # 故改成本地 ingress 文件，cloudflared 自身按 Host 匹配，稳定可控。TUNNEL_TOKEN 在 .env 中提供。
   cloudflared:
     <<: *default-restart
     image: cloudflare/cloudflared:latest
-    command: tunnel run --token ${TUNNEL_TOKEN} --url http://eventguard-ui:80
+    command: --config /etc/cloudflared/config.yml tunnel run
     env_file: .env
     # ponytail: 隧道是长连接，断了要能自恢复；其余服务沿用默认 no-restart 策略，此处单独开。
     logging: *default-logging
+    volumes:
+      - "./cloudflared/config.yml:/etc/cloudflared/config.yml:ro"
+      - "./cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro"
+      - "./cloudflared/credentials.json:/root/.cloudflared/343ed7a5-adbf-4ad9-8978-a3d997d5e558.json:ro"
     mem_limit: 512m
-    depends_on: [eventguard-ui]
+    depends_on: [eventguard-ui, grafana, prometheus, alertmanager, kafka-ui, adminer]
 
   pumba:
     image: gaiaadm/pumba
@@ -231,6 +238,8 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=15d"
+      - "--web.route-prefix=/prometheus"
+      - "--web.external-url=/prometheus"
     volumes:
       - "./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
       - "./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro"
@@ -260,7 +269,7 @@ services:
     image: prom/alertmanager:v0.27.0
     # ponytail: 仅映射供本地 SSH 隧道访问；生产不直接暴露
     ports: ["9093:9093"]
-    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--web.route-prefix=/alerts"]
     # 注:远程 main 加的 --config.expand-env 仅 Prometheus 支持,Alertmanager(v0.27.0~v0.33.1)不支持,回退
     volumes:
       - "./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro"
@@ -275,13 +284,23 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: http://localhost:3001
+      # ponytail: 门户经 /grafana 子路径访问，故固定 ROOT_URL 子路径并开启 serve_from_sub_path，
+      # 否则 Grafana 资源(js/css)相对路径错位导致页面白屏。
+      GF_SERVER_ROOT_URL: "http://localhost:8890/grafana"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - "grafana-data:/var/lib/grafana"
       - "./prometheus/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro"
+      - "./prometheus/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro"
+      - "./prometheus/dashboards:/var/lib/grafana/dashboards:ro"
     mem_limit: 300m
     logging: *default-logging
-    depends_on: [prometheus]
+    depends_on: [prometheus, postgres]
 
   # ===== P1-13 集中日志（Loki + promtail）=====
   # promtail 读各容器日志并转发 Loki；Grafana Explore 里选 Loki 数据源即可查日志。
@@ -308,6 +327,45 @@ services:
     mem_limit: 100m
     logging: *default-logging
     depends_on: [loki]
+
+  # ===== Kafka Web 控制台（kafka-ui）：浏览 topic / 消费组 / 消息 =====
+  kafka-ui:
+    <<: *default-restart
+    image: provectuslabs/kafka-ui:latest
+    ports: ["8082:8080"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: eventguard
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      SERVER_SERVLET_CONTEXT_PATH: /kafka
+      JAVA_OPTS: "-Xms64m -Xmx256m"
+    mem_limit: 512m
+    logging: *default-logging
+    depends_on: [kafka]
+
+  # ===== 数据库 Web 控制台（Adminer）：浏览 Postgres 表 / 执行 SQL =====
+  adminer:
+    <<: *default-restart
+    image: adminer:latest
+    ports: ["8083:8080"]
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    mem_limit: 128m
+    logging: *default-logging
+    depends_on: [postgres]
+
+  # ===== 单一入口门户网关（Caddy）：单端口 8888，首页聚合所有面板链接，并按子路径反代到各后端 =====
+  # 经 SSH 端口转发(ssh -L 8888:localhost:8888)后，本机浏览器开 http://localhost:8888 即看门户与各面板。
+  # 各面板走子路径(/grafana /prometheus /alerts /kafka /db)，对应服务已配子路径基线。本地 SSH 隧道可信，不加 Basic Auth。
+  caddy:
+    <<: *default-restart
+    image: caddy:2-alpine
+    ports: ["8890:8890"]
+    volumes:
+      - "./caddy/Caddyfile:/etc/caddy/Caddyfile:ro"
+      - "./caddy/portal:/var/www/portal:ro"
+    mem_limit: 128m
+    logging: *default-logging
+    depends_on: [grafana, prometheus, alertmanager, kafka-ui, adminer]
 
 volumes:
   pgdata:

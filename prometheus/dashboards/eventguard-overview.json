@@ -1,0 +1,97 @@
+{
+  "annotations": { "list": [] },
+  "title": "EventGuard 概览",
+  "uid": "eventguard-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "QPS（请求/秒）",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line" } }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{uri!~\\\".*actuator.*\\\"}[1m]))", "legendFormat": "QPS" }
+      ]
+    },
+    {
+      "id": 2, "type": "stat", "title": "错误率 %",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 5 } ] } }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(rate(http_server_requests_seconds_count{outcome=\"SERVER_ERROR\",uri!~\\\".*actuator.*\\\"}[1m])) / sum(rate(http_server_requests_seconds_count{uri!~\\\".*actuator.*\\\"}[1m])) * 100" }
+      ]
+    },
+    {
+      "id": 3, "type": "stat", "title": "P95 延迟 (ms)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "ms", "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 500 }, { "color": "red", "value": 2500 } ] } }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{uri!~\\\".*actuator.*\\\"}[1m]))) * 1000" }
+      ]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "JVM 堆内存 (MiB)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "decmbytes", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "expr": "jvm_memory_used_bytes{area=\"heap\"}/1024/1024", "legendFormat": "已用 {{id}}" },
+        { "expr": "jvm_memory_max_bytes{area=\"heap\"}/1024/1024", "legendFormat": "上限 {{id}}" }
+      ]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "主机内存使用率 %",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "custom": { "drawStyle": "line" } }, "overrides": [] },
+      "targets": [
+        { "expr": "100 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100)", "legendFormat": "已用" }
+      ]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "CPU 使用率 %",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 13 },
+      "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "custom": { "drawStyle": "line" } }, "overrides": [] },
+      "targets": [
+        { "expr": "system_cpu_usage * 100", "legendFormat": "system" },
+        { "expr": "process_cpu_usage * 100", "legendFormat": "process" }
+      ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "主机 Load1",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 13 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line" } }, "overrides": [] },
+      "targets": [
+        { "expr": "node_load1", "legendFormat": "load1" }
+      ]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Tomcat 线程 / HikariCP 连接",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 13 },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line" } }, "overrides": [] },
+      "targets": [
+        { "expr": "tomcat_threads_current_threads", "legendFormat": "tomcat 线程" },
+        { "expr": "hikaricp_connections_active", "legendFormat": "hikaricp 活跃" }
+      ]
+    },
+    {
+      "id": 9, "type": "logs", "title": "Server 日志 (Loki)",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 19 },
+      "options": { "showLabels": false, "showTime": true, "wrapLogMessage": true },
+      "targets": [
+        { "expr": "{container=~\"eventguard-server.*\"}", "refId": "A" }
+      ]
+    }
+  ]
+}
