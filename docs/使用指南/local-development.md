@@ -1,4 +1,4 @@
-# 本地运行与 IDEA 调试
+# 本地运行与调试
 
 本地调试链路不需要构建 `eventguard-server`、`eventguard-ai` 或前端镜像。Docker 生产配置保持原样；只需要准备 PostgreSQL、Kafka（以及可选的 Debezium/Ollama）等依赖服务。
 

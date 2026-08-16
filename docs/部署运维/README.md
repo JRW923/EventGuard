@@ -1,0 +1,11 @@
+# 部署与运维
+
+| 文档 | 适用场景 |
+|---|---|
+| [本地运行](../使用指南/local-development.md) | 本地开发与调试。 |
+| [Linux 服务器部署](deploy-linux-baota.md) | 单机 Docker Compose 部署。 |
+| [Cloudflare Tunnel](deploy-cloudflare-tunnel.md) | 将已运行服务安全暴露为 HTTPS。 |
+| [生产就绪缺口](gaps-prod-readiness.md) | 从演示环境走向生产前的边界。 |
+| [历史部署记录](deployment-notes-2026-08-09.md) | 仅用于追溯一次服务器排障过程。 |
+
+部署文档描述操作路径，历史记录不覆盖当前配置；当前配置以根目录 `docker-compose.yml`、`.env.example` 和模块 Dockerfile 为准。

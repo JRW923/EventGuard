@@ -8,6 +8,10 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
 
 # Node
 node_modules/
@@ -17,6 +21,7 @@ dist/
 .idea/
 .vscode/
 *.iml
+.claude/
 
 # Env
 .env
@@ -32,6 +37,7 @@ Thumbs.db
 
 # JVM crash logs
 hs_err_pid*.log
+*.log
 
 # Conversation dumps (personal logs, not project material)
 conversation-*.txt

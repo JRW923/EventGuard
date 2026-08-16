@@ -1,4 +1,4 @@
-# EventGuard v1.0.0 (MVP GA)
+# EventGuard v1.0.0：MVP 发布说明
 
 首个完整可演示版本。MVP 全部任务（M1-M5 + 可选 M3.9）完成，含 V2 主线鉴权/异步化加固与局部增强。
 

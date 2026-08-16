@@ -1,4 +1,4 @@
-# EventGuard 部署指南（腾讯云轻量应用服务器 + 宝塔面板）
+# EventGuard：Linux 服务器部署指南
 
 面向「本地用 IDEA 写代码，部署到腾讯云轻量应用服务器（装了宝塔）」的场景。项目已完全容器化（`docker-compose.yml` + 三个 `Dockerfile`），**推荐 Docker Compose 一键部署**：IDEA 只管写代码，部署时推到 Git、服务器 `git clone`/`git pull`，jar 包和前端资源在 `docker compose build` 阶段自动构建。
 

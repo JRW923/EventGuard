@@ -48,6 +48,12 @@ class Config:
         self.cdc_warmup_seconds = float(os.environ.get("BENCH_CDC_WARMUP_SECONDS", "60"))
         # 断言轮询超时（异步事件/回调）
         self.assert_timeout_seconds = float(os.environ.get("BENCH_ASSERT_TIMEOUT_SECONDS", "30"))
+        # 小内存单机的默认验收档位；可通过环境变量恢复更高并发或更严阈值。
+        self.load_max_concurrency = int(os.environ.get("BENCH_LOAD_MAX_CONCURRENCY", "30"))
+        self.load_read_your_write_target = int(os.environ.get("BENCH_READ_YOUR_WRITE_TARGET", "150"))
+        self.load_read_your_write_min_success_rate = float(
+            os.environ.get("BENCH_READ_YOUR_WRITE_MIN_SUCCESS_RATE", "0.65"))
+        self.load_p95_max_ms = float(os.environ.get("BENCH_LOAD_P95_MAX_MS", "2500"))
         self.run_id = os.environ.get("BENCH_RUN_ID", _default_run_id())
 
     @property

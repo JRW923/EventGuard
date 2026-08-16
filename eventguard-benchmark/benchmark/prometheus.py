@@ -32,3 +32,6 @@ class Prometheus:
             return resp.status_code == 200
         except requests.RequestException:
             return False
+
+    def max_over_time(self, metric: str, window: str = "2m") -> float | None:
+        return self.query(f"max(max_over_time({metric}[{window}]))")

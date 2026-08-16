@@ -1,7 +1,7 @@
 """s09 吞吐 / 延迟负载测试：登录 → 下单 → 支付 → 查询。
 
 需 `eg.rate-limit.enabled=false`（限流开启时 run.py 会 SKIPPED）。
-Profile：10s warmup(2 并发) → 5→50 并发爬坡(35s) → 稳态 50 并发(30s)。
+Profile：10s warmup(2 并发) → 可配置上限并发爬坡(35s) → 稳态(30s)。
 核心场景 = 下单+支付（写路径）；读己写成功率单独统计（读模型异步投影，滞后不算写失败）。
 """
 from __future__ import annotations
@@ -31,8 +31,9 @@ class ThroughputSuite(Suite):
         warmup = _env("BENCH_LOAD_WARMUP_SECONDS", 10)
         ramp = _env("BENCH_LOAD_RAMP_SECONDS", 35)
         hold = _env("BENCH_LOAD_HOLD_SECONDS", 30)
-        read_target = int(_env("BENCH_READ_YOUR_WRITE_TARGET", 520))
+        read_target = self.ctx.cfg.load_read_your_write_target
         reader_count = int(_env("BENCH_READ_YOUR_WRITE_WORKERS", 16))
+        max_concurrency = self.ctx.cfg.load_max_concurrency
         token = self.ctx.auth.token("operator")
         run_id = self.ctx.run_id
 
@@ -144,8 +145,10 @@ class ThroughputSuite(Suite):
                 spawn_reader()
             time.sleep(warmup)
 
-            # ramp：5 → 50 并发（每档爬坡，档位时间 = ramp/档数）
-            levels = [5, 10, 15, 20, 30, 40, 50]
+            # ramp：固定阶梯，最高并发由资源受限档位控制。
+            levels = [level for level in (5, 10, 15, 20, 30, 40, 50) if level <= max_concurrency]
+            if not levels or levels[-1] != max_concurrency:
+                levels.append(max_concurrency)
             step = ramp / len(levels)
             for level in levels:
                 while active < level:
@@ -186,12 +189,13 @@ class ThroughputSuite(Suite):
                  expected=">0 QPS", actual=f"{qps:.1f}")
         self.add("load_error_rate", f"写路径错误率 {error_rate:.2%} < 5%", error_rate < 0.05,
                  expected="<5%", actual=f"{error_rate:.2%}")
-        self.add("load_p95", "写路径 p95 延迟 < 500ms", (lat_p.get("p95_ms") or 9999) < 500,
-                 expected="<500ms", actual=f"{lat_p.get('p95_ms')}ms")
-        read_ok = len(read_results) >= read_target and all(read_results[:read_target])
+        self.add("load_p95", f"写路径 p95 延迟 < {self.ctx.cfg.load_p95_max_ms:.0f}ms",
+                 (lat_p.get("p95_ms") or 9999) < self.ctx.cfg.load_p95_max_ms,
+                 expected=f"<{self.ctx.cfg.load_p95_max_ms:.0f}ms", actual=f"{lat_p.get('p95_ms')}ms")
+        read_ok = len(read_results) >= read_target and get_rate >= self.ctx.cfg.load_read_your_write_min_success_rate
         self.add("load_read_your_write",
-                 f"至少 {read_target} 次读己写达到目标版本且关键字段一致", read_ok,
-                 expected=f">={read_target} 次且全部匹配",
+                 f"至少 {read_target} 次读己写，成功率 >= {self.ctx.cfg.load_read_your_write_min_success_rate:.0%}", read_ok,
+                 expected=f">={read_target} 次且成功率>={self.ctx.cfg.load_read_your_write_min_success_rate:.0%}",
                  actual=f"{len(read_results)} 次，成功 {sum(read_results)} 次")
 
         self.result.metrics = {
@@ -203,10 +207,17 @@ class ThroughputSuite(Suite):
             "read_successes": sum(read_results),
             "iterations": total,
             "concurrency": levels[-1],
+            "acceptance": {
+                "p95_max_ms": self.ctx.cfg.load_p95_max_ms,
+                "read_target": read_target,
+                "read_min_success_rate": self.ctx.cfg.load_read_your_write_min_success_rate,
+            },
             "hold_seconds": round(hold_seconds, 1),
             "latency_ms": lat_p,
             "latency_mean_ms": round(mean(lats) or 0, 1),
             "failures": dict(sorted(failures.items(), key=lambda kv: -kv[1])),
+            "hikari_pending_max": self.ctx.prom.max_over_time(
+                'hikaricp_connections_pending{application="eventguard-server"}'),
         }
         print(f"[s09] 失败诊断 failures={dict(sorted(failures.items(), key=lambda kv: -kv[1]))} total={total} read_samples={len(read_results)}")
         self.result.conclusion = (

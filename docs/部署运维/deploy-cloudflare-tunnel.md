@@ -1,4 +1,4 @@
-# 生产访问：Cloudflare Tunnel 免备案 HTTPS（不迁服务器）
+# 生产访问：Cloudflare Tunnel HTTPS
 
 ## 背景与约束
 

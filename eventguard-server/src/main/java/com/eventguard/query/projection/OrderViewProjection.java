@@ -1,6 +1,5 @@
 package com.eventguard.query.projection;
 
-import com.eventguard.common.idempotent.IdempotentConsumer;
 import com.eventguard.common.metrics.EventGuardMetrics;
 import com.eventguard.event.model.*;
 import com.eventguard.event.store.EventDeserializer;
@@ -8,6 +7,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
@@ -27,23 +27,21 @@ public class OrderViewProjection implements Projection {
 
     private final JdbcTemplate jdbc;
     private final EventDeserializer deserializer;
-    private final IdempotentConsumer idempotentConsumer;
 
     @Autowired(required = false)
     private EventGuardMetrics metrics;
 
-    public OrderViewProjection(JdbcTemplate jdbc, EventDeserializer deserializer,
-                               IdempotentConsumer idempotentConsumer) {
+    public OrderViewProjection(@Qualifier("projectionJdbcTemplate") JdbcTemplate jdbc,
+                               EventDeserializer deserializer) {
         this.jdbc = jdbc;
         this.deserializer = deserializer;
-        this.idempotentConsumer = idempotentConsumer;
     }
 
     // ponytail: 仅 JDBC 事务（spring-jdbc PlatformTransactionManager），未引入 KafkaTransactionManager，
     // 故 Kafka 偏移提交独立于 DB 事务；at-least-once 由 idempotent_consumers 表保证，重投幂等。
     @KafkaListener(topics = "domain-events", groupId = "order-view-projection",
             concurrency = "${EG_PROJECTION_CONCURRENCY:3}")
-    @Transactional
+    @Transactional("projectionTransactionManager")
     public void on(ConsumerRecord<String, Object> record) {
         DomainEvent event;
         try {
@@ -52,7 +50,8 @@ public class OrderViewProjection implements Projection {
             log.error("[投影] 反序列化失败，offset={}", record.offset(), e);
             throw new IllegalStateException("投影事件反序列化失败", e);
         }
-        if (idempotentConsumer.isProcessed(CONSUMER_GROUP, event.getEventId())) {
+        // 与下方读模型更新同处投影数据库事务：占位成功才投影，异常时两者一起回滚。
+        if (!tryMarkProcessed(event.getEventId())) {
             log.debug("[投影] 事件已处理，跳过 eventId={}", event.getEventId());
             return;
         }
@@ -61,11 +60,17 @@ public class OrderViewProjection implements Projection {
             if (metrics != null) {
                 metrics.counter("eventguard.projection.event.processed", "event_type", event.getEventType());
             }
-            idempotentConsumer.markProcessed(CONSUMER_GROUP, event.getEventId());
         } catch (Exception e) {
             log.error("[投影] 处理事件失败 eventId={}", event.getEventId(), e);
             throw new IllegalStateException("投影事件处理失败", e);
         }
+    }
+
+    private boolean tryMarkProcessed(java.util.UUID eventId) {
+        return jdbc.update(
+                "INSERT INTO idempotent_consumers (consumer_group, event_id, processed_at) VALUES (?, ?, now()) " +
+                        "ON CONFLICT (consumer_group, event_id) DO NOTHING",
+                CONSUMER_GROUP, eventId) == 1;
     }
 
     @Override

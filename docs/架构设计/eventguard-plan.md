@@ -1,4 +1,4 @@
-# EventGuard — MVP 实现计划文档
+# EventGuard：MVP 实施计划
 
 > 日期: 2026-07-21
 > 状态: 已确认

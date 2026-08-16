@@ -14,9 +14,9 @@ spring:
     password: ${DB_PASSWORD:eventguard}
     driver-class-name: org.postgresql.Driver
     # P1-10 显式 HikariCP 连接池参数：小内存机 800m 堆封顶，连接池过大只会空占内存；
-    # 10 连接 + 30s 获取超时足够当前单实例吞吐，溢出时抛超时而非无限等待
+    # 命令/查询池 8 + 投影池 2，保持总连接预算 10，优先保障 50 并发写入。
     hikari:
-      maximum-pool-size: 10
+      maximum-pool-size: 8
       minimum-idle: 2
       connection-timeout: 30000
       validation-timeout: 5000
@@ -56,6 +56,18 @@ management:
       application: ${spring.application.name:eventguard-server}
 
 eventguard:
+  projection-datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/eventguard}
+    username: ${DB_USER:eventguard}
+    password: ${DB_PASSWORD:eventguard}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 2
+      minimum-idle: 1
+      connection-timeout: 30000
+      validation-timeout: 5000
+      max-lifetime: 1800000
   read-your-writes:
     timeout-ms: 2000
     poll-interval-ms: 50
+    max-poll-interval-ms: 200

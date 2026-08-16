@@ -1,6 +1,5 @@
 package com.eventguard.query.projection;
 
-import com.eventguard.common.idempotent.IdempotentConsumer;
 import com.eventguard.event.model.*;
 import com.eventguard.event.store.EventDeserializer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -22,13 +21,12 @@ class OrderViewProjectionTest {
 
     @Mock JdbcTemplate jdbc;
     @Mock EventDeserializer deserializer;
-    @Mock IdempotentConsumer idempotentConsumer;
 
     OrderViewProjection projection;
 
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
-        projection = new OrderViewProjection(jdbc, deserializer, idempotentConsumer);
+        projection = new OrderViewProjection(jdbc, deserializer);
         lenient().when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
     }
 
@@ -101,7 +99,7 @@ class OrderViewProjectionTest {
         // ponytail: 生产代码调用 deserializeFromKafka(Object) 重载（record.value() 为 Object）；
         // any()/anyString() 会被类型推断命中 String 重载，须显式 any(Object.class)
         when(deserializer.deserializeFromKafka(any(Object.class))).thenReturn(e);
-        when(idempotentConsumer.isProcessed("order-view", e.getEventId())).thenReturn(true);
+        when(jdbc.update(startsWith("INSERT INTO idempotent_consumers"), any(Object[].class))).thenReturn(0);
 
         projection.on(new ConsumerRecord<>("domain-events", 0, 0, orderId.toString(), "{}"));
 
@@ -109,14 +107,14 @@ class OrderViewProjectionTest {
     }
 
     @Test
-    void handle_should_mark_processed_after_success() {
+    void handle_should_claim_event_before_projection() {
         UUID orderId = UUID.randomUUID();
         OrderCreatedEvent e = new OrderCreatedEvent(orderId, 1, "u1", new BigDecimal("99"), null);
         when(deserializer.deserializeFromKafka(any(Object.class))).thenReturn(e);
 
         projection.on(new ConsumerRecord<>("domain-events", 0, 0, orderId.toString(), "{}"));
 
-        verify(idempotentConsumer).markProcessed("order-view", e.getEventId());
+        verify(jdbc).update(startsWith("INSERT INTO idempotent_consumers"), eq("order-view"), eq(e.getEventId()));
     }
 
     @Test
@@ -136,12 +134,14 @@ class OrderViewProjectionTest {
         UUID orderId = UUID.randomUUID();
         PaymentCompletedEvent event = new PaymentCompletedEvent(orderId, 3, "pay-1", null);
         when(deserializer.deserializeFromKafka(any(Object.class))).thenReturn(event);
+        // 占位成功（新事件）才会进入投影并触发缺口检测；其余 UPDATE 返回 0 使缺口分支被命中
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(0);
+        when(jdbc.update(startsWith("INSERT INTO idempotent_consumers"), any(Object[].class))).thenReturn(1);
         when(jdbc.queryForList("SELECT version FROM order_view WHERE order_id = ?", Integer.class, orderId))
                 .thenReturn(java.util.List.of(1));
 
         assertThatThrownBy(() -> projection.on(new ConsumerRecord<>("domain-events", 0, 0, orderId.toString(), "{}")))
                 .isInstanceOf(IllegalStateException.class);
-        verify(idempotentConsumer, never()).markProcessed(anyString(), any(UUID.class));
+        verify(jdbc).update(startsWith("INSERT INTO idempotent_consumers"), eq("order-view"), eq(event.getEventId()));
     }
 }

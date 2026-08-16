@@ -1,4 +1,4 @@
-# M3 AI 检测 MVP Implementation Plan
+# M3：AI 检测实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

@@ -17,6 +17,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atMost;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -107,13 +109,39 @@ class OrderQueryServiceTest {
         when(orderViewRepository.findById(any())).thenReturn(Optional.of(v));
 
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        OrderQueryService fastService = new OrderQueryService(orderViewRepository, 200, 10, registry);
+        OrderQueryService fastService = new OrderQueryService(orderViewRepository, 200, 10, 40, registry);
 
         assertThatThrownBy(() -> fastService.readAfterWrite(orderId, 99))
                 .isInstanceOf(ProjectionLagException.class);
 
         assertThat(registry.counter("eventguard.projection.lag", "result", "timeout").count())
                 .isEqualTo(1.0);
+    }
+
+    @Test
+    void readAfterWrite_should_back_off_polling_on_lag() {
+        UUID orderId = UUID.randomUUID();
+        when(orderViewRepository.findById(any())).thenReturn(Optional.empty());
+
+        OrderQueryService fastService = new OrderQueryService(orderViewRepository, 200, 10, 40, null);
+        assertThatThrownBy(() -> fastService.readAfterWrite(orderId, 1))
+                .isInstanceOf(ProjectionLagException.class);
+
+        verify(orderViewRepository, atMost(7)).findById(orderId);
+    }
+
+    @Test
+    void readAfterWrite_should_return_lag_when_query_crosses_deadline() {
+        UUID orderId = UUID.randomUUID();
+        when(orderViewRepository.findById(orderId)).thenAnswer(invocation -> {
+            Thread.sleep(30);
+            return Optional.empty();
+        });
+
+        OrderQueryService fastService = new OrderQueryService(orderViewRepository, 10, 10);
+        assertThatThrownBy(() -> fastService.readAfterWrite(orderId, 1))
+                .isInstanceOf(ProjectionLagException.class)
+                .isNotInstanceOf(IllegalArgumentException.class);
     }
 
     private static EventDto eventAt(int version) {

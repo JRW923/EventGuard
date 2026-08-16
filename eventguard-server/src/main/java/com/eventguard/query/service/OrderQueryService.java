@@ -28,23 +28,26 @@ public class OrderQueryService {
     private final OrderViewRepository orderViewRepository;
     private final long timeoutMs;
     private final long pollIntervalMs;
+    private final long maxPollIntervalMs;
     // ponytail: MeterRegistry 由 actuator 自动装配；测试/未启用 actuator 时为 null，指标降级为空操作
     private final MeterRegistry meterRegistry;
 
     public OrderQueryService(OrderViewRepository orderViewRepository,
                              @Value("${eventguard.read-your-writes.timeout-ms:2000}") long timeoutMs,
                              @Value("${eventguard.read-your-writes.poll-interval-ms:50}") long pollIntervalMs) {
-        this(orderViewRepository, timeoutMs, pollIntervalMs, null);
+        this(orderViewRepository, timeoutMs, pollIntervalMs, 200, null);
     }
 
     @Autowired
     public OrderQueryService(OrderViewRepository orderViewRepository,
                              @Value("${eventguard.read-your-writes.timeout-ms:2000}") long timeoutMs,
                              @Value("${eventguard.read-your-writes.poll-interval-ms:50}") long pollIntervalMs,
+                             @Value("${eventguard.read-your-writes.max-poll-interval-ms:200}") long maxPollIntervalMs,
                              MeterRegistry meterRegistry) {
         this.orderViewRepository = orderViewRepository;
         this.timeoutMs = timeoutMs;
         this.pollIntervalMs = pollIntervalMs;
+        this.maxPollIntervalMs = Math.max(pollIntervalMs, maxPollIntervalMs);
         this.meterRegistry = meterRegistry;
     }
 
@@ -52,13 +55,17 @@ public class OrderQueryService {
         long start = System.currentTimeMillis();
         try {
             long deadline = System.currentTimeMillis() + timeoutMs;
+            long currentPollIntervalMs = pollIntervalMs;
             while (System.currentTimeMillis() < deadline) {
                 Optional<OrderView> opt = orderViewRepository.findById(orderId);
                 if (opt.isPresent() && opt.get().getVersion() >= expectedVersion) {
                     return opt.get();
                 }
                 try {
-                    Thread.sleep(pollIntervalMs);
+                    long remainingMs = deadline - System.currentTimeMillis();
+                    if (remainingMs <= 0) break;
+                    Thread.sleep(Math.min(currentPollIntervalMs, remainingMs));
+                    currentPollIntervalMs = Math.min(maxPollIntervalMs, currentPollIntervalMs * 2);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new ProjectionLagException("读模型等待被中断，orderId=" + orderId);

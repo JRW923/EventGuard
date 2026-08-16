@@ -28,7 +28,7 @@ EventGuard 不是一个把订单表加了操作日志的管理后台。它把订
 | 外部依赖抽象 | 后端 `gateway/`：支付 / 库存 / 通知的 Ports & Adapters |
 | 可观测与评测 | Micrometer + Prometheus + Grafana + Loki，`eventguard-benchmark/` 一键评测 |
 
-规模：后端 149 个 Java 源文件 / 43 个测试类，AI 服务 42 个 Python 模块 / 25 个测试模块，前端 49 个 Vue + TS 文件 / 12 个测试文件；测试快照 **328 项通过**（后端 164 / AI 125 / 前端 39）。
+规模：后端 149 个 Java 源文件 / 43 个测试类，AI 服务 42 个 Python 模块 / 25 个测试模块，前端 49 个 Vue + TS 文件 / 12 个测试文件；测试数字以各模块当前运行报告为准，Docker 依赖测试在无 Docker 环境会跳过。
 
 ## 核心特色
 
@@ -97,6 +97,8 @@ docker compose --profile bench run --rm bench  # 一键评测，产出量化报�
 
 ## 系统架构
 
+代码目录职责和推荐阅读顺序见 [docs/架构设计/代码结构.md](docs/架构设计/代码结构.md)。
+
 ```text
 Vue3 管理台
   │  写命令 ──▶ CommandHandler ──▶ 事务{ EventStore.append + command_log }
@@ -155,7 +157,7 @@ EventGuard/
 
 ## 评测
 
-`docker compose --profile bench run --rm bench` 会逐功能驱动真实运行的全栈，覆盖事件溯源一致性 / 读己写 / 幂等、CDC→Kafka 管道延迟、异常检测精度（R001–R005 与 P002/P003 的 P/R/F1 及检测延迟）、中文查询准确率、Saga 补偿成功率、网关异步回调、RBAC 矩阵、限流正确性、50 并发吞吐、混沌韧性（PG 崩溃零丢失与恢复时间）。
+`docker compose --profile bench run --rm bench` 会逐功能驱动真实运行的全栈，覆盖事件溯源一致性 / 读己写 / 幂等、CDC→Kafka 管道延迟、异常检测精度（R001–R005 与 P002/P003 的 P/R/F1 及检测延迟）、中文查询准确率、Saga 补偿成功率、网关异步回调、RBAC 矩阵、限流正确性、资源受限负载吞吐和混沌韧性。当前负载验收口径见 `docs/面试材料/量化口径.md`，不外推为生产容量承诺。
 
 产物是 `benchmark-report.md` / `.json`（canonical schema）+ 自包含 HTML（内嵌图表）+ Grafana dashboard 导入 JSON。每条断言标注驱动方式（`rest` / `kafka_inject` / `db_assert` / `chaos`）；聚合状态机不可达的规则用合成事件注入并如实标注；HMM 未接线、大模型缺失等运行条件一并写进报告——**报告的价值在于能复现和敢标注，而不是数字好看**。
 
@@ -219,6 +221,4 @@ cd eventguard-ui && npm run test && npm run type-check   # 前端 39 项 + 类�
 - 上线部署记录与已知偏差：[docs/部署运维/deployment-notes-2026-08-09.md](docs/部署运维/deployment-notes-2026-08-09.md)
 - 验证记录与实测结果：[docs/验证报告/verification-log.md](docs/验证报告/verification-log.md)
 - 评测器说明：[eventguard-benchmark/README.md](eventguard-benchmark/README.md)
-
-
 
