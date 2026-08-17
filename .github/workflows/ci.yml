@@ -16,8 +16,8 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
-      - name: Maven test（CI 有 Docker，Testcontainers 用例会真跑）
-        run: mvn -B test
+      - name: Maven test（含 Testcontainers 集成测试；ubuntu-latest 自带 Docker）
+        run: mvn -B test -Deventguard.run.integration=true
 
   ai:
     name: AI 服务测试
