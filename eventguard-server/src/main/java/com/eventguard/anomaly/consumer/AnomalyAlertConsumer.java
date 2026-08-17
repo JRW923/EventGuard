@@ -1,7 +1,7 @@
 package com.eventguard.anomaly.consumer;
 
 import com.eventguard.anomaly.model.AnomalyAlert;
-import com.eventguard.anomaly.history.RecentAlertsBuffer;
+import com.eventguard.anomaly.history.AnomalyAlertHistoryRepository;
 import com.eventguard.common.metrics.EventGuardMetrics;
 import com.eventguard.common.websocket.AnomalyWebSocketHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,16 +24,16 @@ public class AnomalyAlertConsumer {
 
     private final AnomalyWebSocketHandler webSocketHandler;
     private final ObjectMapper objectMapper;
-    private final RecentAlertsBuffer recentAlertsBuffer;
+    private final AnomalyAlertHistoryRepository historyRepository;
 
     @Autowired(required = false)
     private EventGuardMetrics metrics;
 
     public AnomalyAlertConsumer(AnomalyWebSocketHandler webSocketHandler, ObjectMapper objectMapper,
-                                RecentAlertsBuffer recentAlertsBuffer) {
+                                AnomalyAlertHistoryRepository historyRepository) {
         this.webSocketHandler = webSocketHandler;
         this.objectMapper = objectMapper;
-        this.recentAlertsBuffer = recentAlertsBuffer;
+        this.historyRepository = historyRepository;
     }
 
     @KafkaListener(topics = "anomaly-alerts", groupId = "anomaly-ws")
@@ -55,8 +55,8 @@ public class AnomalyAlertConsumer {
                     alert.getRuleId() != null ? alert.getRuleId() : "unknown",
                     "level", alert.getLevel() != null ? alert.getLevel() : "unknown");
         }
-        // 先入环形缓冲再广播：WS 会话断开时告警仍被保留，前端重连后经 /alerts/recent 补拉
-        recentAlertsBuffer.add(alert);
+        // 先落库再广播：落库失败抛出走 Kafka 重试/DLT，重启/断线后经 /alerts/recent 补拉
+        historyRepository.save(raw, alert);
         try {
             webSocketHandler.broadcast(alert);
         } catch (RuntimeException e) {

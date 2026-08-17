@@ -11,13 +11,13 @@ ingress:
   - hostname: www.jrwdev.site
     service: http://eventguard-ui:80
   - hostname: grafana.jrwdev.site
-    service: http://caddy:8088
+    service: http://caddy:8890
   - hostname: prometheus.jrwdev.site
-    service: http://caddy:8088
+    service: http://caddy:8890
   - hostname: alerts.jrwdev.site
-    service: http://caddy:8088
+    service: http://caddy:8890
   - hostname: kafka.jrwdev.site
-    service: http://caddy:8088
+    service: http://caddy:8890
   - hostname: db.jrwdev.site
-    service: http://caddy:8088
+    service: http://caddy:8890
   - service: http_status:404

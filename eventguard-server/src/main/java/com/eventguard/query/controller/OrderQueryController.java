@@ -1,12 +1,12 @@
 package com.eventguard.query.controller;
 
 import com.eventguard.auth.security.RequirePermission;
-import com.eventguard.common.exception.ProjectionLagException;
 import com.eventguard.query.model.OrderView;
 import com.eventguard.query.service.OrderQueryService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.async.DeferredResult;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -24,18 +24,24 @@ public class OrderQueryController {
     }
 
     @GetMapping("/{orderId}")
-    public ResponseEntity<OrderView> getOrder(@PathVariable UUID orderId,
-                                              @RequestParam(required = false) Integer expectedVersion) {
+    public Object getOrder(@PathVariable UUID orderId,
+                           @RequestParam(required = false) Integer expectedVersion) {
         if (expectedVersion != null) {
-            try {
-                return ResponseEntity.ok(queryService.readAfterWrite(orderId, expectedVersion));
-            } catch (ProjectionLagException e) {
-                return ResponseEntity.status(HttpStatus.CONFLICT).build();
-            }
+            // DeferredResult：等待投影追平期间释放 Web 线程（通知/兜底轮询在后台线程完成）
+            DeferredResult<ResponseEntity<OrderView>> deferred = new DeferredResult<>();
+            queryService.readAfterWriteAsync(orderId, expectedVersion).whenComplete((ov, ex) -> {
+                if (ex != null) {
+                    deferred.setErrorResult(
+                            new ResponseStatusException(HttpStatus.CONFLICT, "读模型同步中，请稍后重试"));
+                } else {
+                    deferred.setResult(ResponseEntity.ok(ov));
+                }
+            });
+            return deferred;
         }
         return queryService.findById(orderId)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .<ResponseEntity<OrderView>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @GetMapping

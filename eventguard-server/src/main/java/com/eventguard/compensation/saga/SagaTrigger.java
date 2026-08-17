@@ -65,13 +65,12 @@ public class SagaTrigger {
             log.error("[Saga] 反序列化失败 offset={}", record.offset(), e);
             throw new IllegalStateException("Saga 事件反序列化失败", e);
         }
-        if (idempotentConsumer.isProcessed("saga-trigger", event.getEventId())) {
+        if (!idempotentConsumer.tryMarkProcessed("saga-trigger", event.getEventId())) {
             log.debug("[Saga] 触发事件已处理，跳过 eventId={}", event.getEventId());
             return;
         }
         try {
             handle(event);
-            idempotentConsumer.markProcessed("saga-trigger", event.getEventId());
         } catch (Exception e) {
             log.error("[Saga] 处理事件失败 eventId={}", event.getEventId(), e);
             throw new IllegalStateException("Saga 事件处理失败", e);
@@ -105,17 +104,18 @@ public class SagaTrigger {
      * 而非 order_view 读模型——Saga 由后续事件（OrderCancelled v9）触发时，
      * 投影消费组可能尚未跟上，order_view 会漏读；事件库是 append-only 事实源，
      * 触发事件之前的事件必然已落库。
+     * <p>
+     * 读不到或读失败必须抛异常走 Kafka 重试/DLT：金额是「退款>100 需审批」规则的依据，
+     * 退化为 0 元会让高风险退款静默绕过审批。
      */
     private BigDecimal loadAmount(UUID aggregateId) {
-        try {
-            List<BigDecimal> amounts = jdbc.queryForList(
-                    "SELECT (payload->>'totalAmount')::numeric FROM domain_events " +
-                            "WHERE aggregate_id = ? AND event_type='OrderCreatedEvent' LIMIT 1",
-                    BigDecimal.class, aggregateId);
-            return amounts.isEmpty() ? BigDecimal.ZERO : amounts.get(0);
-        } catch (Exception e) {
-            log.warn("[Saga] 读取订单金额失败 order={}: {}", aggregateId, e.getMessage());
-            return BigDecimal.ZERO;
+        List<BigDecimal> amounts = jdbc.queryForList(
+                "SELECT (payload->>'totalAmount')::numeric FROM domain_events " +
+                        "WHERE aggregate_id = ? AND event_type='OrderCreatedEvent' LIMIT 1",
+                BigDecimal.class, aggregateId);
+        if (amounts.isEmpty() || amounts.get(0) == null) {
+            throw new IllegalStateException("[Saga] 订单创建事件缺失，无法确定退款金额 order=" + aggregateId);
         }
+        return amounts.get(0);
     }
 }

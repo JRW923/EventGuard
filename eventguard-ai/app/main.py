@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -18,6 +19,7 @@ from app.config import default_llm_config, llm_config, reset_llm_config, setting
 from app.detector.event_level import EventLevelService
 from app.detector.event_window import EventWindow
 from app.detector.process_level import ProcessLevelRuleDetector
+from app.detector.process_level_hmm import ProcessLevelHMMDetector
 from app.kafka_consumer import DetectionHandler, EventKafkaConsumer
 from app.publisher.anomaly_publisher import AnomalyPublisher
 from app.predictor.order_predictor import OrderPredictor
@@ -52,8 +54,8 @@ async def lifespan(app: FastAPI):
             publisher=_publisher,
             process_level_detector=process_detector,
             event_window=event_window,
-            # HMM 缺文件时 detect 返回 []，不阻断主流程
-            hmm_detector=None,
+            # HMM 序列级第二意见：模型文件缺失时构造函数自行降级（loaded=False，detect 返回 []）
+            hmm_detector=ProcessLevelHMMDetector(),
         )
         # EventKafkaConsumer 的 handler 参数是可调用对象：传 handler.handle 而非实例本身
         _consumer = EventKafkaConsumer(handler=handler.handle)
@@ -355,7 +357,13 @@ async def get_analysis(
         raise HTTPException(status_code=404, detail=f"异常 {anomaly_id} 不存在")
 
     try:
-        report = await _get_analyzer().analyze(anomaly, trace_id=trace_id)
+        # 端到端超时：LLM 各层有自己的长超时，不设上界时单次分析可拖到分钟级
+        report = await asyncio.wait_for(
+            _get_analyzer().analyze(anomaly, trace_id=trace_id),
+            timeout=settings.analysis_timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="根因分析超时，请稍后重试")
     except LLMResponseError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except httpx.HTTPError as e:
@@ -384,4 +392,11 @@ async def ai_heal(
     anomaly = anomaly_store.get(anomaly_id)
     if anomaly is None:
         raise HTTPException(status_code=404, detail=f"异常 {anomaly_id} 不存在")
-    return await _get_healer().heal(anomaly, trace_id=trace_id)
+    # 最多 5 步 × 每步 LLM 调用，不设上界时最坏可达数分钟；超时 504 比无限等待诚实
+    try:
+        return await asyncio.wait_for(
+            _get_healer().heal(anomaly, trace_id=trace_id),
+            timeout=settings.heal_timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="自愈分析超时，请稍后重试")

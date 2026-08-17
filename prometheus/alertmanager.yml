@@ -1,7 +1,8 @@
-# Alertmanager 配置：把 Prometheus 告警转发到 webhook（默认企业微信，可改钉钉/Slack）。
+# Alertmanager 配置：把 Prometheus 告警转发到 webhook（默认飞书中继，可改钉钉/Slack）。
 # 注意：Alertmanager 不支持 --config.expand-env 环境变量展开（v0.27.0~v0.33.1 均无此 flag，
-# 仅 Prometheus 有）。URL 直接写死。接入企业微信机器人时，
-# 把下面的 url 换成你的 webhook 地址即可（也可挂载自定义配置覆盖此文件）。
+# 仅 Prometheus 有）。docker-compose 里通过 entrypoint sed 把 ALERT_WEBHOOK_URL 注入
+# alertmanager.yml.tmpl 生成运行时配置，未设置时回落到下面的默认值（本机飞书中继）。
+# 手动部署（不用 compose）时直接改本文件即可。
 route:
   receiver: "webhook"
   group_by: ["alertname"]

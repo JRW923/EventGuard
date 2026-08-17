@@ -24,8 +24,9 @@ def test_rule_bridge_returns_result_when_rule_hits():
 
     with patch("app.detector.rule_bridge.httpx.Client") as mock_client_cls:
         mock_client = MagicMock()
+        mock_client.is_closed = False
         mock_client.post.return_value = mock_response
-        mock_client_cls.return_value.__enter__.return_value = mock_client
+        mock_client_cls.return_value = mock_client
 
         bridge = RuleBridge(url="http://localhost:8080/anomaly/rules/evaluate")
         event = {
@@ -57,8 +58,9 @@ def test_rule_bridge_returns_none_when_no_rule_hits():
 
     with patch("app.detector.rule_bridge.httpx.Client") as mock_client_cls:
         mock_client = MagicMock()
+        mock_client.is_closed = False
         mock_client.post.return_value = mock_response
-        mock_client_cls.return_value.__enter__.return_value = mock_client
+        mock_client_cls.return_value = mock_client
 
         bridge = RuleBridge(url="http://localhost:8080/anomaly/rules/evaluate")
         event = {"event_type": "OrderCreatedEvent", "payload": {}, "metadata": {}}

@@ -4,6 +4,8 @@
 # 用法：
 #   ./backup-db.sh                     # 备份到默认目录（./backups，保留 14 天）
 #   BACKUP_DIR=/data/eg-backups RETENTION_DAYS=30 ./backup-db.sh
+#   BACKUP_UPLOAD_CMD='rclone copyto remote:eg-backups/$(basename "$1")' ./backup-db.sh
+#                                      # 备份后上传远端（$1=备份文件路径；失败不影响本地备份）
 #
 # 定时执行（crontab，每日 03:17 避开高峰；分钟避开 :00/:30 避免与其它任务撞车）：
 #   17 3 * * * /opt/EventGuard/scripts/backup-db.sh >> /var/log/eg-backup.log 2>&1
@@ -39,6 +41,17 @@ if ! head -c5 "$FILE" | grep -q "PGDMP"; then
 fi
 
 echo "[$(date '+%F %T')] 备份完成：$(du -h "$FILE" | cut -f1)"
+
+# 可选远程上传钩子：设置 BACKUP_UPLOAD_CMD 即启用，备份文件路径以 $1 传入。
+# 失败不抹掉本地备份（exit 0 继续），只告警到日志由 cron 邮件/日志采集兜底。
+# 例：BACKUP_UPLOAD_CMD='rclone copyto remote:eg-backups/$(basename "$1")'
+if [ -n "${BACKUP_UPLOAD_CMD:-}" ]; then
+  if bash -c "$BACKUP_UPLOAD_CMD '$FILE'"; then
+    echo "[$(date '+%F %T')] 远程上传完成：$FILE"
+  else
+    echo "[$(date '+%F %T')] 警告：远程上传失败（本地备份仍保留）：$FILE" >&2
+  fi
+fi
 
 # 清理过期备份（保留最近 RETENTION_DAYS 天）
 find "$BACKUP_DIR" -name "${PG_DB}-*.dump" -mtime +"$RETENTION_DAYS" -delete

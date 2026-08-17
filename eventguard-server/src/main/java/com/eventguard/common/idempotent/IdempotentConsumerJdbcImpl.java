@@ -30,13 +30,18 @@ public class IdempotentConsumerJdbcImpl implements IdempotentConsumer {
 
     @Override
     public void markProcessed(String consumerGroup, UUID eventId) {
+        tryMarkProcessed(consumerGroup, eventId);
+    }
+
+    @Override
+    public boolean tryMarkProcessed(String consumerGroup, UUID eventId) {
         try {
-            jdbc.update(
+            return jdbc.update(
                     "INSERT INTO idempotent_consumers (consumer_group, event_id, processed_at) VALUES (?, ?, now()) " +
                             "ON CONFLICT (consumer_group, event_id) DO NOTHING",
-                    consumerGroup, eventId);
-        } catch (DuplicateKeyException ignored) {
-            // 已处理，幂等忽略
+                    consumerGroup, eventId) == 1;
+        } catch (DuplicateKeyException e) {
+            return false;
         }
     }
 }

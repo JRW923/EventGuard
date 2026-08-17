@@ -34,6 +34,11 @@ public class EventStoreJdbcImpl implements EventStore {
 
     @Override
     public void append(UUID aggregateId, List<DomainEvent> events, int expectedVersion) {
+        // 0. 聚合级事务锁：串行化同一聚合的并发 append，使下方「校验→插入」在锁保护下成为原子区间，
+        //    并发写走明确的乐观锁冲突（可重试），而不是撞唯一约束走异常路径（不可重试）。
+        //    ponytail: 需在调用方事务内生效（锁随事务提交释放）；无事务调用时退化为立即释放，无害。
+        jdbc.queryForObject(
+                "SELECT pg_advisory_xact_lock(hashtext(?))", Long.class, aggregateId.toString());
         // 1. 主动校验 expectedVersion（清晰错误信息）
         Integer currentVersion = jdbc.queryForObject(
                 "SELECT COALESCE(MAX(event_version), 0) FROM domain_events WHERE aggregate_id = ?",
@@ -43,7 +48,8 @@ public class EventStoreJdbcImpl implements EventStore {
             throw new OptimisticConcurrencyException(
                     "并发冲突：aggregate_id=" + aggregateId + " 期望版本 " + expectedVersion + "，实际版本 " + actual);
         }
-        // 2. 插入事件，UNIQUE(aggregate_id, event_version) 作为并发兜底
+        // 2. 插入事件，UNIQUE(aggregate_id, event_version) 仍保留为数据库层最终底线
+        //    （防 advisory lock 之外的路径：无事务调用、人工直写等）
         for (DomainEvent event : events) {
             try {
                 jdbc.update(

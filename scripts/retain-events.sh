@@ -8,8 +8,10 @@
 #   3. 若表 event_store_archive 不存在则自动创建。
 #
 # 注意：
-#   - 聚合重建依赖完整事件链 + 快照（aggregate_snapshots）。若你删除了快照之前的旧事件，
-#     重建会失败。生产建议保留快照表不动，只归档 90 天前的旧事件，并确保快照间隔合理。
+#   - 聚合重建依赖完整事件链 + 快照（aggregate_snapshots）。归档边界按「各聚合最新快照版本」：
+#     只归档 event_version 严格小于该聚合快照版本的事件——快照之后的事件必须留在主表，
+#     否则重建会失败（回放 = 快照 + 快照后事件）。无快照的聚合整体保留。
+#   - 快照水位之上再用 created_at 保留期兜底（如快照落后，水位内的旧事件也不动）。
 #   - 默认保留 90 天，可通过 EVENT_RETENTION_DAYS 覆盖。
 #   - 该脚本面向「长期运行的存储治理」，默认不执行（DRY_RUN=1），确认后再真正归档。
 #
@@ -31,10 +33,16 @@ docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -c "
 CREATE TABLE IF NOT EXISTS event_store_archive (LIKE domain_events INCLUDING ALL);
 " >/dev/null
 
+# 可归档判定：超过保留期，且该聚合存在快照、事件版本严格小于快照版本
+# （无快照的聚合整体保留；快照水位之上的事件保留，保证 快照+后续事件 可重建）
+ARCHIVABLE_SQL="FROM domain_events e
+JOIN aggregate_snapshots s ON s.aggregate_id = e.aggregate_id
+WHERE e.created_at < now() - interval '${RETENTION_DAYS} days'
+  AND e.event_version < s.version"
+
 # 统计可归档行数
 COUNT=$(docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -t -A -c "
-SELECT count(*) FROM domain_events
-WHERE created_at < now() - interval '${RETENTION_DAYS} days';")
+SELECT count(*) ${ARCHIVABLE_SQL};")
 echo "[$(date '+%F %T')] 待归档事件行数：${COUNT}"
 
 if [ "$DRY_RUN" = "1" ]; then
@@ -51,10 +59,12 @@ fi
 docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 <<SQL
 BEGIN;
 INSERT INTO event_store_archive
-SELECT * FROM domain_events
-WHERE created_at < now() - interval '${RETENTION_DAYS} days';
-DELETE FROM domain_events
-WHERE created_at < now() - interval '${RETENTION_DAYS} days';
+SELECT e.* ${ARCHIVABLE_SQL};
+DELETE FROM domain_events e
+USING aggregate_snapshots s
+WHERE s.aggregate_id = e.aggregate_id
+  AND e.created_at < now() - interval '${RETENTION_DAYS} days'
+  AND e.event_version < s.version;
 COMMIT;
 SQL
 

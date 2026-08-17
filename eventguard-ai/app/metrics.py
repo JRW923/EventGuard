@@ -15,8 +15,13 @@ events_consumed = Counter(
 )
 detection_latency = Histogram(
     "eventguard_ai_detection_latency_seconds",
-    "单条事件检测处理耗时（收到事件 → 检测/发布完成）",
+    "单条事件检测处理耗时（不含 Kafka 发布耗时，发布单列 publish_duration）",
     buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0),
+)
+publish_duration = Histogram(
+    "eventguard_ai_publish_duration_seconds",
+    "单条告警发布到 Kafka 的耗时（含等确认）",
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0),
 )
 anomalies_published = Counter(
     "eventguard_ai_anomalies_published_total",
@@ -39,6 +44,11 @@ rule_bridge_errors = Counter(
 detector_running = Gauge(
     "eventguard_ai_detector_running",
     "检测管道运行状态（1=运行 0=未运行/降级）",
+)
+consumer_lag = Gauge(
+    "eventguard_ai_consumer_lag",
+    "domain-events 消费积压（end_offset - committed_position，约 5s 采样一次）",
+    ["topic", "partition"],
 )
 
 # ===== NL 查询（app/query/nl_query_engine.py）=====

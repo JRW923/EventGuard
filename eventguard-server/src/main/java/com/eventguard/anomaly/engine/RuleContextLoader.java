@@ -3,25 +3,37 @@ package com.eventguard.anomaly.engine;
 import com.eventguard.event.model.DomainEvent;
 import com.eventguard.event.model.InventoryReservedEvent;
 import com.eventguard.gateway.InventoryGateway;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 加载规则上下文：从 domain_events 与 order_view 表查询聚合数据。
- * MVP 版本简化处理：对无数据场景返回默认值。
+ * 对无数据场景返回默认值；查询失败记 warn 并降级，但绝不静默——规则失效必须可在日志中定位。
  */
 @Component
 public class RuleContextLoader {
 
+    private static final Logger log = LoggerFactory.getLogger(RuleContextLoader.class);
+
+    /** 金额基线统计窗口，与事件归档周期（retain-events.sh 90 天）对齐。 */
+    private static final String AMOUNT_WINDOW = "90 days";
+
     private final JdbcTemplate jdbc;
     private final InventoryGateway inventoryGateway;
+    // ponytail: 进程内 TTL 缓存，单实例有效；多副本各自持有基线（可接受——规则评估本来就在各自实例发生）。
+    private final Map<String, CachedStats> statsCache = new ConcurrentHashMap<>();
+
+    private record CachedStats(BigDecimal mean, BigDecimal std, long expiresAtMillis) {}
 
     public RuleContextLoader(JdbcTemplate jdbc, InventoryGateway inventoryGateway) {
         this.jdbc = jdbc;
@@ -30,10 +42,10 @@ public class RuleContextLoader {
 
     public RuleContext load(DomainEvent event) {
         String userId = event.getMetadata() != null ? event.getMetadata().get("userId") : null;
-        BigDecimal userMean = loadUserMeanAmount(userId);
+        CachedStats stats = loadUserAmountStats(userId);
         return RuleContext.builder()
-                .userMeanAmount(userMean)
-                .userStdAmount(estimateStdAmount(userMean))
+                .userMeanAmount(stats.mean())
+                .userStdAmount(stats.std())
                 .recentPaymentCompletions(loadRecentPaymentCompletions(event.getAggregateId().toString(), event.getEventId()))
                 .previousState(loadPreviousState(event.getAggregateId().toString(), event.getVersion()))
                 .recentCreateOrders(loadRecentCreateOrders(userId))
@@ -49,25 +61,33 @@ public class RuleContextLoader {
         return 0;
     }
 
-    private BigDecimal loadUserMeanAmount(String userId) {
-        if (userId == null) return BigDecimal.ZERO;
-        try {
-            List<BigDecimal> amounts = jdbc.queryForList(
-                    "SELECT (payload->>'totalAmount')::numeric FROM domain_events " +
-                            "WHERE event_type='OrderCreatedEvent' AND metadata->>'userId'=?",
-                    BigDecimal.class, userId);
-            if (amounts.isEmpty()) return BigDecimal.ZERO;
-            return amounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
-                    .divide(BigDecimal.valueOf(amounts.size()), RoundingMode.HALF_UP);
-        } catch (Exception e) {
-            return BigDecimal.ZERO;
-        }
-    }
+    /**
+     * 用户金额基线（R001）：窗口内 OrderCreatedEvent 的均值与总体标准差，单条 SQL 由数据库统计。
+     * std 为 null（无样本）或 0（单样本）时 R001 自行跳过，不会误报。
+     */
+    private CachedStats loadUserAmountStats(String userId) {
+        if (userId == null) return new CachedStats(BigDecimal.ZERO, null, 0);
+        long now = System.currentTimeMillis();
+        CachedStats cached = statsCache.get(userId);
+        if (cached != null && cached.expiresAtMillis() > now) return cached;
 
-    private BigDecimal estimateStdAmount(BigDecimal mean) {
-        // MVP 简化：返回均值的 10% 作为标准差估计
-        if (mean.compareTo(BigDecimal.ZERO) == 0) return null;
-        return mean.multiply(new BigDecimal("0.1"));
+        CachedStats fresh;
+        try {
+            List<java.math.BigDecimal[]> rows = jdbc.query(
+                    "SELECT avg((payload->>'totalAmount')::numeric), stddev_pop((payload->>'totalAmount')::numeric) " +
+                            "FROM domain_events WHERE event_type='OrderCreatedEvent' AND metadata->>'userId'=? " +
+                            "AND created_at >= now() - interval '" + AMOUNT_WINDOW + "'",
+                    (rs, i) -> new BigDecimal[]{rs.getBigDecimal(1), rs.getBigDecimal(2)},
+                    userId);
+            BigDecimal mean = rows.isEmpty() || rows.get(0)[0] == null ? BigDecimal.ZERO : rows.get(0)[0];
+            BigDecimal std = rows.isEmpty() ? null : rows.get(0)[1];
+            fresh = new CachedStats(mean, std, now + 30_000);
+        } catch (Exception e) {
+            log.warn("[规则] 读取用户金额基线失败 userId={}: {}", userId, e.getMessage());
+            fresh = new CachedStats(BigDecimal.ZERO, null, now + 30_000);
+        }
+        statsCache.put(userId, fresh);
+        return fresh;
     }
 
     /**
@@ -84,6 +104,7 @@ public class RuleContextLoader {
                     Timestamp.class, java.util.UUID.fromString(aggregateId), excludeEventId);
             return ts.stream().map(Timestamp::toInstant).toList();
         } catch (Exception e) {
+            log.warn("[规则] 读取重复支付上下文失败 order={}: {}", aggregateId, e.getMessage());
             return List.of();
         }
     }
@@ -102,6 +123,7 @@ public class RuleContextLoader {
                     String.class, java.util.UUID.fromString(aggregateId), currentVersion);
             return states.isEmpty() ? null : states.get(0);
         } catch (Exception e) {
+            log.warn("[规则] 读取前置状态失败 order={}: {}", aggregateId, e.getMessage());
             return null;
         }
     }
@@ -116,6 +138,7 @@ public class RuleContextLoader {
                     Timestamp.class, userId);
             return ts.stream().map(Timestamp::toInstant).toList();
         } catch (Exception e) {
+            log.warn("[规则] 读取高频下单上下文失败 userId={}: {}", userId, e.getMessage());
             return List.of();
         }
     }

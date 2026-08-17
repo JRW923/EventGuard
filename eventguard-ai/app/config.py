@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     dead_loop_threshold: int = 5
     # 规则引擎 HTTP 桥接超时（秒）：超时即降级为纯模型检测，不阻塞消费线程
     rule_bridge_timeout_seconds: float = 2.0
+    # 分析类端点端到端超时（秒）：/ai/heal 最多 5 步工具调用、/anomalies/{id}/analysis 单轮 LLM，
+    # 不设上界时最坏可达数分钟，前端早已超时。超时返回 504。
+    heal_timeout_seconds: float = 120.0
+    analysis_timeout_seconds: float = 45.0
     # NL 查询 LLM 润色超时（秒）：超时降级为数据摘要
     nl_answer_timeout_seconds: float = 8.0
     nl_query_timeout_seconds: float = 8.0

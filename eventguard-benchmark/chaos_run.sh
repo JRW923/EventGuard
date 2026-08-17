@@ -86,18 +86,41 @@ append_scenario "db-kill" "$RECOVERY" "$DATA_LOSS" "$DB_PASS" "cmd_write_ok=$CMD
 [[ "$DB_PASS" = true ]] && echo "  ✓ PG 崩溃后数据零丢失、命令端恢复" || echo "  ✗ 数据丢失或命令端未恢复" >&2
 
 # ---------- 场景二：kafka-pause ----------
-echo "== [chaos_run] kafka-pause（Kafka 暂停 → 命令端可写）=="
+echo "== [chaos_run] kafka-pause（Kafka 暂停 → 命令端可写 + 恢复后投影追平）=="
 CID=$(kafka_cid)
 T0=$(date +%s)
 docker pause "$CID" >/dev/null
-if command_write_ok; then PAUSE_OK=true; else PAUSE_OK=false; fi
-echo "  暂停期间 POST /orders → $([ "$PAUSE_OK" = true ] && echo 200 || echo FAIL)"
+# 暂停期间写一笔订单并记录 orderId：恢复后用它断言 CDC→Kafka→投影 全链路收敛
+PAUSE_ORDER_JSON=$(curl -fsS -X POST "http://localhost:${SERVER_PORT}/orders" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $(eg_token)" \
+  -d '{"userId":"chaos-probe","totalAmount":1.0}' 2>/dev/null || echo '{}')
+PAUSE_ORDER_ID=$(printf '%s' "$PAUSE_ORDER_JSON" | sed -n 's/.*"orderId":"\([^"]*\)".*/\1/p')
+if [[ -n "$PAUSE_ORDER_ID" ]]; then PAUSE_OK=true; else PAUSE_OK=false; fi
+echo "  暂停期间 POST /orders → $([ "$PAUSE_OK" = true ] && echo "200 order=$PAUSE_ORDER_ID" || echo FAIL)"
 docker unpause "$CID" >/dev/null || true
 wait_for "kafka 恢复" 'kafka_topic_exists domain-events' 30
 T1=$(date +%s)
 RECOVERY=$((T1 - T0))
-append_scenario "kafka-pause" "$RECOVERY" 0 "$PAUSE_OK" "command_write_during_pause=$PAUSE_OK"
-[[ "$PAUSE_OK" = true ]] && echo "  ✓ Kafka 暂停期间命令端可写（恢复 ${RECOVERY}s）" || echo "  ✗ 命令端在 Kafka 暂停期间写入失败" >&2
+# 投影追平断言：读己写接口按 expectedVersion 等待投影收敛（每次最多阻塞 2s），
+# 轮询直到 200 —— 补上「暂停期间事件经 CDC 补捕、投影不落后」的零丢失证据
+CAUGHT_UP=false
+if [[ "$PAUSE_OK" = true ]]; then
+  for i in $(seq 1 15); do
+    code=$(curl -fsS -o /dev/null -w "%{http_code}" \
+      "http://localhost:${SERVER_PORT}/orders/${PAUSE_ORDER_ID}?expectedVersion=1" \
+      -H "Authorization: Bearer $(eg_token)" 2>/dev/null || echo "000")
+    if [[ "$code" = "200" ]]; then CAUGHT_UP=true; break; fi
+    sleep 1
+  done
+fi
+if [[ "$PAUSE_OK" = true && "$CAUGHT_UP" = true ]]; then KAFKA_PASS=true; else KAFKA_PASS=false; fi
+append_scenario "kafka-pause" "$RECOVERY" 0 "$KAFKA_PASS" \
+  "command_write_during_pause=$PAUSE_OK projection_caught_up=$CAUGHT_UP order=$PAUSE_ORDER_ID"
+if [[ "$KAFKA_PASS" = true ]]; then
+  echo "  ✓ 暂停期间可写、恢复 ${RECOVERY}s 后投影按 expectedVersion 追平"
+else
+  echo "  ✗ 命令端写入失败或恢复后投影未追平（order=$PAUSE_ORDER_ID caught_up=$CAUGHT_UP）" >&2
+fi
 
 # ---------- 场景三：ai-delay ----------
 echo "== [chaos_run] ai-delay（AI 网络延迟 → 规则引擎兜底）=="

@@ -61,8 +61,13 @@ class EventKafkaConsumer:
     def _consume_loop(self) -> None:
         """消费循环：poll 消息并调用 handler，handler 异常不中断循环"""
         try:
+            poll_count = 0
             while self._running:
                 records = self._consumer.poll(timeout_ms=500)
+                poll_count += 1
+                # 每 10 次 poll（约 5s）采样一次消费积压：end_offsets 有网络往返，逐次采样不值得
+                if poll_count % 10 == 0:
+                    self._update_lag()
                 for msgs in records.values():
                     for msg in msgs:
                         try:
@@ -93,6 +98,24 @@ class EventKafkaConsumer:
                             self._retry_failed_message(msg)
         except Exception as e:
             logger.exception("consume loop error: %s", e)
+
+    def _update_lag(self) -> None:
+        """采样消费积压（end_offsets - position），暴露为 eventguard_ai_consumer_lag 指标。"""
+        if self._consumer is None:
+            return
+        try:
+            from kafka import TopicPartition
+
+            assignment = self._consumer.assignment()
+            if not assignment:
+                return
+            ends = self._consumer.end_offsets(assignment)
+            for tp in assignment:
+                lag = max(0, ends.get(tp, 0) - self._consumer.position(tp))
+                egm.consumer_lag.labels(topic=tp.topic, partition=str(tp.partition)).set(lag)
+        except Exception:
+            # 采样失败不影响消费；broker 短暂不可达时保留上一次值
+            logger.debug("lag sample failed", exc_info=True)
 
     def _msg_key(self, msg) -> tuple[str, int, int]:
         """失败计数的键；getattr 兜底是为了兼容测试里的轻量 mock 消息。"""
@@ -194,19 +217,22 @@ class DetectionHandler:
         """处理单条事件：事件级检测 + 流程级检测"""
         egm.events_consumed.inc()
         _t0 = time.time()
+        _publish_secs = 0.0
         try:
-            self._detect_and_publish(event)
+            _publish_secs = self._detect_and_publish(event)
         finally:
-            egm.detection_latency.observe(time.time() - _t0)
+            # 检测耗时扣除发布耗时：detection_latency 只反映检测本身，发布单列 publish_duration
+            egm.detection_latency.observe(max(0.0, time.time() - _t0 - _publish_secs))
 
-    def _detect_and_publish(self, event: dict) -> None:
-        """事件级 + 流程级检测并发布异常（均经去重门控）。"""
+    def _detect_and_publish(self, event: dict) -> float:
+        """事件级 + 流程级检测并发布异常（均经去重门控）。返回发布总耗时。"""
+        publish_secs = 0.0
         # 1. 事件级检测
         result = self.event_level_service.detect(event)
         if result.is_anomaly:
             anomaly = self._build_anomaly(event, result)
             # 事件级指纹用 event_id：不同事件永不误去重（事件级无窗口滑动重复问题）
-            self._emit(anomaly, fingerprint=event.get("event_id") or anomaly.description)
+            publish_secs += self._emit(anomaly, fingerprint=event.get("event_id") or anomaly.description)
 
         # 2. 流程级检测（M3.6 接入）
         if self.process_level_detector is not None and self.event_window is not None:
@@ -219,26 +245,29 @@ class DetectionHandler:
             )
             for pa in process_anomalies:
                 # 流程级指纹用描述（P001 含迁移对、P002 含停滞状态），窗口内稳定 → 消除滑动重复
-                self._emit(pa, fingerprint=pa.description)
+                publish_secs += self._emit(pa, fingerprint=pa.description)
+        return publish_secs
 
-    def _emit(self, anomaly, fingerprint: str) -> None:
-        """去重/抑制门控后 save + publish；跳过的只计指标，不落库不发 Kafka。"""
+    def _emit(self, anomaly, fingerprint: str) -> float:
+        """去重/抑制门控后 save + publish；跳过的只计指标，不落库不发 Kafka。返回发布耗时。"""
         verdict = self.deduper.should_publish(anomaly.rule_id, anomaly.aggregate_id, fingerprint)
         if verdict != "publish":
             egm.alert_dedup_total.labels(reason=verdict).inc()
             logger.info(
                 "告警去重/抑制：%s（rule=%s agg=%s）", verdict, anomaly.rule_id, anomaly.aggregate_id
             )
-            return
+            return 0.0
         anomaly_store.save(anomaly)
-        self._publish(anomaly)
+        return self._publish(anomaly)
 
-    def _publish(self, anomaly) -> None:
+    def _publish(self, anomaly) -> float:
         """发布异常到 Kafka；瞬时失败带退避重试，仍失败则留痕并计数。
 
         broker 抖动（连接瞬时不可达）是发布失败的主因，重试可消除；真宕机时
         3 次退避 ~3s 后放弃，不无限阻塞消费线程（消费背压由 Kafka 重平衡兜底）。
+        返回发布总耗时（含退避），供 detection_latency 口径扣除。
         """
+        _t0 = time.time()
         last_exc: Optional[Exception] = None
         for attempt in range(PUBLISH_RETRIES):
             try:
@@ -248,7 +277,8 @@ class DetectionHandler:
                     source=anomaly.source or "unknown",
                     level=anomaly.level or "unknown",
                 ).inc()
-                return
+                egm.publish_duration.observe(time.time() - _t0)
+                return time.time() - _t0
             except Exception as e:
                 last_exc = e
                 if attempt < PUBLISH_RETRIES - 1:
@@ -260,10 +290,12 @@ class DetectionHandler:
                     time.sleep(delay)
         # ponytail: 重试后仍失败——broker 持续不可达，告警暂存内存 store（升级路径：异步发送+死信）
         egm.publish_errors.inc()
+        egm.publish_duration.observe(time.time() - _t0)
         logger.error(
             "发布异常失败（重试 %d 次后放弃，已存内存 store）: %s",
             PUBLISH_RETRIES - 1, last_exc,
         )
+        return time.time() - _t0
 
     def _build_anomaly(self, event: dict, result: AnomalyResult) -> Anomaly:
         """从检测结果构建 Anomaly 模型"""

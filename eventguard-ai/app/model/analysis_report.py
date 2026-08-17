@@ -1,6 +1,6 @@
 """根因分析报告 Pydantic 模型"""
 
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator
 
@@ -13,6 +13,9 @@ class Suggestion(BaseModel):
     action: str
     reason: str
     risk: Literal["LOW", "MEDIUM", "HIGH"]
+    # 仅 REFUND 建议携带：退款金额，必须取自事件序列中订单的实付金额（totalAmount），
+    # 用于服务端「>100 元需审批」判断——缺失时下游按 0 处理（低额不审批）
+    amount: Optional[float] = None
 
     @field_validator("action")
     @classmethod

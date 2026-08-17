@@ -23,6 +23,29 @@ groups:
           summary: "EventGuard 5xx 错误率偏高"
           description: "过去 5 分钟 5xx 占比超过 5%（{{ $value | humanizePercentage }}）"
 
+  # ===== 消费链路积压告警（投影/AI 检测落后即可见）=====
+  - name: kafka
+    rules:
+      # Java 侧：MicrometerConsumerListener 暴露 kafka.consumer.fetch.manager.records.lag
+      - alert: KafkaConsumerLagHigh
+        expr: max by (client_id) (kafka_consumer_fetch_manager_records_lag) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Java 消费组积压超过 1000 条"
+          description: "消费者 {{ $labels.client_id }} 积压 {{ $value | printf \"%.0f\" }} 条持续 5 分钟，投影/补偿链路可能落后，检查 DLT 与消费者日志。"
+
+      # Python 侧：AI 检测管道自采样的 eventguard_ai_consumer_lag
+      - alert: AIDetectorLagHigh
+        expr: max by (topic, partition) (eventguard_ai_consumer_lag) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI 检测管道消费积压超过 1000 条"
+          description: "{{ $labels.topic }} 分区 {{ $labels.partition }} 积压 {{ $value | printf \"%.0f\" }} 条持续 5 分钟，异常检测告警将延迟。"
+
   # ===== 主机内存告警（node_exporter）=====
   # 上次宕机(08-15)时可用内存仅 ~372MB（约 10%），故设 20% 预警、10% 临界，留足处理时间。
   - name: host

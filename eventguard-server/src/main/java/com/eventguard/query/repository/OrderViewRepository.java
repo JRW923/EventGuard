@@ -80,6 +80,11 @@ public class OrderViewRepository {
     }
 
     public List<com.eventguard.query.model.EventDto> findEventsByAggregateId(java.util.UUID aggregateId) {
+        return findEventsByAggregateId(aggregateId, null);
+    }
+
+    /** upToVersion 非空时在 SQL 层截断（时间旅行），避免全量拉取后内存过滤。 */
+    public List<com.eventguard.query.model.EventDto> findEventsByAggregateId(java.util.UUID aggregateId, Integer upToVersion) {
         RowMapper<com.eventguard.query.model.EventDto> mapper = (rs, rowNum) -> {
             com.eventguard.query.model.EventDto dto = new com.eventguard.query.model.EventDto();
             dto.setEventId(rs.getObject("event_id", java.util.UUID.class));
@@ -102,9 +107,15 @@ public class OrderViewRepository {
             dto.setCreatedAt(ct != null ? ct.toInstant() : null);
             return dto;
         };
+        if (upToVersion == null) {
+            return jdbc.query(
+                    "SELECT event_id, aggregate_id, event_type, event_version, payload, created_at " +
+                            "FROM domain_events WHERE aggregate_id = ? ORDER BY event_version",
+                    mapper, aggregateId);
+        }
         return jdbc.query(
                 "SELECT event_id, aggregate_id, event_type, event_version, payload, created_at " +
-                        "FROM domain_events WHERE aggregate_id = ? ORDER BY event_version",
-                mapper, aggregateId);
+                        "FROM domain_events WHERE aggregate_id = ? AND event_version <= ? ORDER BY event_version",
+                mapper, aggregateId, upToVersion);
     }
 }

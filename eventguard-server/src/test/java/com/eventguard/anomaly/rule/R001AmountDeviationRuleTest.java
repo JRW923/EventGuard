@@ -17,7 +17,7 @@ class R001AmountDeviationRuleTest {
 
     @Test
     void matches_when_amount_exceeds_3_sigma() {
-        R001AmountDeviationRule rule = new R001AmountDeviationRule();
+        R001AmountDeviationRule rule = new R001AmountDeviationRule(3);
         SimpleEvent event = new SimpleEvent(
                 UUID.randomUUID(), UUID.randomUUID(), "OrderCreatedEvent", 1,
                 Instant.now(), Map.of("userId", "user-1"),
@@ -38,7 +38,7 @@ class R001AmountDeviationRuleTest {
 
     @Test
     void does_not_match_when_amount_within_normal_range() {
-        R001AmountDeviationRule rule = new R001AmountDeviationRule();
+        R001AmountDeviationRule rule = new R001AmountDeviationRule(3);
         SimpleEvent event = new SimpleEvent(
                 UUID.randomUUID(), UUID.randomUUID(), "OrderCreatedEvent", 1,
                 Instant.now(), Map.of("userId", "user-1"),
@@ -54,7 +54,7 @@ class R001AmountDeviationRuleTest {
 
     @Test
     void does_not_match_for_non_order_created_event() {
-        R001AmountDeviationRule rule = new R001AmountDeviationRule();
+        R001AmountDeviationRule rule = new R001AmountDeviationRule(3);
         SimpleEvent event = new SimpleEvent(
                 UUID.randomUUID(), UUID.randomUUID(), "PaymentCompletedEvent", 2,
                 Instant.now(), Map.of(), Map.of("amount", 999999.0)

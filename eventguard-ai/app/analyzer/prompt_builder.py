@@ -42,13 +42,15 @@ class PromptBuilder:
 
 ## 输出要求
 - evidence 必须来源于上面的「事件序列」，只能提及序列中出现过的事件类型，严禁编造
+- REFUND 建议必须携带 amount 字段：取事件序列中该订单的实付金额（OrderCreatedEvent 的 totalAmount），
+  严禁自行计算或编造；非 REFUND 建议不要输出 amount 字段
 - 请输出严格的 JSON，格式如下：
 {{
   "anomaly_id": "{anomaly.anomaly_id}",
   "root_cause": "根因分析文字描述",
   "evidence": ["证据1", "证据2", "证据3"],
   "suggestions": [
-    {{"action": "白名单中的动作", "reason": "建议理由", "risk": "LOW|MEDIUM|HIGH"}}
+    {{"action": "白名单中的动作", "reason": "建议理由", "risk": "LOW|MEDIUM|HIGH", "amount": 150.0}}
   ]
 }}
 

@@ -29,15 +29,16 @@ class AnomalyPublisher:
         return self._producer
 
     def publish(self, anomaly: Anomaly) -> None:
-        # ponytail: 同步 flush 每条约 5s 阻塞,无重试,broker 不可达即抛;升级路径=异步发送+确认回调
-        """发布异常到 Kafka"""
+        """发布异常到 Kafka；单条等确认，超时即抛（由消费侧重试/DLT 链路兜底）。"""
         producer = self._get_producer()
-        producer.send(
+        # ponytail: 同步等单条确认（2s）保证「发布成功才返回」，最坏 3 次重试阻塞 ~6s+退避；
+        # 彻底解法是后台批量 flusher + 确认回调推进水位，个人项目流量下不值得。
+        future = producer.send(
             "anomaly-alerts",
             key=anomaly.aggregate_id,
             value=anomaly.model_dump(),
         )
-        producer.flush(timeout=5)
+        future.get(timeout=2)
         logger.info("异常已发布: anomaly_id=%s rule_id=%s", anomaly.anomaly_id, anomaly.rule_id)
 
     def close(self) -> None:

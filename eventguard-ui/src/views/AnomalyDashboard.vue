@@ -282,7 +282,11 @@ async function runDeepAnalysis() {
 // Item 6b：把 AI 建议动作作为步骤发起补偿 Saga（高风险步自动落审批单）
 async function startSagaCompensation() {
   if (!currentReport.value || !currentAggregateId.value) return
-  const steps = currentReport.value.suggestions.map((s) => ({ actionType: s.action, params: {} }))
+  // 携带 AI 建议中的退款金额（Python 侧从事件序列取实付金额）：服务端按 amount 判定「>100 元需审批」
+  const steps = currentReport.value.suggestions.map((s) => ({
+    actionType: s.action,
+    params: s.amount != null ? { amount: s.amount } : {},
+  }))
   try {
     const r = await CompensationApi.startSaga(currentAggregateId.value, steps)
     const msg =

@@ -18,21 +18,27 @@ class RuleBridge:
 
     def __init__(self, url: Optional[str] = None):
         self.url = url or settings.rule_engine_url
+        # 复用连接池：每事件一次评估，即建即弃的 Client 会让 TCP/TLS 握手成为检测吞吐的无谓开销
+        self._client: Optional[httpx.Client] = None
+
+    def _get_client(self) -> httpx.Client:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.Client(timeout=settings.rule_bridge_timeout_seconds)
+        return self._client
 
     def evaluate(self, event: dict) -> Optional[AnomalyResult]:
         """调用规则引擎，命中返回 AnomalyResult，未命中返回 None"""
         request_body = self._build_request(event)
         try:
-            # ponytail: 单条同步阻塞硬超时（默认 2.0s，EG_RULE_BRIDGE_TIMEOUT_SECONDS 可调）；
+            # ponytail: 同步阻塞硬超时（默认 2.0s，EG_RULE_BRIDGE_TIMEOUT_SECONDS 可调）；
             # 规则引擎慢即整条事件检测被卡住，升级路径=异步/批量调用+熔断
-            with httpx.Client(timeout=settings.rule_bridge_timeout_seconds) as client:
-                resp = client.post(
-                    self.url,
-                    json=request_body,
-                    headers={"X-API-Key": settings.machine_api_key},
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            resp = self._get_client().post(
+                self.url,
+                json=request_body,
+                headers={"X-API-Key": settings.machine_api_key},
+            )
+            resp.raise_for_status()
+            data = resp.json()
         except (httpx.HTTPError, ValueError) as e:  # ValueError 覆盖 200 但 body 非合法 JSON（JSONDecodeError）
             egm.rule_bridge_errors.inc()
             logger.warning("规则引擎调用失败,降级跳过: %s", e)

@@ -12,6 +12,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.sql.Timestamp;
 
@@ -30,6 +32,10 @@ public class OrderViewProjection implements Projection {
 
     @Autowired(required = false)
     private EventGuardMetrics metrics;
+
+    // 进程内通知器：投影事务提交后唤醒等待中的读己写请求（测试环境可为 null）
+    @Autowired(required = false)
+    private ProjectionProgressNotifier progressNotifier;
 
     public OrderViewProjection(@Qualifier("projectionJdbcTemplate") JdbcTemplate jdbc,
                                EventDeserializer deserializer) {
@@ -57,12 +63,31 @@ public class OrderViewProjection implements Projection {
         }
         try {
             handle(event);
+            notifyProgressAfterCommit(event);
             if (metrics != null) {
                 metrics.counter("eventguard.projection.event.processed", "event_type", event.getEventType());
             }
         } catch (Exception e) {
             log.error("[投影] 处理事件失败 eventId={}", event.getEventId(), e);
             throw new IllegalStateException("投影事件处理失败", e);
+        }
+    }
+
+    /**
+     * 投影事务提交后再广播进度：提前通知会让读己写在旧事务可见性下查到未提交数据，
+     * 等待者将读到旧版本；无事务上下文（测试直调）时立即通知。
+     */
+    private void notifyProgressAfterCommit(DomainEvent event) {
+        if (progressNotifier == null) return;
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    progressNotifier.advance(event.getAggregateId(), event.getVersion());
+                }
+            });
+        } else {
+            progressNotifier.advance(event.getAggregateId(), event.getVersion());
         }
     }
 

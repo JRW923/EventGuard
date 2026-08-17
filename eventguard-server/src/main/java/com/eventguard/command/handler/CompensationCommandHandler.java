@@ -3,6 +3,7 @@ package com.eventguard.command.handler;
 import com.eventguard.common.dto.CommandResult;
 import com.eventguard.compensation.model.CompensationCommand;
 import com.eventguard.event.model.CompensationExecutedEvent;
+import com.eventguard.event.model.DomainEvent;
 import com.eventguard.event.store.EventStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,12 +43,11 @@ public class CompensationCommandHandler {
     }
 
     private int loadCurrentVersion(UUID aggregateId) {
-        try {
-            var events = eventStore.load(aggregateId);
-            return events.stream().mapToInt(e -> e.getVersion()).max().orElse(0);
-        } catch (Exception e) {
-            log.warn("加载聚合 {} 当前版本失败，使用 0：{}", aggregateId, e.getMessage());
-            return 0;
-        }
+        // 加载失败必须中止：以 expectedVersion=0 续写会得到误导性的版本冲突报错（真实原因是加载失败），
+        // 且若未来 append 前置校验调整，version=0 存在写错流的风险。
+        var events = eventStore.load(aggregateId);
+        return events.stream().mapToInt(DomainEvent::getVersion).max()
+                .orElseThrow(() -> new IllegalStateException(
+                        "[补偿] 聚合无事件流，拒绝补偿 order=" + aggregateId));
     }
 }

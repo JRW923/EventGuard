@@ -1,0 +1,9 @@
+route:
+  receiver: "webhook"
+
+receivers:
+  - name: "webhook"
+    webhook_configs:
+      # 占位符 ALERT_WEBHOOK_URL 在容器启动时由 entrypoint 注入（Alertmanager 自身不支持环境变量展开）
+      - url: "${ALERT_WEBHOOK_URL}"
+        send_resolved: true

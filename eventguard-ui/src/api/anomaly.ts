@@ -4,7 +4,7 @@ export interface AnalysisReport {
   anomaly_id: string
   root_cause: string
   evidence: string[]
-  suggestions: { action: string; reason: string; risk: string }[]
+  suggestions: { action: string; reason: string; risk: string; amount?: number }[]
 }
 
 export interface AgentTraceStep {

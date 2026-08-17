@@ -253,7 +253,8 @@ class AnomalyAccuracySuite(Suite):
             "R001/R004/R005 为 rest 驱动；R002/P002/P003 为 kafka_inject（合成事件绕过聚合状态机，"
             "状态跳跃类规则伴随触发属预期）；R003 因 kafka_inject 会被服务端投影塌缩 order_view 版本历史、"
             "version-gated 前序状态读不到，故改为直连规则引擎桥接（rest，AI 评估规则的同一路径）做确定性触发。"
-            "HMM 未接线（hmm_detector=None），数字只反映规则引擎+IsolationForest+流程规则。"
+            "HMM 已接线线上检测管道（2026-08-16 起，P004 序列级第二意见）；注入场景为规则覆盖类型，"
+            "P004 命中情况以实际运行告警为准。"
         )
         self.result.conclusion = (
             f"检出 {flagged}/{len(scenarios)} 场景；预期规则命中 {expected_hit}/{len(scenarios)}；"

@@ -89,8 +89,10 @@ class OrderQueryServiceTest {
     @Test
     void getEvents_should_filter_by_upToVersion() {
         UUID orderId = UUID.randomUUID();
-        when(orderViewRepository.findEventsByAggregateId(orderId)).thenReturn(List.of(
+        when(orderViewRepository.findEventsByAggregateId(orderId, null)).thenReturn(List.of(
                 eventAt(1), eventAt(2), eventAt(3), eventAt(4)));
+        when(orderViewRepository.findEventsByAggregateId(orderId, 2)).thenReturn(List.of(
+                eventAt(1), eventAt(2)));
 
         List<EventDto> all = service.getEvents(orderId);
         assertThat(all).hasSize(4);
@@ -109,7 +111,7 @@ class OrderQueryServiceTest {
         when(orderViewRepository.findById(any())).thenReturn(Optional.of(v));
 
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        OrderQueryService fastService = new OrderQueryService(orderViewRepository, 200, 10, 40, registry);
+        OrderQueryService fastService = new OrderQueryService(orderViewRepository, 200, 10, 40, registry, new com.eventguard.query.projection.ProjectionProgressNotifier());
 
         assertThatThrownBy(() -> fastService.readAfterWrite(orderId, 99))
                 .isInstanceOf(ProjectionLagException.class);
@@ -119,15 +121,16 @@ class OrderQueryServiceTest {
     }
 
     @Test
-    void readAfterWrite_should_back_off_polling_on_lag() {
+    void readAfterWrite_should_bound_polling_on_lag() {
+        // 新机制：兜底轮询由共享单线程按固定间隔执行（通知即时唤醒为主），次数上限 = 超时/间隔 + 首查
         UUID orderId = UUID.randomUUID();
         when(orderViewRepository.findById(any())).thenReturn(Optional.empty());
 
-        OrderQueryService fastService = new OrderQueryService(orderViewRepository, 200, 10, 40, null);
+        OrderQueryService fastService = new OrderQueryService(orderViewRepository, 200, 10);
         assertThatThrownBy(() -> fastService.readAfterWrite(orderId, 1))
                 .isInstanceOf(ProjectionLagException.class);
 
-        verify(orderViewRepository, atMost(7)).findById(orderId);
+        verify(orderViewRepository, atMost(25)).findById(orderId);
     }
 
     @Test

@@ -22,7 +22,7 @@ public class AnomalyWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(AnomalyWebSocketHandler.class);
 
-    // ponytail: 会话仅在 afterConnectionClosed 移除，无心跳/空闲剔除；isOpen() 检查防止向死会话发送
+    // ponytail: 无心跳/空闲剔除，靠 isOpen() + 发送失败剔除兜底；多实例广播需 Redis Pub/Sub（升级路径）
     private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
 
     // 注入 Spring 托管实例，与 REST 响应共用同一套序列化配置（JSR310、命名策略）；
@@ -57,17 +57,33 @@ public class AnomalyWebSocketHandler extends TextWebSocketHandler {
             String json = objectMapper.writeValueAsString(alert);
             TextMessage message = new TextMessage(json);
             for (WebSocketSession session : sessions) {
-                if (session.isOpen()) {
-                    try {
-                        session.sendMessage(message);
-                    } catch (IOException e) {
-                        // ponytail: 单会话发送失败仅 warn 并继续其余会话，是有意设计（一会话失败不中断其余）
-                        log.warn("WebSocket 发送失败 session={}: {}", session.getId(), e.getMessage());
-                    }
+                if (!session.isOpen()) {
+                    // 半开死会话：静默剔除，避免长期运行累积与每次广播的无效尝试
+                    sessions.remove(session);
+                    continue;
+                }
+                try {
+                    session.sendMessage(message);
+                } catch (IOException e) {
+                    // 发送失败的会话大概率已死：剔除并关闭，其余会话继续（一会话失败不中断其余）
+                    sessions.remove(session);
+                    closeQuietly(session);
+                    log.warn("WebSocket 发送失败，已剔除会话={}: {}", session.getId(), e.getMessage());
+                } catch (IllegalStateException e) {
+                    sessions.remove(session);
+                    log.warn("WebSocket 会话状态异常，已剔除={}: {}", session.getId(), e.getMessage());
                 }
             }
         } catch (Exception e) {
             log.error("广播异常告警失败: {}", e.getMessage(), e);
+        }
+    }
+
+    private void closeQuietly(WebSocketSession session) {
+        try {
+            session.close();
+        } catch (IOException ignored) {
+            // 关闭失败无需处理：会话已从集合移除，不会再被广播
         }
     }
 }

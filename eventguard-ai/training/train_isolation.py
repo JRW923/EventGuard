@@ -1,6 +1,7 @@
 """Isolation Forest 训练脚本：用正常事件流训练模型并持久化"""
 
 import json
+import os
 from pathlib import Path
 
 import joblib
@@ -46,10 +47,11 @@ def train_isolation_forest(
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # 训练 Isolation Forest
+    # 训练 Isolation Forest（contamination 经 EG_ISOLATION_CONTAMINATION 可配）
+    contamination = float(os.environ.get("EG_ISOLATION_CONTAMINATION", "0.05"))
     model = IsolationForest(
         n_estimators=100,
-        contamination=0.05,
+        contamination=contamination,
         random_state=42,
         n_jobs=-1,
     )
@@ -64,7 +66,7 @@ def train_isolation_forest(
     # 简单验证：训练集上的异常率
     preds = model.predict(X_scaled)
     anomaly_rate = (preds == -1).sum() / len(preds)
-    print(f"训练集异常率: {anomaly_rate:.4f}（预期接近 contamination=0.05）")
+    print(f"训练集异常率: {anomaly_rate:.4f}（预期接近 contamination={contamination}）")
 
 
 if __name__ == "__main__":
