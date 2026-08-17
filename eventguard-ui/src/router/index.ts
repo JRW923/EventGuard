@@ -2,8 +2,10 @@ import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-rou
 import { auth } from '@/stores/auth'
 
 const routes: RouteRecordRaw[] = [
-  // 登录前的公开欢迎页（standalone：不套控制台壳）
-  { path: '/', name: 'Welcome', component: () => import('../views/Landing.vue'), meta: { title: '欢迎', public: true, standalone: true } },
+  // 个人主页（求职简历主页，standalone）：站点门面，公开访问
+  { path: '/', name: 'Home', component: () => import('../views/PersonalHome.vue'), meta: { title: '个人主页', public: true, standalone: true } },
+  // EventGuard 项目落地页（standalone：不套控制台壳）
+  { path: '/eventguard', name: 'Welcome', component: () => import('../views/Landing.vue'), meta: { title: '欢迎', public: true, standalone: true } },
   // 登录前的「体验指南」页
   { path: '/guide', name: 'Guide', component: () => import('../views/Guide.vue'), meta: { title: '体验指南', public: true, standalone: true } },
   { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { title: '登录', public: true } },
@@ -68,6 +70,12 @@ const routes: RouteRecordRaw[] = [
     name: 'AuditLogs',
     component: () => import('../views/admin/AuditLogs.vue'),
     meta: { title: '审计日志', permission: 'user:manage' },
+  },
+  {
+    path: '/admin/site-profile',
+    name: 'SiteProfileEditor',
+    component: () => import('../views/admin/SiteProfileEditor.vue'),
+    meta: { title: '主页内容', permission: 'user:manage' },
   },
   {
     path: '/admin/llm-settings',

@@ -29,7 +29,7 @@ describe('应用启动 + Landing 渲染（诊断用）', () => {
     app.use(ElementPlus)
     app.use(router)
     app.mount(root)
-    await router.push('/')
+    await router.push('/eventguard')
     await router.isReady()
     // 等懒加载组件与挂载完成
     await new Promise((r) => setTimeout(r, 120))

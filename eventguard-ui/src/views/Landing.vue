@@ -257,7 +257,7 @@ const features: Feature[] = [
   {
     title: 'AI 异常检测',
     desc: '规则引擎 + 无监督模型双通道识别异常订单，命中规则 / 模型与异常类型清晰标注。',
-    tags: ['规则引擎', 'IsolationForest'],
+    tags: ['规则引擎', 'IsolationForest', 'HMM 序列检测'],
     accent: '#e17865',
   },
   {
@@ -308,7 +308,7 @@ const techGroups: TechGroup[] = [
   {
     icon: '🤖',
     title: 'AI 工程',
-    items: ['Prompt Engineering', 'RAG', 'Agent Harness', 'Workflow', 'Proficient with Coding Agents'],
+    items: ['Prompt Engineering', 'RAG', 'Agent Harness', 'Workflow', 'Coding Agents'],
     accent: '#ec4899',
   },
   {

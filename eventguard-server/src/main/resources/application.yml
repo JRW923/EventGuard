@@ -46,6 +46,7 @@ spring:
         - classpath:db/migration/V6__query_indexes.sql
         - classpath:db/migration/V7__command_log_request_hash.sql
         - classpath:db/migration/V8__anomaly_alerts.sql
+        - classpath:db/migration/V9__site_profile.sql
 
 management:
   endpoints:

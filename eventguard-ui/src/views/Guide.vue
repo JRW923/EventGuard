@@ -4,7 +4,7 @@
 
     <!-- 顶栏 -->
     <header class="guide-top">
-      <router-link class="guide-top-back" to="/">← 返回首页</router-link>
+      <router-link class="guide-top-back" to="/">← 返回个人主页</router-link>
       <span class="guide-top-brand">EventGuard · 事件卫士</span>
       <button class="guide-top-enter" @click="goEnter">进入系统</button>
     </header>
@@ -80,13 +80,18 @@
               <span class="guide-account-role">{{ acc.role }}</span>
               <span class="guide-account-user">@{{ acc.username }}</span>
             </div>
-            <span
-              class="guide-account-pwd"
-              :class="{ 'guide-account-pwd--blurred': !acc.revealed }"
-              :title="acc.revealed ? '点击隐藏' : '点击查看密码'"
-              @click="acc.revealed = !acc.revealed"
-              >{{ acc.password }}</span
-            >
+            <div class="guide-account-pwd-row">
+              <span
+                class="guide-account-pwd"
+                :class="{ 'guide-account-pwd--blurred': !acc.revealed }"
+                :title="acc.revealed ? '点击隐藏' : '点击查看密码'"
+                @click="acc.revealed = !acc.revealed"
+                >{{ acc.password }}</span
+              >
+              <button class="guide-account-copy" @click="copyPassword(acc)">
+                {{ acc.copied ? '已复制 ✓' : '复制' }}
+              </button>
+            </div>
           </div>
         </div>
         <p class="guide-account-note">
@@ -108,7 +113,7 @@
       <!-- CTA -->
       <div class="guide-cta reveal">
         <button class="guide-btn guide-btn--primary" @click="goEnter">进入系统开始体验</button>
-        <router-link class="guide-btn guide-btn--ghost" to="/">返回首页</router-link>
+        <router-link class="guide-btn guide-btn--ghost" to="/">返回个人主页</router-link>
       </div>
     </main>
 
@@ -165,12 +170,13 @@ interface Account {
   role: string
   password: string
   revealed: boolean
+  copied: boolean
   accent: string
 }
 const accounts = ref<Account[]>([
-  { username: 'admin', role: '管理员', password: 'admin123456', revealed: false, accent: '#818cf8' },
-  { username: 'operator', role: '运营', password: 'operator123456', revealed: false, accent: '#22d3ee' },
-  { username: 'viewer', role: '只读', password: 'viewer123456', revealed: false, accent: '#c084fc' },
+  { username: 'admin', role: '管理员', password: 'admin123456', revealed: false, copied: false, accent: '#818cf8' },
+  { username: 'operator', role: '运营', password: 'operator123456', revealed: false, copied: false, accent: '#22d3ee' },
+  { username: 'viewer', role: '只读', password: 'viewer123456', revealed: false, copied: false, accent: '#c084fc' },
 ])
 
 // 核心链路（一次体验看到的数据流动）
@@ -243,6 +249,40 @@ function goEnter() {
     router.push('/orders')
   } else {
     router.push('/login')
+  }
+}
+
+function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard
+      .writeText(text)
+      .then(() => true)
+      .catch(() => fallbackCopy(text))
+  }
+  return Promise.resolve(fallbackCopy(text))
+}
+function fallbackCopy(text: string): boolean {
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+    return true
+  } catch {
+    return false
+  }
+}
+async function copyPassword(acc: Account) {
+  const ok = await copyText(acc.password)
+  if (ok) {
+    acc.copied = true
+    setTimeout(() => {
+      acc.copied = false
+    }, 1500)
   }
 }
 </script>
@@ -611,9 +651,18 @@ body.eg-landing {
   font-weight: 700;
   color: #f1f5f9;
 }
-.guide-account-pwd {
-  display: block;
+.guide-account-pwd-row {
   margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+}
+.guide-account-pwd {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 14px;
   letter-spacing: 0.5px;
@@ -628,6 +677,22 @@ body.eg-landing {
 }
 .guide-account-pwd--blurred:hover {
   filter: blur(2px);
+}
+.guide-account-copy {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.07);
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+  font-family: inherit;
+}
+.guide-account-copy:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
 }
 .guide-account-note {
   margin: 20px 0 0;

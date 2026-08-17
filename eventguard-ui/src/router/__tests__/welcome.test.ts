@@ -23,10 +23,17 @@ describe('欢迎页 / 体验指南路由（登录前落地页）', () => {
     await router.push('/').catch(() => {})
   })
 
-  it('“/” 是公开的欢迎页而非重定向', () => {
+  it('“/” 是公开的个人主页而非重定向', () => {
     const route = router.getRoutes().find((r) => r.path === '/')
     expect(route).toBeDefined()
     expect(route?.redirect).toBeUndefined()
+    expect(route?.meta.public).toBe(true)
+    expect(route?.meta.standalone).toBe(true)
+  })
+
+  it('“/eventguard” 是公开的项目落地页', () => {
+    const route = router.getRoutes().find((r) => r.path === '/eventguard')
+    expect(route).toBeDefined()
     expect(route?.meta.public).toBe(true)
     expect(route?.meta.standalone).toBe(true)
   })
@@ -38,17 +45,17 @@ describe('欢迎页 / 体验指南路由（登录前落地页）', () => {
     expect(route?.meta.standalone).toBe(true)
   })
 
-  it('未登录访问“/”进入欢迎页', async () => {
+  it('未登录访问“/”进入个人主页', async () => {
     state.authenticated = false
     await router.push('/')
     expect(router.currentRoute.value.path).toBe('/')
   })
 
-  it('已登录仍可访问介绍页', async () => {
-    state.authenticated = true
-    await router.push('/guide') // 先离开“/”，避免重复导航不触发守卫
-    await router.push('/')
-    expect(router.currentRoute.value.path).toBe('/')
+  it('未登录访问“/eventguard”进入项目落地页', async () => {
+    state.authenticated = false
+    await router.push('/guide') // 先离开，避免重复导航不触发守卫
+    await router.push('/eventguard')
+    expect(router.currentRoute.value.path).toBe('/eventguard')
   })
 
   it('已登录访问“/login”重定向到“/orders”', async () => {
