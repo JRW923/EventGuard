@@ -18,6 +18,24 @@ PUBLISH_BACKOFF_SECONDS = (0.3, 0.9, 1.8)
 MAX_MESSAGE_RETRIES = 3
 
 
+def flatten_debezium_event(value):
+    """Debezium CDC 消息展平为检测器可用事件字典（与 Java EventDeserializer 对齐）。
+
+    envelope: {"schema":{...},"payload":{event_id,...}} -> {event_id,...}；
+    同时把 JSONB 字符串列 payload/metadata 解串为对象。抽出为纯函数以便跨栈契约测试直接调用。
+    """
+    if isinstance(value, dict) and isinstance(value.get("payload"), dict) \
+            and "event_id" in value["payload"]:
+        value = value["payload"]
+    for key in ("payload", "metadata"):
+        if isinstance(value.get(key), str):
+            try:
+                value[key] = json.loads(value[key])
+            except (ValueError, TypeError):
+                pass
+    return value
+
+
 class EventKafkaConsumer:
     """消费 domain-events 的后台线程消费者"""
 
@@ -77,18 +95,7 @@ class EventKafkaConsumer:
                                 value = json.loads(value.decode("utf-8"))
                             elif isinstance(value, str):
                                 value = json.loads(value)
-                            # Debezium envelope → 展平（与 Java EventDeserializer 对齐）：
-                            # envelope: {"schema":{...},"payload":{event_id,...}}；展平: {event_id,...}
-                            if isinstance(value, dict) and isinstance(value.get("payload"), dict) \
-                                    and "event_id" in value["payload"]:
-                                value = value["payload"]
-                            # Debezium 把 JSONB 列序列化为 JSON 字符串，展平为对象供检测器使用
-                            for key in ("payload", "metadata"):
-                                if isinstance(value.get(key), str):
-                                    try:
-                                        value[key] = json.loads(value[key])
-                                    except (ValueError, TypeError):
-                                        pass
+                            value = flatten_debezium_event(value)
                             self.handler(value)
                             self._consumer.commit()
                             # 重试后成功的 offset 必须从失败计数里摘掉，否则 _failures 随运行时长无界增长

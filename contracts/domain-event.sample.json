@@ -1,0 +1,14 @@
+{
+  "_comment": "Java 经 Debezium CDC 发出的 domain_events 插入消息（跨栈契约：Java 写 → AI 读）。AI 侧 flatten_debezium_event 必须能正确展平此结构，提取 event_id/aggregate_id/event_type 并把 JSONB 字符串列的 payload/metadata 解串为对象。",
+  "schema": { "type": "struct", "fields": [] },
+  "payload": {
+    "event_id": "00000000-0000-0000-0000-000000000001",
+    "aggregate_id": "11111111-1111-1111-1111-111111111111",
+    "aggregate_type": "Order",
+    "event_type": "OrderCreatedEvent",
+    "event_version": 1,
+    "payload": "{\"orderId\":\"11111111-1111-1111-1111-111111111111\",\"userId\":\"u1\",\"totalAmount\":99.00}",
+    "metadata": null,
+    "created_at": 1700000000000
+  }
+}
