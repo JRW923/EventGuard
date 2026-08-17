@@ -106,6 +106,7 @@ services:
       EG_RATE_LIMIT_ENABLED: ${EG_RATE_LIMIT_ENABLED:-true}
       EG_PROJECTION_CONCURRENCY: ${EG_PROJECTION_CONCURRENCY:-3}
       EG_DLT_REPLAY_CRON: ${EG_DLT_REPLAY_CRON:-0 0/10 * * * *}
+      EG_DLT_MAX_REPLAY_ATTEMPTS: ${EG_DLT_MAX_REPLAY_ATTEMPTS:-3}
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }

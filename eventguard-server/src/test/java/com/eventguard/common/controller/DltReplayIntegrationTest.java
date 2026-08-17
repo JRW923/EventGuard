@@ -85,7 +85,7 @@ class DltReplayIntegrationTest {
         consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "dlt-replay-assert");
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         replayConsumerFactory = new DefaultKafkaConsumerFactory<>(consumerProps);
-        controller = new DltReplayController(replayConsumerFactory, dltTemplate);
+        controller = new DltReplayController(replayConsumerFactory, dltTemplate, 3);
 
         try (AdminClient admin = AdminClient.create(props)) {
             admin.createTopics(List.of(
