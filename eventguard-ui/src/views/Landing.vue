@@ -13,7 +13,6 @@
           <a href="#features" @click.prevent="scrollToSection('features')">核心能力</a>
           <a href="#projtech" @click.prevent="scrollToSection('projtech')">项目技术栈</a>
           <a href="#accounts" @click.prevent="scrollToSection('accounts')">体验账号</a>
-          <a href="#about" @click.prevent="scrollToSection('about')">关于我</a>
         </div>
         <div class="landing-nav-actions">
           <router-link class="landing-btn landing-btn--ghost" to="/guide">体验指南</router-link>
@@ -146,67 +145,6 @@
       <p class="landing-account-note reveal">以上为演示账号的默认密码，可直接登录体验。</p>
     </section>
 
-    <!-- 关于我 -->
-    <section id="about" class="landing-section">
-      <div class="landing-section-heading reveal">
-        <span class="landing-section-kicker">04 / BUILDER</span>
-        <h2 class="landing-h2">关于我</h2>
-        <p class="landing-sec-sub">后端系统能力与 AI 应用工程的综合实践。</p>
-      </div>
-      <div class="landing-about reveal">
-        <div class="landing-about-card">
-          <div class="landing-about-head">
-            <div class="landing-about-avatar">
-              <img
-                src="/brand/profile-photo.jpeg"
-                alt="吴佳睿证件照"
-                loading="lazy"
-                decoding="async"
-              />
-            </div>
-            <div class="landing-about-info">
-              <h3 class="landing-about-name">吴佳睿</h3>
-              <p class="landing-about-roles">后端开发 · AI 应用开发 · Agent 开发</p>
-              <p class="landing-about-edu">
-                <span class="landing-about-school-mark" aria-hidden="true">
-                  <img src="/brand/seu-logo.png" alt="" />
-                </span>
-                <span>东南大学 · 本硕</span>
-              </p>
-              <div class="landing-about-links">
-              <a class="landing-about-link" href="https://github.com/JRW923" target="_blank" rel="noopener noreferrer">
-                <svg viewBox="0 0 16 16" class="landing-about-github" aria-hidden="true">
-                  <path
-                    fill="currentColor"
-                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
-                  />
-                </svg>
-                GitHub · JRW923
-              </a>
-              <span class="landing-about-qq">QQ · 471464213</span>
-              </div>
-            </div>
-          </div>
-          <div class="landing-about-groups">
-            <div
-              v-for="g in techGroups"
-              :key="g.title"
-              class="landing-tech-group reveal"
-              :style="{ '--accent': g.accent }"
-            >
-              <div class="landing-tech-group-head">
-                <span class="landing-tech-group-icon">{{ g.icon }}</span>
-                <span class="landing-tech-group-title">{{ g.title }}</span>
-              </div>
-              <div class="landing-tech-group-items">
-                <span class="landing-tech-item" v-for="t in g.items" :key="t">{{ t }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- 页脚 -->
     <footer class="landing-footer">
       <div class="landing-footer-inner">
@@ -277,45 +215,6 @@ const features: Feature[] = [
     desc: 'LLM 产出异常根因与白名单建议动作；JWT + 用户-角色-权限覆盖 REST / WebSocket / AI 全链路鉴权。',
     tags: ['LLM', 'JWT', 'RBAC'],
     accent: '#63b87b',
-  },
-]
-
-interface TechGroup {
-  icon: string
-  title: string
-  items: string[]
-  accent: string
-}
-const techGroups: TechGroup[] = [
-  {
-    icon: '⌨️',
-    title: '语言',
-    items: ['Java', 'Python'],
-    accent: '#6366f1',
-  },
-  {
-    icon: '🧩',
-    title: '后端基础',
-    items: ['Spring Boot', 'Spring MVC', 'MyBatis', 'MyBatis-Plus', 'Spring Security / JWT', 'RESTful API'],
-    accent: '#8b5cf6',
-  },
-  {
-    icon: '🗄️',
-    title: '数据库与中间件',
-    items: ['MySQL', 'PostgreSQL', 'Redis', 'Kafka', 'Milvus'],
-    accent: '#06b6d4',
-  },
-  {
-    icon: '🤖',
-    title: 'AI 工程',
-    items: ['Prompt Engineering', 'RAG', 'Agent Harness', 'Workflow', 'Coding Agents'],
-    accent: '#ec4899',
-  },
-  {
-    icon: '🚀',
-    title: '部署与运维',
-    items: ['Git', 'Linux', 'Docker + Nginx', 'Prometheus + Grafana', 'ELK + Loki'],
-    accent: '#22c55e',
   },
 ]
 
@@ -840,36 +739,6 @@ body.eg-landing {
   border: 1px solid rgba(255,255,255,.09);
 }
 
-/* ---------- 技能分组（关于我内，行式） ---------- */
-.landing-tech-group {
-  --accent: #6366f1;
-  display: flex;
-  align-items: flex-start;
-  gap: 18px;
-}
-.landing-tech-group-head {
-  flex-shrink: 0;
-  width: 150px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 6px;
-}
-.landing-tech-group-icon {
-  font-size: 16px;
-  line-height: 1;
-}
-.landing-tech-group-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #c7d2fe;
-}
-.landing-tech-group-items {
-  flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
 .landing-tech-item {
   padding: 6px 14px;
   font-size: 14px;
@@ -988,108 +857,6 @@ body.eg-landing {
   color: #a5b4fc;
 }
 
-/* ---------- 关于我 ---------- */
-.landing-about {
-  margin-top: 40px;
-}
-.landing-about-card {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 30px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-.landing-about-head {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-.landing-about-groups {
-  margin-top: 26px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.landing-about-avatar {
-  flex-shrink: 0;
-  width: 84px;
-  height: 104px;
-  padding: 3px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 28px rgba(18, 45, 55, 0.3);
-}
-.landing-about-avatar img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: 6px;
-  object-fit: cover;
-  object-position: center 25%;
-}
-.landing-about-name {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 800;
-  color: #f8fafc;
-}
-.landing-about-roles {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: #a5b4fc;
-}
-.landing-about-edu {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 8px 0 0;
-  font-size: 14px;
-  color: #94a3b8;
-}
-.landing-about-school-mark {
-  display: inline-block;
-  width: 27px;
-  height: 27px;
-  overflow: hidden;
-  border-radius: 50%;
-  background: #10242b;
-  box-shadow: 0 0 0 1px rgba(255,255,255,.18);
-}
-.landing-about-school-mark img { display: block; width: auto; max-width: none; height: 27px; }
-.landing-about-links {
-  margin-top: 14px;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-.landing-about-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: #a5b4fc;
-  text-decoration: none;
-  transition: color 0.2s ease;
-}
-.landing-about-link:hover {
-  color: #c7d2fe;
-}
-.landing-about-qq {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: #94a3b8;
-}
-.landing-about-github {
-  width: 18px;
-  height: 18px;
-}
-
 /* ---------- 页脚 ---------- */
 .landing-footer {
   margin-top: 60px;
@@ -1146,17 +913,6 @@ body.eg-landing {
   .landing-nav-actions .landing-btn--ghost {
     display: none;
   }
-  .landing-about-head {
-    flex-direction: column;
-    text-align: center;
-  }
-  .landing-tech-group {
-    flex-direction: column;
-    gap: 10px;
-  }
-  .landing-tech-group-head {
-    width: auto;
-  }
   .landing-proof { grid-template-columns: 1fr; width: min(420px, 100%); }
   .landing-proof > div { padding: 12px 0; border-right: 0; border-bottom: 1px solid rgba(255,255,255,.07); }
   .landing-proof > div:last-child { border-bottom: 0; }
@@ -1181,7 +937,6 @@ body.eg-landing {
   .landing-stack-group:last-child { grid-column: auto; }
   .landing-account-pwd { flex-wrap: wrap; }
   .landing-account-pwd-value { min-width: 130px; }
-  .landing-about-card { padding: 22px 18px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

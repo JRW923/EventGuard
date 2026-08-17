@@ -6,9 +6,7 @@
 tunnel: 343ed7a5-adbf-4ad9-8978-a3d997d5e558
 credentials-file: /etc/cloudflared/credentials.json
 ingress:
-  - hostname: jrwdev.site
-    service: http://eventguard-ui:80
-  - hostname: www.jrwdev.site
+  - hostname: eventguard.jrwdev.site
     service: http://eventguard-ui:80
   - hostname: grafana.jrwdev.site
     service: http://caddy:8890

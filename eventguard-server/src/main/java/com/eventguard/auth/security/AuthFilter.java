@@ -34,7 +34,6 @@ import java.util.Optional;
  * /auth/login、/actuator、/health、/ws、/gateway 放行：login 为公开端点，actuator/health 为运维端点，
  * /ws 交由 JwtHandshakeInterceptor 按 ?token= 校验（浏览器 WS 无法带自定义头），
  * /gateway 由回调端点内自行校验机器密钥。
- * /site-profile GET 放行：个人主页公开可读（PUT 仍需认证+user:manage）。
  */
 @Component
 @Order(1)
@@ -62,9 +61,7 @@ public class AuthFilter implements Filter {
 
         if (path.startsWith("/actuator") || path.equals("/health")
                 || path.startsWith("/ws") || path.equals("/auth/login")
-                || path.startsWith("/gateway")
-                // 个人主页内容只读公开（GET）；写接口由 @RequirePermission(user:manage) 在控制器层拦截
-                || (path.equals("/site-profile") && "GET".equalsIgnoreCase(req.getMethod()))) {
+                || path.startsWith("/gateway")) {
             chain.doFilter(request, response);
             return;
         }

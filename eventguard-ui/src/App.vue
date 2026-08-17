@@ -3,7 +3,7 @@
   <el-container v-else class="app-shell">
     <div v-if="sidebarOpen" class="app-sidebar-backdrop" @click="sidebarOpen = false" />
     <el-aside class="app-sidebar" :class="{ 'app-sidebar--open': sidebarOpen }" width="248px">
-      <button class="app-brand-lockup" type="button" title="返回项目落地页" @click="router.push('/eventguard')">
+      <button class="app-brand-lockup" type="button" title="返回项目落地页" @click="router.push('/')">
         <img src="/brand/logo-2.png" alt="EventGuard" class="app-brand-mark" />
         <div>
           <div class="app-brand">EventGuard</div>
@@ -13,7 +13,7 @@
       <div class="app-workspace-label">OPERATIONS CONSOLE</div>
 
       <el-menu :default-active="activeMenu" router class="app-menu" @select="sidebarOpen = false">
-        <el-menu-item index="/eventguard">
+        <el-menu-item index="/">
           <span class="app-menu-icon app-menu-icon--home" aria-hidden="true" />
           <span>项目首页</span>
         </el-menu-item>
@@ -41,7 +41,6 @@
           <el-menu-item v-if="auth.hasPermission('role:manage')" index="/admin/roles">角色权限</el-menu-item>
           <el-menu-item v-if="auth.hasPermission('user:manage')" index="/admin/audit-logs">审计日志</el-menu-item>
           <el-menu-item v-if="auth.hasPermission('user:manage')" index="/admin/llm-settings">LLM 配置</el-menu-item>
-          <el-menu-item v-if="auth.hasPermission('user:manage')" index="/admin/site-profile">主页内容</el-menu-item>
         </el-sub-menu>
       </el-menu>
 

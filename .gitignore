@@ -47,5 +47,8 @@ backups/
 eventguard-benchmark/out/
 cloudflared/credentials.json
 
+# 独立个人站：单独维护并推送到私有 GitHub 仓库，不提交到 EventGuard。
+jrwdev-site/
+
 # 含明文密码的面板使用教程，禁止入库
 docs/使用指南/监控面板指南.md

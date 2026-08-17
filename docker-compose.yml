@@ -148,7 +148,7 @@ services:
   # ponytail: Cloudflare Tunnel 出网代理，绕过未备案域名的 Host 拦截。
   # 服务器主动连 Cloudflare（非外部连入 Tencent IP），故永不带"未备案 Host"入站；
   # 用本地 --config ingress 按 hostname 路由（见 ./cloudflared/config.yml）：
-  #   jrwdev.site→eventguard-ui，grafana/prometheus/alerts/kafka/db.jrwdev.site→各自服务。
+  #   eventguard.jrwdev.site→eventguard-ui，grafana/prometheus/alerts/kafka/db.jrwdev.site→各自服务。
   # --token 负责隧道身份认证，config 负责源站路由。新增面板只需在 config.yml 加一条 + 面板加 Public Hostname。
   # 注意：之前用 --url 单源模式会忽略 hostname；纯默认模式依赖面板 ingress 配置，本环境未配会 503，
   # 故改成本地 ingress 文件，cloudflared 自身按 Host 匹配，稳定可控。TUNNEL_TOKEN 在 .env 中提供。

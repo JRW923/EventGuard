@@ -1,11 +1,11 @@
-import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
+import { createRouter, createWebHashHistory, type RouteRecordRaw, type RouterScrollBehavior } from 'vue-router'
 import { auth } from '@/stores/auth'
 
 const routes: RouteRecordRaw[] = [
-  // 个人主页（求职简历主页，standalone）：站点门面，公开访问
-  { path: '/', name: 'Home', component: () => import('../views/PersonalHome.vue'), meta: { title: '个人主页', public: true, standalone: true } },
   // EventGuard 项目落地页（standalone：不套控制台壳）
-  { path: '/eventguard', name: 'Welcome', component: () => import('../views/Landing.vue'), meta: { title: '欢迎', public: true, standalone: true } },
+  { path: '/', name: 'Welcome', component: () => import('../views/Landing.vue'), meta: { title: '欢迎', public: true, standalone: true } },
+  // 兼容个人主页拆分前的旧链接。
+  { path: '/eventguard', redirect: '/' },
   // 登录前的「体验指南」页
   { path: '/guide', name: 'Guide', component: () => import('../views/Guide.vue'), meta: { title: '体验指南', public: true, standalone: true } },
   { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { title: '登录', public: true } },
@@ -72,12 +72,6 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '审计日志', permission: 'user:manage' },
   },
   {
-    path: '/admin/site-profile',
-    name: 'SiteProfileEditor',
-    component: () => import('../views/admin/SiteProfileEditor.vue'),
-    meta: { title: '主页内容', permission: 'user:manage' },
-  },
-  {
     path: '/admin/llm-settings',
     name: 'LlmSettings',
     component: () => import('../views/admin/LlmSettings.vue'),
@@ -87,11 +81,14 @@ const routes: RouteRecordRaw[] = [
   { path: '/:pathMatch(.*)*', name: 'NotFound', component: () => import('../views/NotFound.vue'), meta: { title: '页面不存在', public: true } },
 ]
 
+export const scrollBehavior: RouterScrollBehavior = (_to, _from, savedPosition) => savedPosition ?? { left: 0, top: 0 }
+
 export const router = createRouter({
   // ponytail: 用 hash 模式，URL 形如 /#/orders，避免 SPA 路由(/orders 等)与后端 API 路径同名
   // 导致 nginx 把浏览器直接访问/刷新转发到后端而 401；hash 部分不发给服务器，刷新/深链均正常
   history: createWebHashHistory(),
   routes,
+  scrollBehavior,
 })
 
 // 全局前置守卫：未登录跳登录页；登录后按路由 meta.permission 校验权限
