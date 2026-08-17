@@ -37,8 +37,10 @@ public class EventStoreJdbcImpl implements EventStore {
         // 0. 聚合级事务锁：串行化同一聚合的并发 append，使下方「校验→插入」在锁保护下成为原子区间，
         //    并发写走明确的乐观锁冲突（可重试），而不是撞唯一约束走异常路径（不可重试）。
         //    ponytail: 需在调用方事务内生效（锁随事务提交释放）；无事务调用时退化为立即释放，无害。
+        // ponytail: pg_advisory_xact_lock 返回 void，不能用 queryForObject(..., Long.class) 去读结果列
+        // （会抛 Bad value for type long）。这里只借它拿聚合级事务锁（副作用），SELECT 1 仅提供可读的返回值。
         jdbc.queryForObject(
-                "SELECT pg_advisory_xact_lock(hashtext(?))", Long.class, aggregateId.toString());
+                "SELECT 1 FROM pg_advisory_xact_lock(hashtext(?))", Long.class, aggregateId.toString());
         // 1. 主动校验 expectedVersion（清晰错误信息）
         Integer currentVersion = jdbc.queryForObject(
                 "SELECT COALESCE(MAX(event_version), 0) FROM domain_events WHERE aggregate_id = ?",
