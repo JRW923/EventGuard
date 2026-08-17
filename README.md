@@ -156,7 +156,7 @@ EventGuard/
 
 ## 评测
 
-`docker compose --profile bench run --rm bench` 会逐功能驱动真实运行的全栈，覆盖事件溯源一致性 / 读己写 / 幂等、CDC→Kafka 管道延迟、异常检测精度（R001–R005 与 P002/P003 的 P/R/F1 及检测延迟）、中文查询准确率、Saga 补偿成功率、网关异步回调、RBAC 矩阵、限流正确性、资源受限负载吞吐和混沌韧性。读己写与负载抽样均携带写命令返回的 `expectedVersion` 并断言版本、状态与金额；混沌的 Kafka 暂停场景在恢复后按 expectedVersion 验证投影追平，而不止于 topic 可访问。当前负载验收口径见 `docs/面试材料/量化口径.md`（已并入面试手册第四章），不外推为生产容量承诺。
+`docker compose --profile bench run --rm bench` 会逐功能驱动真实运行的全栈，覆盖事件溯源一致性 / 读己写 / 幂等、CDC→Kafka 管道延迟、异常检测精度（R001–R005 与 P002/P003 的 P/R/F1 及检测延迟）、中文查询准确率、Saga 补偿成功率、网关异步回调、RBAC 矩阵、限流正确性、资源受限负载吞吐和混沌韧性。读己写与负载抽样均携带写命令返回的 `expectedVersion` 并断言版本、状态与金额；混沌的 Kafka 暂停场景在恢复后按 expectedVersion 验证投影追平，而不止于 topic 可访问。当前负载验收口径见 [面试手册](docs/面试材料/面试手册.md)，不外推为生产容量承诺。
 
 产物是 `benchmark-report.md` / `.json`（canonical schema）+ 自包含 HTML（内嵌图表）+ Grafana dashboard 导入 JSON。每条断言标注驱动方式（`rest` / `kafka_inject` / `db_assert` / `chaos`）；聚合状态机不可达的规则用合成事件注入并如实标注；HMM 未接线、大模型缺失等运行条件一并写进报告——**报告的价值在于能复现和敢标注，而不是数字好看**。
 
@@ -219,6 +219,5 @@ cd eventguard-ui && npm run test && npm run type-check   # 前端 39 项 + 类�
 - 上线部署记录与已知偏差：[docs/部署运维/部署记录-2026-08-09.md](docs/部署运维/部署记录-2026-08-09.md)
 - 验证记录与实测结果：[docs/验证报告/验证记录.md](docs/验证报告/验证记录.md)
 - 评测器说明：[eventguard-benchmark/README.md](eventguard-benchmark/README.md)
-- 简历写法（字数口径）：[docs/面试材料/简历写法.md](docs/面试材料/简历写法.md)
-- 面试手册（话术 / 量化口径 / 200 题 Q&A）：[docs/面试材料/面试手册.md](docs/面试材料/面试手册.md)
-
+- 简历描述：[docs/面试材料/最终版简历描述.md](docs/面试材料/最终版简历描述.md)
+- 面试手册（项目介绍、量化口径、事实边界与高频问答）：[docs/面试材料/面试手册.md](docs/面试材料/面试手册.md)
