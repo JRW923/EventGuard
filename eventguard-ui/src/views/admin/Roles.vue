@@ -64,6 +64,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { AuthApi, type RoleItem, type PermissionItem } from '@/api/auth'
+import { friendlyError } from '@/api/http'
 
 const roles = ref<RoleItem[]>([])
 const permissions = ref<PermissionItem[]>([])
@@ -88,7 +89,7 @@ async function loadData() {
     roles.value = r
     permissions.value = p
   } catch (e: any) {
-    error.value = e.response?.data?.message || '加载失败'
+    error.value = friendlyError(e, '加载失败')
   } finally {
     loading.value = false
   }
@@ -130,7 +131,7 @@ async function onSave() {
     dialogVisible.value = false
     await loadData()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.message || e.message || '保存失败')
+    ElMessage.error(friendlyError(e, '保存失败'))
   } finally {
     saving.value = false
   }

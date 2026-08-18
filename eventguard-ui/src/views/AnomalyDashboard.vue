@@ -174,6 +174,7 @@ import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { useAnomalyWebSocket } from '../composables/useAnomalyWebSocket'
 import { AnomalyApi, type AnalysisReport, type AnomalyAlert, type AgentTraceStep, type SimilarCase } from '../api/anomaly'
 import { CompensationApi } from '../api/compensation'
+import { friendlyError } from '../api/http'
 
 const router = useRouter()
 const { alerts, connected } = useAnomalyWebSocket()
@@ -273,7 +274,7 @@ async function runDeepAnalysis() {
     healNote.value = r.note ?? ''
   } catch (e: any) {
     console.error('深度分析失败', e)
-    ElMessage.error('深度分析失败：' + (e.message || '未知错误'))
+    ElMessage.error(friendlyError(e, '深度分析失败'))
   } finally {
     healing.value = false
   }
@@ -295,7 +296,7 @@ async function startSagaCompensation() {
         : `补偿已执行（Saga: ${r.status}）`
     ElMessage.success(msg)
   } catch (e: any) {
-    ElMessage.error('发起补偿失败：' + (e.message || '未知错误'))
+    ElMessage.error(friendlyError(e, '发起补偿失败'))
   }
 }
 

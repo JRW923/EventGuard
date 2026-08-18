@@ -64,6 +64,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { CompensationApi, type CompensationResult } from '../api/compensation'
+import { friendlyError } from '../api/http'
 
 // 支持从异常看板跳转带入的初值（props 优先，其次 route.query）
 const props = defineProps<{
@@ -118,7 +119,7 @@ async function execute() {
       params,
     })
   } catch (e: any) {
-    result.value = { success: false, message: '执行失败：' + (e.message || '未知错误') }
+    result.value = { success: false, message: friendlyError(e, '执行失败') }
   } finally {
     loading.value = false
   }

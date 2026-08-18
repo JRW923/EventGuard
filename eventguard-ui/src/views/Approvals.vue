@@ -56,6 +56,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { CompensationApi, type ApprovalItem } from '../api/compensation'
+import { friendlyError } from '../api/http'
 
 const approvals = ref<ApprovalItem[]>([])
 const loading = ref(false)
@@ -74,7 +75,7 @@ async function load() {
   try {
     approvals.value = await CompensationApi.listApprovals()
   } catch (e: any) {
-    error.value = '加载失败：' + (e.message || '未知错误')
+    error.value = friendlyError(e, '加载失败')
     approvals.value = []
   } finally {
     loading.value = false
@@ -88,7 +89,7 @@ async function decide(approvalId: string, approve: boolean) {
     ElMessage.success(`${approve ? '已批准' : '已拒绝'}（Saga: ${status}）`)
     await load()
   } catch (e: any) {
-    ElMessage.error('操作失败：' + (e.message || '未知错误'))
+    ElMessage.error(friendlyError(e, '操作失败'))
   } finally {
     deciding.value[approvalId] = ''
   }

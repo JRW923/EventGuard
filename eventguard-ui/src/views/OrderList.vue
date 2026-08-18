@@ -100,6 +100,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { AiApi, type OrderPrediction } from '../api/ai'
 import { OrderApi, type OrderListItem } from '../api/order'
+import { friendlyError } from '../api/http'
 
 const router = useRouter()
 
@@ -137,7 +138,7 @@ async function predictRow(orderId: string) {
     const r = await AiApi.predict(orderId)
     predictions.value[orderId] = r.prediction ?? { error: r.message || '暂无预测' }
   } catch (e: any) {
-    predictions.value[orderId] = { error: e.message || '预测失败' }
+    predictions.value[orderId] = { error: friendlyError(e, '预测失败') }
   } finally {
     predicting.value[orderId] = false
   }
@@ -181,7 +182,7 @@ async function loadData() {
     orders.value = resp.orders
     total.value = resp.total
   } catch (e: any) {
-    error.value = '加载失败：' + (e.message || '未知错误')
+    error.value = friendlyError(e, '加载失败')
     orders.value = []
   } finally {
     loading.value = false
@@ -226,7 +227,7 @@ async function submitCreate() {
     await waitForOrder(orderId)
     await loadData()
   } catch (e: any) {
-    ElMessage.error('创建失败：' + (e.message || '未知错误'))
+    ElMessage.error(friendlyError(e, '创建失败'))
   } finally {
     creating.value = false
   }

@@ -84,6 +84,7 @@ import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { AuthApi, type UserInfo, type RoleItem } from '@/api/auth'
 import { auth } from '@/stores/auth'
+import { friendlyError } from '@/api/http'
 
 const users = ref<UserInfo[]>([])
 const roles = ref<RoleItem[]>([])
@@ -113,7 +114,7 @@ async function loadData() {
     users.value = u
     roles.value = r
   } catch (e: any) {
-    error.value = e.response?.data?.message || '加载失败'
+    error.value = friendlyError(e, '加载失败')
   } finally {
     loading.value = false
   }
@@ -162,7 +163,7 @@ async function onSave() {
     dialogVisible.value = false
     await loadData()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.message || e.message || '保存失败')
+    ElMessage.error(friendlyError(e, '保存失败'))
   } finally {
     saving.value = false
   }
@@ -186,7 +187,7 @@ async function onReset() {
     ElMessage.success('已重置，该用户下次登录需改密')
     resetVisible.value = false
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.message || '重置失败')
+    ElMessage.error(friendlyError(e, '重置失败'))
   } finally {
     saving.value = false
   }

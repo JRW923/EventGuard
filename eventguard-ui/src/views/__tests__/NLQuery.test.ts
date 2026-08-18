@@ -66,7 +66,7 @@ describe('NLQuery', () => {
     await wrapper.find('button[data-testid="submit-btn"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('查询失败')
+    expect(wrapper.text()).toContain('AI 服务不可用')
   })
 
   it('追问轮携带会话 id，且首轮不携带（多轮对话）', async () => {

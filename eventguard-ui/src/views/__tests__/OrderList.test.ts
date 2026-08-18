@@ -54,13 +54,13 @@ describe('OrderList', () => {
   })
 
   it('API 失败时显示错误提示', async () => {
-    ;(OrderApi.list as any).mockRejectedValue(new Error('网络错误'))
+    ;(OrderApi.list as any).mockRejectedValue(new Error('Network Error'))
 
     const wrapper = mount(OrderList, {
       global: { plugins: [ElementPlus] },
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('加载失败')
+    expect(wrapper.text()).toContain('网络连接异常')
   })
 })

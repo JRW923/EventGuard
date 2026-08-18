@@ -36,6 +36,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import EventTimeline from '../components/EventTimeline.vue'
 import { OrderApi } from '../api/order'
+import { friendlyError } from '../api/http'
 import { EventItem } from '@/types/event'
 
 const route = useRoute()
@@ -60,7 +61,7 @@ async function loadEvents() {
       fullMaxVersion.value = Math.max(...events.value.map((e) => e.version))
     }
   } catch (e: any) {
-    error.value = '加载失败：' + (e.message || '未知错误')
+    error.value = friendlyError(e, '加载失败')
     events.value = []
   } finally {
     loading.value = false

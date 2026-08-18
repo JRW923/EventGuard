@@ -46,6 +46,7 @@ import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { AuthApi } from '@/api/auth'
 import { auth } from '@/stores/auth'
+import { friendlyError } from '@/api/http'
 import LlmSettings from '@/views/admin/LlmSettings.vue'
 
 const router = useRouter()
@@ -73,7 +74,7 @@ async function onSubmit() {
     auth.logout()
     router.push('/login')
   } catch (e: any) {
-    error.value = e.response?.data?.message || '修改失败'
+    error.value = friendlyError(e, '修改失败')
   } finally {
     loading.value = false
   }
@@ -94,7 +95,7 @@ async function onLogoutAll() {
     auth.logout()
     router.push('/login')
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.message || '操作失败')
+    ElMessage.error(friendlyError(e, '操作失败'))
   } finally {
     logoutAllLoading.value = false
   }

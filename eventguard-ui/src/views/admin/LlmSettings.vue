@@ -71,6 +71,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { LlmApi, type LlmConfig, type LlmConfigPayload } from '@/api/llm'
+import { friendlyError } from '@/api/http'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -98,7 +99,7 @@ async function load() {
     form.temperature = data.temperature
     form.apiKey = ''
   } catch (e: any) {
-    error.value = e.response?.data?.detail || e.response?.data?.message || '无法读取 LLM 配置。'
+    error.value = friendlyError(e, '无法读取 LLM 配置')
   } finally {
     loading.value = false
   }
@@ -120,7 +121,7 @@ async function save() {
     form.apiKey = ''
     ElMessage.success('配置已保存，后续 AI 请求将使用你的新设置')
   } catch (e: any) {
-    error.value = e.response?.data?.detail || e.response?.data?.message || e.message || '保存失败'
+    error.value = friendlyError(e, '保存失败')
   } finally {
     saving.value = false
   }

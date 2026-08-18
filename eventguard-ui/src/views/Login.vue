@@ -77,6 +77,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { AuthApi } from '@/api/auth'
 import { auth } from '@/stores/auth'
+import { friendlyError } from '@/api/http'
 
 const route = useRoute()
 const router = useRouter()
@@ -119,7 +120,7 @@ async function onLogin() {
       finishLogin()
     }
   } catch (e: any) {
-    error.value = e.response?.data?.message || e.response?.statusText || '登录失败'
+    error.value = friendlyError(e, '登录失败')
   } finally {
     loading.value = false
   }
@@ -146,7 +147,7 @@ async function onChangePwd() {
     newPwd.value = ''
     confirmPwd.value = ''
   } catch (e: any) {
-    changeError.value = e.response?.data?.message || '修改失败'
+    changeError.value = friendlyError(e, '修改失败')
   } finally {
     changing.value = false
   }

@@ -79,6 +79,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { AiApi, type WeeklyReport, type OrderStory } from '../api/ai'
+import { friendlyError } from '../api/http'
 
 const days = ref(7)
 const loading = ref(false)
@@ -99,7 +100,7 @@ async function generate() {
   try {
     report.value = await AiApi.weeklyReport(days.value)
   } catch (e: any) {
-    error.value = '生成周报失败：' + (e.message || '未知错误')
+    error.value = friendlyError(e, '生成周报失败')
     report.value = null
   } finally {
     loading.value = false

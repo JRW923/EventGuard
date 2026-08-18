@@ -94,6 +94,7 @@
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
 import { AiApi, type QueryResult } from '../api/ai'
+import { friendlyError } from '../api/http'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -138,7 +139,7 @@ async function submit() {
       role: 'assistant',
       error: isTimeout
         ? '查询超时（等待超过 10 秒已中止）。后端会自动降级为规则摘要，请重试。'
-        : '查询失败：' + (e.message || '未知错误'),
+        : friendlyError(e, '查询失败'),
     })
   } finally {
     loading.value = false

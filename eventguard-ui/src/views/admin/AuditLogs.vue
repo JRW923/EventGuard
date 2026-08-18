@@ -48,6 +48,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { AuthApi, type AuditLogItem } from '../../api/auth'
+import { friendlyError } from '../../api/http'
 
 const logs = ref<AuditLogItem[]>([])
 const loading = ref(false)
@@ -67,7 +68,7 @@ function loadData() {
       total.value = rows.length < pageSize.value ? (currentPage.value - 1) * pageSize.value + rows.length : currentPage.value * pageSize.value + 1
     })
     .catch((e: any) => {
-      error.value = '加载失败：' + (e.message || '未知错误')
+      error.value = friendlyError(e, '加载失败')
       logs.value = []
     })
     .finally(() => (loading.value = false))
