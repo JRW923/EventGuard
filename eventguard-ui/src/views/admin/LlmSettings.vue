@@ -6,7 +6,7 @@
         <h1>我的 LLM 配置</h1>
         <p>配置你自己的模型接入。所有 AI 功能（NL 查询、根因分析、周报等）将使用你在此填写的 API。</p>
       </div>
-      <el-tag v-if="settings?.has_api_key" type="success" effect="light">已配置 API key</el-tag>
+      <el-tag v-if="settings?.hasApiKey" type="success" effect="light">已配置 API key</el-tag>
       <el-tag v-else type="warning" effect="light">尚未配置 API key</el-tag>
     </div>
 
@@ -37,17 +37,17 @@
           </el-form-item>
         </div>
         <el-form-item label="Base URL" required>
-          <el-input v-model="form.base_url" placeholder="https://api.example.com/v1" data-testid="llm-base-url">
+          <el-input v-model="form.baseUrl" placeholder="https://api.example.com/v1" data-testid="llm-base-url">
             <template #prepend>URL</template>
           </el-input>
           <div class="llm-help">支持 OpenAI-compatible 的 /v1/chat/completions，以及 Anthropic 的 /v1/messages。</div>
         </el-form-item>
         <el-form-item label="API key">
-          <el-input v-model="form.api_key" type="password" show-password autocomplete="new-password" :placeholder="settings?.has_api_key ? `当前已设置：${settings.api_key_masked}，留空保持不变` : '请输入 API key'" data-testid="llm-api-key" />
+          <el-input v-model="form.apiKey" type="password" show-password autocomplete="new-password" :placeholder="settings?.hasApiKey ? `当前已设置：${settings.apiKeyMasked}，留空保持不变` : '请输入 API key'" data-testid="llm-api-key" />
         </el-form-item>
         <div class="llm-grid llm-grid--two">
           <el-form-item label="Max tokens">
-            <el-input-number v-model="form.max_tokens" :min="128" :max="32768" :step="128" controls-position="right" style="width: 100%" />
+            <el-input-number v-model="form.maxTokens" :min="128" :max="32768" :step="128" controls-position="right" style="width: 100%" />
           </el-form-item>
           <el-form-item label="Temperature">
             <el-input-number v-model="form.temperature" :min="0" :max="2" :step="0.1" :precision="1" controls-position="right" style="width: 100%" />
@@ -78,10 +78,10 @@ const error = ref('')
 const settings = ref<LlmConfig | null>(null)
 const form = reactive<LlmConfigPayload>({
   provider: '',
-  base_url: '',
-  api_key: '',
+  baseUrl: '',
+  apiKey: '',
   model: '',
-  max_tokens: 2048,
+  maxTokens: 2048,
   temperature: 0.3,
 })
 
@@ -92,11 +92,11 @@ async function load() {
     const data = await LlmApi.get()
     settings.value = data
     form.provider = data.provider
-    form.base_url = data.base_url
+    form.baseUrl = data.baseUrl
     form.model = data.model
-    form.max_tokens = data.max_tokens
+    form.maxTokens = data.maxTokens
     form.temperature = data.temperature
-    form.api_key = ''
+    form.apiKey = ''
   } catch (e: any) {
     error.value = e.response?.data?.detail || e.response?.data?.message || '无法读取 LLM 配置。'
   } finally {
@@ -105,7 +105,7 @@ async function load() {
 }
 
 async function save() {
-  if (!form.base_url || !/^https?:\/\//i.test(form.base_url)) {
+  if (!form.baseUrl || !/^https?:\/\//i.test(form.baseUrl)) {
     ElMessage.warning('Base URL 必须以 http:// 或 https:// 开头')
     return
   }
@@ -116,8 +116,8 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
-    settings.value = await LlmApi.update({ ...form, api_key: form.api_key?.trim() || undefined })
-    form.api_key = ''
+    settings.value = await LlmApi.update({ ...form, apiKey: form.apiKey?.trim() || undefined })
+    form.apiKey = ''
     ElMessage.success('配置已保存，后续 AI 请求将使用你的新设置')
   } catch (e: any) {
     error.value = e.response?.data?.detail || e.response?.data?.message || e.message || '保存失败'

@@ -3,20 +3,20 @@ import { http } from './http'
 // 用户自己的 LLM 配置（存 Java 侧，API key AES 加密，对外只回掩码）。
 export interface LlmConfig {
   provider: '' | 'openai' | 'anthropic'
-  base_url: string
+  baseUrl: string
   model: string
-  max_tokens: number
+  maxTokens: number
   temperature: number
-  api_key_masked: string
-  has_api_key: boolean
+  apiKeyMasked: string
+  hasApiKey: boolean
 }
 
 export interface LlmConfigPayload {
   provider: '' | 'openai' | 'anthropic'
-  base_url: string
-  api_key?: string
+  baseUrl: string
+  apiKey?: string
   model: string
-  max_tokens: number
+  maxTokens: number
   temperature: number
 }
 

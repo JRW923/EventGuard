@@ -33,8 +33,8 @@ public class UserLlmConfigController {
 
     @PutMapping
     public UserLlmConfigView save(@RequestBody SaveRequest req, HttpServletRequest request) {
-        return service.save(uid(request), req.provider(), req.base_url(), req.api_key(),
-                req.model(), req.max_tokens() == null ? 2048 : req.max_tokens(),
+        return service.save(uid(request), req.provider(), req.baseUrl(), req.apiKey(),
+                req.model(), req.maxTokens() == null ? 2048 : req.maxTokens(),
                 req.temperature() == null ? 0.3 : req.temperature());
     }
 
@@ -46,6 +46,6 @@ public class UserLlmConfigController {
         return p.getUserId();
     }
 
-    public record SaveRequest(String provider, String base_url, String api_key, String model,
-                              Integer max_tokens, Double temperature) {}
+    public record SaveRequest(String provider, String baseUrl, String apiKey, String model,
+                              Integer maxTokens, Double temperature) {}
 }

@@ -72,7 +72,6 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="profile">个人中心</el-dropdown-item>
-                <el-dropdown-item v-if="auth.hasPermission('user:manage')" command="llm">LLM 配置</el-dropdown-item>
                 <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -134,7 +133,6 @@ watch(() => route.path, () => {
 
 async function onUserCommand(command: string) {
   if (command === 'profile') return router.push('/profile')
-  if (command === 'llm') return router.push('/admin/llm-settings')
   try {
     await ElMessageBox.confirm('确定退出当前账号吗？', '退出登录', {
       type: 'warning',
