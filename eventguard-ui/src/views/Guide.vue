@@ -27,19 +27,6 @@
         </div>
       </div>
 
-      <ol class="guide-steps">
-        <li v-for="(s, i) in steps" :key="i" class="guide-step reveal" :style="{ '--accent': s.accent }">
-          <div class="guide-step-num">{{ i + 1 }}</div>
-          <div class="guide-step-body">
-            <h3 class="guide-step-title">{{ s.title }}</h3>
-            <p class="guide-step-desc">{{ s.desc }}</p>
-            <div class="guide-step-tags">
-              <span class="guide-step-tag" v-for="t in s.tags" :key="t">{{ t }}</span>
-            </div>
-          </div>
-        </li>
-      </ol>
-
       <!-- 体验前必读（关键提示，减少走弯路） -->
       <section class="guide-tips reveal">
         <h2 class="guide-h2">体验前必读</h2>
@@ -61,6 +48,19 @@
           </li>
         </ul>
       </section>
+
+      <ol class="guide-steps">
+        <li v-for="(s, i) in steps" :key="i" class="guide-step reveal" :style="{ '--accent': s.accent }">
+          <div class="guide-step-num">{{ i + 1 }}</div>
+          <div class="guide-step-body">
+            <h3 class="guide-step-title">{{ s.title }}</h3>
+            <p class="guide-step-desc">{{ s.desc }}</p>
+            <div class="guide-step-tags">
+              <span class="guide-step-tag" v-for="t in s.tags" :key="t">{{ t }}</span>
+            </div>
+          </div>
+        </li>
+      </ol>
 
       <!-- 可重点考察的系统能力 -->
       <section class="guide-section reveal">
