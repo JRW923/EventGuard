@@ -13,7 +13,7 @@
         <el-table-column :resizable="false" prop="id" label="ID" width="70" />
         <el-table-column :resizable="false" prop="code" label="编码" width="140" />
         <el-table-column :resizable="false" prop="name" label="名称" width="120" />
-        <el-table-column :resizable="false" prop="description" label="描述" width="180" />
+        <el-table-column :resizable="false" prop="description" label="描述" min-width="180" />
         <el-table-column :resizable="false" label="权限" width="260">
           <template #default="{ row }">
             <el-tag v-for="p in row.permissions" :key="p" size="small" style="margin-right: 4px" effect="plain">

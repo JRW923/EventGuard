@@ -25,7 +25,7 @@
             <el-tag effect="light" size="small">{{ actionLabel(row.action) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :resizable="false" prop="detail" label="详情" width="280" show-overflow-tooltip />
+        <el-table-column :resizable="false" prop="detail" label="详情" min-width="280" show-overflow-tooltip />
         <el-table-column :resizable="false" prop="ip" label="IP" width="140" />
         <el-table-column :resizable="false" label="时间" width="180">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>

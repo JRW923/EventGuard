@@ -13,7 +13,7 @@
         <el-table-column :resizable="false" prop="approvalId" label="审批单 ID" width="200" show-overflow-tooltip />
         <el-table-column :resizable="false" prop="actionType" label="动作" width="120" />
         <el-table-column :resizable="false" prop="aggregateId" label="订单 ID" width="200" show-overflow-tooltip />
-        <el-table-column :resizable="false" label="参数" width="140">
+        <el-table-column :resizable="false" label="参数" min-width="140">
           <template #default="{ row }">
             <pre class="params">{{ JSON.stringify(row.params ?? {}) }}</pre>
           </template>
@@ -22,24 +22,26 @@
         <el-table-column :resizable="false" prop="requestedAt" label="申请时间" width="170">
           <template #default="{ row }">{{ formatTime(row.requestedAt) }}</template>
         </el-table-column>
-        <el-table-column :resizable="false" label="操作" width="130">
+        <el-table-column :resizable="false" label="操作" width="150">
           <template #default="{ row }">
-            <el-button
-              size="small"
-              type="primary"
-              :loading="deciding[row.approvalId] === 'approve'"
-              @click="decide(row.approvalId, true)"
-            >
-              批准
-            </el-button>
-            <el-button
-              size="small"
-              type="danger"
-              :loading="deciding[row.approvalId] === 'reject'"
-              @click="decide(row.approvalId, false)"
-            >
-              拒绝
-            </el-button>
+            <div class="action-cell">
+              <el-button
+                size="small"
+                type="primary"
+                :loading="deciding[row.approvalId] === 'approve'"
+                @click="decide(row.approvalId, true)"
+              >
+                批准
+              </el-button>
+              <el-button
+                size="small"
+                type="danger"
+                :loading="deciding[row.approvalId] === 'reject'"
+                @click="decide(row.approvalId, false)"
+              >
+                拒绝
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -100,5 +102,13 @@ onMounted(load)
   margin: 0;
   font-size: 12px;
   color: #606266;
+}
+/* 按钮同行等距对齐；抵消 element-plus 相邻按钮默认 margin-left */
+.action-cell {
+  display: flex;
+  gap: 8px;
+}
+.action-cell .el-button + .el-button {
+  margin-left: 0;
 }
 </style>

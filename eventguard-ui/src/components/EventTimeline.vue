@@ -16,7 +16,7 @@
         <el-table-column :resizable="false" label="发生时间" width="220">
           <template #default="scope">{{ formatTime(scope?.row?.createdAt) }}</template>
         </el-table-column>
-        <el-table-column :resizable="false" label="Payload" width="480">
+        <el-table-column :resizable="false" label="Payload" min-width="480">
           <template #default="scope">
             <pre v-if="scope && scope.row" style="margin: 0; font-size: 12px">{{ JSON.stringify(scope.row.payload, null, 2) }}</pre>
           </template>

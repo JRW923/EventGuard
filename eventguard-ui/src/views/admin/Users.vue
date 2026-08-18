@@ -13,7 +13,7 @@
         <el-table-column :resizable="false" prop="id" label="ID" width="70" />
         <el-table-column :resizable="false" prop="username" label="用户名" width="160" />
         <el-table-column :resizable="false" prop="displayName" label="显示名" width="140" />
-        <el-table-column :resizable="false" label="角色" width="180">
+        <el-table-column :resizable="false" label="角色" min-width="180">
           <template #default="{ row }">
             <el-tag v-for="r in row.roles" :key="r" size="small" style="margin-right: 4px">{{ r }}</el-tag>
           </template>

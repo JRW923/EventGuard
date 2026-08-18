@@ -19,7 +19,7 @@
       </template>
 
       <el-table :data="orders" v-loading="loading" border stripe style="width: 100%">
-        <el-table-column :resizable="false" prop="orderId" label="订单 ID" width="240" show-overflow-tooltip />
+        <el-table-column :resizable="false" prop="orderId" label="订单 ID" min-width="240" show-overflow-tooltip />
         <el-table-column :resizable="false" label="状态" width="150">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" effect="light" style="white-space: nowrap">{{ row.status }}</el-tag>

@@ -27,7 +27,7 @@
             <el-tag :type="levelType(row.level)" size="small" style="white-space: nowrap">{{ row.level }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :resizable="false" prop="description" label="描述" width="240" show-overflow-tooltip />
+        <el-table-column :resizable="false" prop="description" label="描述" min-width="240" show-overflow-tooltip />
         <el-table-column :resizable="false" prop="detected_at" label="检测时间" width="200">
           <template #default="{ row }">{{ formatTime(row.detected_at) }}</template>
         </el-table-column>
@@ -54,7 +54,7 @@
         max-height="400"
       >
         <el-table-column :resizable="false" prop="rule_id" label="规则 ID" width="120" />
-        <el-table-column :resizable="false" prop="aggregate_id" label="订单 ID" width="200" show-overflow-tooltip />
+        <el-table-column :resizable="false" prop="aggregate_id" label="订单 ID" min-width="200" show-overflow-tooltip />
         <el-table-column :resizable="false" prop="level" label="级别" width="80">
           <template #default="{ row }">
             <el-tag :type="levelType(row.level)" size="small" style="white-space: nowrap">{{ row.level }}</el-tag>
@@ -130,7 +130,7 @@
         <h3>建议动作</h3>
         <el-table :data="currentReport.suggestions" border size="small">
           <el-table-column :resizable="false" prop="action" label="动作" width="180" />
-          <el-table-column :resizable="false" prop="reason" label="原因" width="280" />
+          <el-table-column :resizable="false" prop="reason" label="原因" min-width="280" />
           <el-table-column :resizable="false" prop="risk" label="风险" width="100" />
         </el-table>
 
@@ -143,7 +143,7 @@
             </el-table-column>
             <el-table-column :resizable="false" prop="rule_id" label="规则" width="150" />
             <el-table-column :resizable="false" prop="aggregate_id" label="订单 ID" width="200" show-overflow-tooltip />
-            <el-table-column :resizable="false" prop="description" label="描述" width="240" show-overflow-tooltip />
+            <el-table-column :resizable="false" prop="description" label="描述" min-width="240" show-overflow-tooltip />
             <el-table-column :resizable="false" prop="resolution" label="处置" width="90" />
           </el-table>
         </template>

@@ -1,9 +1,7 @@
 <template>
-  <div>
-    <div style="margin-bottom: 28px">
-      <LlmSettings />
-    </div>
-    <el-card style="max-width: 480px">
+  <div class="profile-page">
+    <LlmSettings />
+    <el-card class="profile-card">
       <template #header>
         <span>修改密码</span>
       </template>
@@ -24,7 +22,7 @@
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
     </el-card>
 
-    <el-card style="max-width: 480px; margin-top: 16px">
+    <el-card class="profile-card">
       <template #header>
         <span>安全</span>
       </template>
@@ -102,3 +100,14 @@ async function onLogoutAll() {
   }
 }
 </script>
+
+<style scoped>
+/* 与 LlmSettings 的 .llm-page 同宽居中，三个模块左缘对齐 */
+.profile-page {
+  max-width: 980px;
+  margin: 0 auto;
+}
+.profile-card {
+  margin-top: 16px;
+}
+</style>

@@ -166,7 +166,7 @@ services:
       - "./cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro"
       - "./cloudflared/credentials.json:/root/.cloudflared/343ed7a5-adbf-4ad9-8978-a3d997d5e558.json:ro"
     mem_limit: 512m
-    depends_on: [eventguard-ui, grafana, prometheus, alertmanager, kafka-ui, adminer]
+    depends_on: [eventguard-ui, grafana, prometheus, alertmanager, adminer]
 
   pumba:
     image: gaiaadm/pumba
@@ -313,8 +313,10 @@ services:
   # ===== P1-13 集中日志（Loki + promtail）=====
   # promtail 读各容器日志并转发 Loki；Grafana Explore 里选 Loki 数据源即可查日志。
   # 对 3.6G 小机是可选增强；内存紧张时可移除这两个服务。
+  # ponytail: 日志聚合按需启动，平时不常驻；需要时 `docker compose --profile tools up -d loki promtail`。
   loki:
     <<: *default-restart
+    profiles: ["tools"]
     image: grafana/loki:3.1.0
     command: ["-config.file=/etc/loki/local-config.yaml"]
     volumes:
@@ -325,6 +327,7 @@ services:
 
   promtail:
     <<: *default-restart
+    profiles: ["tools"]
     image: grafana/promtail:3.1.0
     command: ["-config.file=/etc/promtail/config.yml"]
     volumes:
@@ -337,8 +340,11 @@ services:
     depends_on: [loki]
 
   # ===== Kafka Web 控制台（kafka-ui）：浏览 topic / 消费组 / 消息 =====
+  # ponytail: 运维调试面板，平时不常驻（3.6G 小机省内存）。profiles 让默认 up 不启动；
+  # 需要时 `docker compose --profile tools up -d kafka-ui` 拉起。
   kafka-ui:
     <<: *default-restart
+    profiles: ["tools"]
     image: provectuslabs/kafka-ui:latest
     ports: ["8082:8080"]
     environment:
@@ -373,7 +379,7 @@ services:
       - "./caddy/portal:/var/www/portal:ro"
     mem_limit: 128m
     logging: *default-logging
-    depends_on: [grafana, prometheus, alertmanager, kafka-ui, adminer]
+    depends_on: [grafana, prometheus, alertmanager, adminer]
 
 volumes:
   pgdata:
