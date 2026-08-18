@@ -18,16 +18,16 @@
       </template>
 
       <el-table :data="logs" v-loading="loading" border stripe style="width: 100%">
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="username" label="用户名" width="120" />
-        <el-table-column prop="action" label="动作" width="180">
+        <el-table-column :resizable="false" prop="id" label="ID" width="70" />
+        <el-table-column :resizable="false" prop="username" label="用户名" width="120" />
+        <el-table-column :resizable="false" prop="action" label="动作" width="180">
           <template #default="{ row }">
             <el-tag effect="light" size="small">{{ actionLabel(row.action) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="detail" label="详情" show-overflow-tooltip />
-        <el-table-column prop="ip" label="IP" width="140" />
-        <el-table-column label="时间" width="180">
+        <el-table-column :resizable="false" prop="detail" label="详情" width="280" show-overflow-tooltip />
+        <el-table-column :resizable="false" prop="ip" label="IP" width="140" />
+        <el-table-column :resizable="false" label="时间" width="180">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
       </el-table>

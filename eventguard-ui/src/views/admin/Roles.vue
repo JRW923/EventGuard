@@ -10,18 +10,18 @@
       </template>
 
       <el-table :data="roles" v-loading="loading" border stripe>
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="code" label="编码" width="140" />
-        <el-table-column prop="name" label="名称" width="120" />
-        <el-table-column prop="description" label="描述" min-width="160" />
-        <el-table-column label="权限" min-width="260">
+        <el-table-column :resizable="false" prop="id" label="ID" width="70" />
+        <el-table-column :resizable="false" prop="code" label="编码" width="140" />
+        <el-table-column :resizable="false" prop="name" label="名称" width="120" />
+        <el-table-column :resizable="false" prop="description" label="描述" width="180" />
+        <el-table-column :resizable="false" label="权限" width="260">
           <template #default="{ row }">
             <el-tag v-for="p in row.permissions" :key="p" size="small" style="margin-right: 4px" effect="plain">
               {{ p }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column :resizable="false" label="操作" width="150">
           <template #default="{ row }">
             <el-button size="small" @click="openEdit(row as RoleItem)">编辑</el-button>
             <el-button size="small" type="danger" :disabled="row.code === 'ADMIN'" @click="onDelete(row as RoleItem)">删除</el-button>

@@ -28,15 +28,15 @@
 
         <h3>异常分布（按规则）</h3>
         <el-table :data="report.by_rule" border stripe size="small" style="margin-bottom: 16px">
-          <el-table-column prop="rule_id" label="规则 ID" width="220" />
-          <el-table-column prop="count" label="命中次数" sortable />
+          <el-table-column :resizable="false" prop="rule_id" label="规则 ID" width="220" />
+          <el-table-column :resizable="false" prop="count" label="命中次数" width="120" sortable />
         </el-table>
 
         <h3>订单状态统计</h3>
         <el-table :data="report.order_stats" border stripe size="small" style="margin-bottom: 16px">
-          <el-table-column prop="status" label="状态" width="180" />
-          <el-table-column prop="orderCount" label="订单数" width="120" />
-          <el-table-column prop="totalAmount" label="总金额" />
+          <el-table-column :resizable="false" prop="status" label="状态" width="180" />
+          <el-table-column :resizable="false" prop="orderCount" label="订单数" width="120" />
+          <el-table-column :resizable="false" prop="totalAmount" label="总金额" width="140" />
         </el-table>
 
         <h3>AI 症状分析</h3>
@@ -51,9 +51,9 @@
 
         <h3>重点订单（异常集中）</h3>
         <el-table v-if="report.top_orders.length" :data="report.top_orders" border stripe size="small">
-          <el-table-column prop="aggregate_id" label="订单 ID" show-overflow-tooltip />
-          <el-table-column prop="count" label="异常次数" width="120" />
-          <el-table-column label="操作" width="140">
+          <el-table-column :resizable="false" prop="aggregate_id" label="订单 ID" width="280" show-overflow-tooltip />
+          <el-table-column :resizable="false" prop="count" label="异常次数" width="120" />
+          <el-table-column :resizable="false" label="操作" width="140">
             <template #default="{ row }">
               <el-button size="small" @click="loadStory(row.aggregate_id)">查看故事</el-button>
             </template>

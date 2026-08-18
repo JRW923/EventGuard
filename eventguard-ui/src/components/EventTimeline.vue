@@ -11,12 +11,12 @@
         style="height: 400px"
       />
       <el-table :data="sortedEvents" border stripe size="small" style="margin-top: 16px">
-        <el-table-column prop="version" label="版本" width="80" />
-        <el-table-column prop="eventType" label="事件类型" width="220" show-overflow-tooltip />
-        <el-table-column label="发生时间" width="220">
+        <el-table-column :resizable="false" prop="version" label="版本" width="80" />
+        <el-table-column :resizable="false" prop="eventType" label="事件类型" width="220" show-overflow-tooltip />
+        <el-table-column :resizable="false" label="发生时间" width="220">
           <template #default="scope">{{ formatTime(scope?.row?.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="Payload">
+        <el-table-column :resizable="false" label="Payload" width="480">
           <template #default="scope">
             <pre v-if="scope && scope.row" style="margin: 0; font-size: 12px">{{ JSON.stringify(scope.row.payload, null, 2) }}</pre>
           </template>

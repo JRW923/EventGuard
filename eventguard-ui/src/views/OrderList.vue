@@ -19,21 +19,21 @@
       </template>
 
       <el-table :data="orders" v-loading="loading" border stripe style="width: 100%">
-        <el-table-column prop="orderId" label="订单 ID" width="320" show-overflow-tooltip />
-        <el-table-column label="状态" width="160">
+        <el-table-column :resizable="false" prop="orderId" label="订单 ID" width="240" show-overflow-tooltip />
+        <el-table-column :resizable="false" label="状态" width="150">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" effect="light" style="white-space: nowrap">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="金额" width="120">
+        <el-table-column :resizable="false" label="金额" width="110">
           <template #default="{ row }">¥{{ Number(row.totalAmount).toFixed(2) }}</template>
         </el-table-column>
-        <el-table-column prop="version" label="版本" width="80" />
-        <el-table-column label="更新时间">
+        <el-table-column :resizable="false" prop="version" label="版本" width="70" />
+        <el-table-column :resizable="false" label="更新时间" width="170">
           <template #default="{ row }">{{ formatTime(row.updatedAt) }}</template>
         </el-table-column>
         <!-- AI 终局预测（Item 5）：按需加载，展示预测终局 + 风险分级 -->
-        <el-table-column label="AI 预测" width="150">
+        <el-table-column :resizable="false" label="AI 预测" width="140">
           <template #default="{ row }">
             <template v-if="predictions[row.orderId]">
               <el-tag v-if="predictionError(predictions[row.orderId])" type="info" size="small">
@@ -58,7 +58,7 @@
             </el-button>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160">
+        <el-table-column :resizable="false" label="操作" width="120">
           <template #default="{ row }">
             <el-button size="small" @click="goTimeline(row.orderId)">事件时间线</el-button>
           </template>

@@ -49,9 +49,9 @@
                   stripe
                   size="small"
                 >
-                  <el-table-column prop="status" label="状态" width="180" />
-                  <el-table-column prop="orderCount" label="订单数" width="120" />
-                  <el-table-column prop="totalAmount" label="总金额" />
+                  <el-table-column :resizable="false" prop="status" label="状态" width="180" />
+                  <el-table-column :resizable="false" prop="orderCount" label="订单数" width="120" />
+                  <el-table-column :resizable="false" prop="totalAmount" label="总金额" width="140" />
                 </el-table>
 
                 <!-- trace_replay: 事件序列 -->
@@ -62,9 +62,9 @@
                   stripe
                   size="small"
                 >
-                  <el-table-column prop="version" label="版本" width="80" />
-                  <el-table-column prop="eventType" label="事件类型" width="220" />
-                  <el-table-column prop="createdAt" label="发生时间" />
+                  <el-table-column :resizable="false" prop="version" label="版本" width="80" />
+                  <el-table-column :resizable="false" prop="eventType" label="事件类型" width="220" />
+                  <el-table-column :resizable="false" prop="createdAt" label="发生时间" width="180" />
                 </el-table>
 
                 <!-- 兜底：JSON 展示 -->

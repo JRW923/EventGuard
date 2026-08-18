@@ -10,19 +10,19 @@
       </template>
 
       <el-table :data="approvals" v-loading="loading" border stripe style="width: 100%">
-        <el-table-column prop="approvalId" label="审批单 ID" width="280" show-overflow-tooltip />
-        <el-table-column prop="actionType" label="动作" width="180" />
-        <el-table-column prop="aggregateId" label="订单 ID" show-overflow-tooltip />
-        <el-table-column label="参数" min-width="140">
+        <el-table-column :resizable="false" prop="approvalId" label="审批单 ID" width="200" show-overflow-tooltip />
+        <el-table-column :resizable="false" prop="actionType" label="动作" width="120" />
+        <el-table-column :resizable="false" prop="aggregateId" label="订单 ID" width="200" show-overflow-tooltip />
+        <el-table-column :resizable="false" label="参数" width="140">
           <template #default="{ row }">
             <pre class="params">{{ JSON.stringify(row.params ?? {}) }}</pre>
           </template>
         </el-table-column>
-        <el-table-column prop="requestedBy" label="发起方" width="100" />
-        <el-table-column prop="requestedAt" label="申请时间" width="180">
+        <el-table-column :resizable="false" prop="requestedBy" label="发起方" width="90" />
+        <el-table-column :resizable="false" prop="requestedAt" label="申请时间" width="170">
           <template #default="{ row }">{{ formatTime(row.requestedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="190">
+        <el-table-column :resizable="false" label="操作" width="130">
           <template #default="{ row }">
             <el-button
               size="small"

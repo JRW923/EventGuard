@@ -20,18 +20,18 @@
         style="width: 100%"
         max-height="400"
       >
-        <el-table-column prop="anomaly_id" label="异常 ID" width="180" show-overflow-tooltip />
-        <el-table-column prop="rule_id" label="规则 ID" width="100" />
-        <el-table-column prop="level" label="级别" width="80">
+        <el-table-column :resizable="false" prop="anomaly_id" label="异常 ID" width="180" show-overflow-tooltip />
+        <el-table-column :resizable="false" prop="rule_id" label="规则 ID" width="100" />
+        <el-table-column :resizable="false" prop="level" label="级别" width="80">
           <template #default="{ row }">
             <el-tag :type="levelType(row.level)" size="small" style="white-space: nowrap">{{ row.level }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="描述" show-overflow-tooltip />
-        <el-table-column prop="detected_at" label="检测时间" width="200">
+        <el-table-column :resizable="false" prop="description" label="描述" width="240" show-overflow-tooltip />
+        <el-table-column :resizable="false" prop="detected_at" label="检测时间" width="200">
           <template #default="{ row }">{{ formatTime(row.detected_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140">
+        <el-table-column :resizable="false" label="操作" width="140">
           <template #default="{ row }">
             <el-button
               size="small"
@@ -53,21 +53,21 @@
         style="width: 100%"
         max-height="400"
       >
-        <el-table-column prop="rule_id" label="规则 ID" width="120" />
-        <el-table-column prop="aggregate_id" label="订单 ID" show-overflow-tooltip />
-        <el-table-column prop="level" label="级别" width="80">
+        <el-table-column :resizable="false" prop="rule_id" label="规则 ID" width="120" />
+        <el-table-column :resizable="false" prop="aggregate_id" label="订单 ID" width="200" show-overflow-tooltip />
+        <el-table-column :resizable="false" prop="level" label="级别" width="80">
           <template #default="{ row }">
             <el-tag :type="levelType(row.level)" size="small" style="white-space: nowrap">{{ row.level }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="count" label="命中次数" width="118" sortable label-class-name="hit-count-column" />
-        <el-table-column prop="first" label="首次" width="180">
+        <el-table-column :resizable="false" prop="count" label="命中次数" width="100" sortable label-class-name="hit-count-column" />
+        <el-table-column :resizable="false" prop="first" label="首次" width="180">
           <template #default="{ row }">{{ formatTime(row.first) }}</template>
         </el-table-column>
-        <el-table-column prop="last" label="最近" width="180">
+        <el-table-column :resizable="false" prop="last" label="最近" width="180">
           <template #default="{ row }">{{ formatTime(row.last) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140">
+        <el-table-column :resizable="false" label="操作" width="140">
           <template #default="{ row }">
             <el-button
               size="small"
@@ -129,22 +129,22 @@
 
         <h3>建议动作</h3>
         <el-table :data="currentReport.suggestions" border size="small">
-          <el-table-column prop="action" label="动作" width="180" />
-          <el-table-column prop="reason" label="原因" />
-          <el-table-column prop="risk" label="风险" width="100" />
+          <el-table-column :resizable="false" prop="action" label="动作" width="180" />
+          <el-table-column :resizable="false" prop="reason" label="原因" width="280" />
+          <el-table-column :resizable="false" prop="risk" label="风险" width="100" />
         </el-table>
 
         <!-- 相似案例（Item 8 · 轻量 RAG）：参考上次处置方式 -->
         <template v-if="similarCases.length">
           <h3>相似案例</h3>
           <el-table :data="similarCases" border size="small">
-            <el-table-column prop="similarity" label="相似度" width="90">
+            <el-table-column :resizable="false" prop="similarity" label="相似度" width="90">
               <template #default="{ row }">{{ Math.round(row.similarity * 100) }}%</template>
             </el-table-column>
-            <el-table-column prop="rule_id" label="规则" width="150" />
-            <el-table-column prop="aggregate_id" label="订单 ID" show-overflow-tooltip />
-            <el-table-column prop="description" label="描述" show-overflow-tooltip />
-            <el-table-column prop="resolution" label="处置" width="90" />
+            <el-table-column :resizable="false" prop="rule_id" label="规则" width="150" />
+            <el-table-column :resizable="false" prop="aggregate_id" label="订单 ID" width="200" show-overflow-tooltip />
+            <el-table-column :resizable="false" prop="description" label="描述" width="240" show-overflow-tooltip />
+            <el-table-column :resizable="false" prop="resolution" label="处置" width="90" />
           </el-table>
         </template>
 

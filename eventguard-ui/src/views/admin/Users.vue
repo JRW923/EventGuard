@@ -10,20 +10,20 @@
       </template>
 
       <el-table :data="users" v-loading="loading" border stripe>
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="username" label="用户名" width="160" />
-        <el-table-column prop="displayName" label="显示名" width="140" />
-        <el-table-column label="角色">
+        <el-table-column :resizable="false" prop="id" label="ID" width="70" />
+        <el-table-column :resizable="false" prop="username" label="用户名" width="160" />
+        <el-table-column :resizable="false" prop="displayName" label="显示名" width="140" />
+        <el-table-column :resizable="false" label="角色" width="180">
           <template #default="{ row }">
             <el-tag v-for="r in row.roles" :key="r" size="small" style="margin-right: 4px">{{ r }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="90">
+        <el-table-column :resizable="false" label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '启用' : '禁用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220">
+        <el-table-column :resizable="false" label="操作" width="220">
           <template #default="{ row }">
             <el-button size="small" @click="openEdit(row as UserInfo)">编辑</el-button>
             <el-button size="small" type="warning" @click="openReset(row as UserInfo)">重置密码</el-button>
