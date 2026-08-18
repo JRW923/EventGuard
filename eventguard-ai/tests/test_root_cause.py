@@ -234,7 +234,7 @@ def test_maybe_add_fewshot_appends_when_enabled(monkeypatch):
                       event_type="PaymentCompletedEvent", level="WARN", source="PROCESS",
                       priority="HIGH", detected_at="2026-07-20T10:00:00Z", description="停滞"))
     ]
-    analyzer = RootCauseAnalyzer(case_index=case_index)
+    analyzer = RootCauseAnalyzer(llm_client=MagicMock(), case_index=case_index)
     out = analyzer._maybe_add_fewshot("基础 prompt", anomaly)
     assert "相似历史案例" in out
     assert "P002_STUCK" in out
@@ -250,6 +250,6 @@ def test_maybe_add_fewshot_off_by_default():
         event_type="OrderCreatedEvent", level="WARN", source="RULE",
         priority="HIGH", detected_at="2026-07-21T10:00:00Z", description="金额偏离",
     )
-    analyzer = RootCauseAnalyzer(case_index=MagicMock())
+    analyzer = RootCauseAnalyzer(llm_client=MagicMock(), case_index=MagicMock())
     out = analyzer._maybe_add_fewshot("基础 prompt", anomaly)
     assert out == "基础 prompt"

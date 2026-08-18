@@ -2,18 +2,17 @@
   <div class="llm-page">
     <div class="llm-heading">
       <div>
-        <div class="llm-eyebrow">AI PLATFORM</div>
-        <h1>LLM 配置</h1>
-        <p>为当前 AI 服务选择默认模型。修改立即对后续请求生效，不会写入浏览器或数据库。</p>
+        <div class="llm-eyebrow">MY AI PLATFORM</div>
+        <h1>我的 LLM 配置</h1>
+        <p>配置你自己的模型接入。所有 AI 功能（NL 查询、根因分析、周报等）将使用你在此填写的 API。</p>
       </div>
-      <el-tag v-if="settings" :type="settings.using_defaults ? 'success' : 'warning'" effect="light">
-        {{ settings.using_defaults ? '正在使用环境默认值' : '已使用自定义配置' }}
-      </el-tag>
+      <el-tag v-if="settings?.has_api_key" type="success" effect="light">已配置 API key</el-tag>
+      <el-tag v-else type="warning" effect="light">尚未配置 API key</el-tag>
     </div>
 
     <el-alert
-      title="安全提示"
-      description="API key 只在提交时传输并保存在 AI 进程内存中；API 返回值只显示掩码。清空 API key 表示保留当前 key。"
+      title="你的 API key 是私有的"
+      description="API key 仅加密存储在你本人账号下，任何其他用户（包括管理员）都无法查看或使用；留空表示保留现有 key。"
       type="info"
       :closable="false"
       show-icon
@@ -44,7 +43,7 @@
           <div class="llm-help">支持 OpenAI-compatible 的 /v1/chat/completions，以及 Anthropic 的 /v1/messages。</div>
         </el-form-item>
         <el-form-item label="API key">
-          <el-input v-model="form.api_key" type="password" show-password autocomplete="new-password" :placeholder="settings?.api_key_masked ? `当前已设置：${settings.api_key_masked}，留空保持不变` : '请输入 API key'" data-testid="llm-api-key" />
+          <el-input v-model="form.api_key" type="password" show-password autocomplete="new-password" :placeholder="settings?.has_api_key ? `当前已设置：${settings.api_key_masked}，留空保持不变` : '请输入 API key'" data-testid="llm-api-key" />
         </el-form-item>
         <div class="llm-grid llm-grid--two">
           <el-form-item label="Max tokens">
@@ -58,13 +57,12 @@
 
       <el-alert v-if="error" :title="error" type="error" :closable="false" class="llm-error" />
       <div class="llm-actions">
-        <el-button type="primary" :loading="saving" data-testid="llm-save" @click="save">保存并应用</el-button>
-        <el-button :loading="saving" @click="reset">恢复环境默认值</el-button>
+        <el-button type="primary" :loading="saving" data-testid="llm-save" @click="save">保存</el-button>
       </div>
     </el-card>
 
     <div class="llm-footnote">
-      <span class="llm-footnote-dot" /> 当前配置作用范围：本 AI 进程。重启服务后自动恢复启动时的 `EG_LLM_*` 环境变量。
+      <span class="llm-footnote-dot" /> 未配置时，AI 功能将提示你「先在个人中心配置你的 LLM API」。
     </div>
   </div>
 </template>
@@ -72,14 +70,13 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
-import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
-import { LlmApi, type LlmSettings, type LlmSettingsPayload } from '@/api/llm'
+import { LlmApi, type LlmConfig, type LlmConfigPayload } from '@/api/llm'
 
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
-const settings = ref<LlmSettings | null>(null)
-const form = reactive<LlmSettingsPayload>({
+const settings = ref<LlmConfig | null>(null)
+const form = reactive<LlmConfigPayload>({
   provider: '',
   base_url: '',
   api_key: '',
@@ -101,7 +98,7 @@ async function load() {
     form.temperature = data.temperature
     form.api_key = ''
   } catch (e: any) {
-    error.value = e.response?.data?.detail || e.response?.data?.message || '无法读取 AI 配置，请确认 AI 服务已启动。'
+    error.value = e.response?.data?.detail || e.response?.data?.message || '无法读取 LLM 配置。'
   } finally {
     loading.value = false
   }
@@ -121,34 +118,9 @@ async function save() {
   try {
     settings.value = await LlmApi.update({ ...form, api_key: form.api_key?.trim() || undefined })
     form.api_key = ''
-    ElMessage.success('配置已保存，后续 AI 请求将使用新设置')
+    ElMessage.success('配置已保存，后续 AI 请求将使用你的新设置')
   } catch (e: any) {
     error.value = e.response?.data?.detail || e.response?.data?.message || e.message || '保存失败'
-  } finally {
-    saving.value = false
-  }
-}
-
-async function reset() {
-  try {
-    await ElMessageBox.confirm('恢复后将重新使用 AI 服务启动时的 EG_LLM_* 配置，确定继续吗？', '恢复默认值', {
-      type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消',
-    })
-  } catch {
-    return
-  }
-  saving.value = true
-  try {
-    settings.value = await LlmApi.reset()
-    form.provider = settings.value.provider
-    form.base_url = settings.value.base_url
-    form.model = settings.value.model
-    form.max_tokens = settings.value.max_tokens
-    form.temperature = settings.value.temperature
-    form.api_key = ''
-    ElMessage.success('已恢复环境默认值')
-  } catch (e: any) {
-    error.value = e.response?.data?.detail || e.response?.data?.message || '恢复失败'
   } finally {
     saving.value = false
   }

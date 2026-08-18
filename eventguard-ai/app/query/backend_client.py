@@ -64,3 +64,11 @@ class BackendClient:
             resp = await client.get(url, params=params, headers=self.headers)
             resp.raise_for_status()
             return resp.json()
+
+    async def get_user_llm_config(self, uid: int) -> dict:
+        """GET /internal/users/{uid}/llm-config — 取该用户解密后的 LLM 配置（机器密钥调用）。"""
+        url = f"{self.base_url}/internal/users/{uid}/llm-config"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=self.headers)
+            resp.raise_for_status()
+            return resp.json()

@@ -1,6 +1,7 @@
 import { http } from './http'
 
-export interface LlmSettings {
+// 用户自己的 LLM 配置（存 Java 侧，API key AES 加密，对外只回掩码）。
+export interface LlmConfig {
   provider: '' | 'openai' | 'anthropic'
   base_url: string
   model: string
@@ -8,10 +9,9 @@ export interface LlmSettings {
   temperature: number
   api_key_masked: string
   has_api_key: boolean
-  using_defaults: boolean
 }
 
-export interface LlmSettingsPayload {
+export interface LlmConfigPayload {
   provider: '' | 'openai' | 'anthropic'
   base_url: string
   api_key?: string
@@ -21,14 +21,10 @@ export interface LlmSettingsPayload {
 }
 
 export const LlmApi = {
-  get(): Promise<LlmSettings> {
-    return http.get<LlmSettings>('/ai/settings/llm').then((r) => r.data)
+  get(): Promise<LlmConfig> {
+    return http.get<LlmConfig>('/users/me/llm-config').then((r) => r.data)
   },
-  update(payload: LlmSettingsPayload): Promise<LlmSettings> {
-    return http.put<LlmSettings>('/ai/settings/llm', payload).then((r) => r.data)
-  },
-  reset(): Promise<LlmSettings> {
-    return http.post<LlmSettings>('/ai/settings/llm/reset').then((r) => r.data)
+  update(payload: LlmConfigPayload): Promise<LlmConfig> {
+    return http.put<LlmConfig>('/users/me/llm-config', payload).then((r) => r.data)
   },
 }
-

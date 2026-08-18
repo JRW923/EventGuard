@@ -3,7 +3,7 @@ import jwt as pyjwt
 
 from fastapi.testclient import TestClient
 
-from app.config import llm_config, settings
+from app.config import settings
 from app.main import app
 
 client = TestClient(app)
@@ -58,41 +58,3 @@ def test_analysis_requires_anomaly_view():
 def test_health_is_public():
     resp = client.get("/health")
     assert resp.status_code == 200
-
-
-def test_llm_settings_require_manage_and_mask_api_key():
-    no_permission = _token(["ai:query"])
-    resp = client.get("/ai/settings/llm", headers={"Authorization": f"Bearer {no_permission}"})
-    assert resp.status_code == 403
-
-    admin = _token(["user:manage"])
-    resp = client.get("/ai/settings/llm", headers={"Authorization": f"Bearer {admin}"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert "api_key" not in body
-    if len(settings.llm_api_key) > 4:
-        assert body["api_key_masked"] != settings.llm_api_key
-        assert body["api_key_masked"].endswith(settings.llm_api_key[-4:])
-
-
-def test_llm_settings_update_keeps_key_when_omitted():
-    admin = _token(["user:manage"])
-    before = llm_config()
-    try:
-        resp = client.put(
-            "/ai/settings/llm",
-            json={
-                "provider": "openai",
-                "base_url": "https://example.test/v1",
-                "model": "demo-model",
-                "max_tokens": 512,
-                "temperature": 0.2,
-            },
-            headers={"Authorization": f"Bearer {admin}"},
-        )
-        assert resp.status_code == 200
-        assert resp.json()["base_url"] == "https://example.test/v1"
-        assert settings.llm_api_key == before["llm_api_key"]
-    finally:
-        for key, value in before.items():
-            setattr(settings, key, value)

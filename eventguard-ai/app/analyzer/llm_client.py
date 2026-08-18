@@ -37,28 +37,33 @@ class LLMClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
+        base_url: str,
+        api_key: str,
+        model: str = "",
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        provider: str = "",
         transport: Optional[httpx.AsyncBaseTransport] = None,
         cache: Optional[LLMCache] = None,
     ):
-        self.base_url = (base_url or settings.llm_base_url).rstrip("/")
-        self.api_key = api_key or settings.llm_api_key
-        self.model = model or settings.llm_model
-        self.max_tokens = max_tokens or settings.llm_max_tokens
-        self.temperature = temperature if temperature is not None else settings.llm_temperature
-        self.provider = self._detect_provider()
+        # LLM 配置已按用户隔离：base_url/api_key/model 必须显式传入（来自用户自己的配置），
+        # 不再回退到进程级 EG_LLM_* 环境变量。max_tokens/temperature 仅提供默认值兜底。
+        if not base_url:
+            raise ValueError("base_url 必填")
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+        self.max_tokens = max_tokens if max_tokens is not None else 2048
+        self.temperature = temperature if temperature is not None else 0.3
+        self.provider = self._detect_provider(provider)
         self.transport = transport  # 测试注入 httpx.MockTransport，离线验证请求/响应形状
         self.cache = cache or default_llm_cache  # Item 4：幂等读场景响应缓存
         self._semaphore = asyncio.Semaphore(max(1, settings.llm_max_concurrency))
 
     # ---------------- provider 探测 ----------------
 
-    def _detect_provider(self) -> str:
-        explicit = (settings.llm_provider or "").strip().lower()
+    def _detect_provider(self, provider: str = "") -> str:
+        explicit = (provider or "").strip().lower()
         if explicit:
             return "anthropic" if explicit == "anthropic" else "openai"
         return "anthropic" if "/anthropic" in self.base_url else "openai"

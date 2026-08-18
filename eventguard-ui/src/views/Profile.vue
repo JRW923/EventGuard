@@ -1,5 +1,8 @@
 <template>
   <div>
+    <div style="margin-bottom: 28px">
+      <LlmSettings />
+    </div>
     <el-card style="max-width: 480px">
       <template #header>
         <span>修改密码</span>
@@ -45,6 +48,7 @@ import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { AuthApi } from '@/api/auth'
 import { auth } from '@/stores/auth'
+import LlmSettings from '@/views/admin/LlmSettings.vue'
 
 const router = useRouter()
 const oldPwd = ref('')

@@ -50,7 +50,8 @@ class IntentClassifier:
     )
 
     def __init__(self, llm_client: Optional[LLMClient] = None):
-        self.llm_client = llm_client or LLMClient()
+        # llm_client 可为 None：LLM 已按用户配置，用户未配置时 classify 走关键词兜底
+        self.llm_client = llm_client
 
     async def classify(self, question: str) -> str:
         """对用户问题分类，返回 3 类意图之一。

@@ -43,7 +43,7 @@ class EventStoreJdbcImplTest {
     @Test
     void append_should_throw_OptimisticConcurrencyException_when_expectedVersion_mismatches() {
         UUID aggId = UUID.randomUUID();
-        when(jdbc.queryForObject(eq("SELECT pg_advisory_xact_lock(hashtext(?))"), eq(Long.class), eq(aggId.toString())))
+        when(jdbc.queryForObject(eq("SELECT 1 FROM pg_advisory_xact_lock(hashtext(?))"), eq(Long.class), eq(aggId.toString())))
                 .thenReturn(1L);
         when(jdbc.queryForObject(eq("SELECT COALESCE(MAX(event_version), 0) FROM domain_events WHERE aggregate_id = ?"),
                 eq(Integer.class), eq(aggId)))
@@ -59,7 +59,7 @@ class EventStoreJdbcImplTest {
     @Test
     void append_should_throw_OptimisticConcurrencyException_on_unique_violation() {
         UUID aggId = UUID.randomUUID();
-        when(jdbc.queryForObject(eq("SELECT pg_advisory_xact_lock(hashtext(?))"), eq(Long.class), eq(aggId.toString())))
+        when(jdbc.queryForObject(eq("SELECT 1 FROM pg_advisory_xact_lock(hashtext(?))"), eq(Long.class), eq(aggId.toString())))
                 .thenReturn(1L);
         when(jdbc.queryForObject(anyString(), eq(Integer.class), eq(aggId))).thenReturn(0);
         // 8 个占位参数：aggregate_type 已从 SQL 字面量改为绑定参数

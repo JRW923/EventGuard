@@ -49,7 +49,8 @@ class NLQueryEngine:
     ):
         self.intent_classifier = intent_classifier or IntentClassifier()
         self.template_executor = template_executor or TemplateExecutor()
-        self.llm_client = llm_client or LLMClient()
+        # llm_client 可为 None：LLM 已按用户配置，用户未配置时回答降级为数据摘要
+        self.llm_client = llm_client
         self.conversation_store = conversation_store or default_conversation_store
 
     async def query(

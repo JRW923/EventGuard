@@ -71,12 +71,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/admin/AuditLogs.vue'),
     meta: { title: '审计日志', permission: 'user:manage' },
   },
-  {
-    path: '/admin/llm-settings',
-    name: 'LlmSettings',
-    component: () => import('../views/admin/LlmSettings.vue'),
-    meta: { title: 'LLM 配置', permission: 'user:manage' },
-  },
   // catch-all：未知地址 → 404 页（须放在最后）
   { path: '/:pathMatch(.*)*', name: 'NotFound', component: () => import('../views/NotFound.vue'), meta: { title: '页面不存在', public: true } },
 ]

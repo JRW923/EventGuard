@@ -46,9 +46,8 @@ def test_detect_openai_default():
     assert c.is_anthropic is False
 
 
-def test_detect_explicit_provider(monkeypatch):
-    monkeypatch.setattr("app.analyzer.llm_client.settings.llm_provider", "openai")
-    c = LLMClient(base_url="https://api.deepseek.com/anthropic", api_key="k")
+def test_detect_explicit_provider():
+    c = LLMClient(base_url="https://api.deepseek.com/anthropic", api_key="k", provider="openai")
     assert c.is_anthropic is False
 
 

@@ -40,7 +40,6 @@
           <el-menu-item v-if="auth.hasPermission('user:manage')" index="/admin/users">用户管理</el-menu-item>
           <el-menu-item v-if="auth.hasPermission('role:manage')" index="/admin/roles">角色权限</el-menu-item>
           <el-menu-item v-if="auth.hasPermission('user:manage')" index="/admin/audit-logs">审计日志</el-menu-item>
-          <el-menu-item v-if="auth.hasPermission('user:manage')" index="/admin/llm-settings">LLM 配置</el-menu-item>
         </el-sub-menu>
       </el-menu>
 
@@ -254,5 +253,4 @@ button, input, textarea, select { font: inherit; }
 
 .eg-select { height: 34px; padding: 0 10px; border: 1px solid #dfe4ee; border-radius: 7px; background: #fff; color: #546177; outline: none; }
 .eg-select:hover, .eg-select:focus { border-color: var(--eg-brand); }
-.el-table__column-resize-handle { display: none !important; }
 </style>

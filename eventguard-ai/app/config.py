@@ -9,13 +9,8 @@ class Settings(BaseSettings):
     kafka_bootstrap: str = "kafka:9092"
     kafka_group_id: str = "ai-event-detector"
     rule_engine_url: str = "http://eventguard-server:8080/anomaly/rules/evaluate"
-    llm_base_url: str = "http://ollama:11434/v1"
-    llm_api_key: str = "ollama"
-    llm_model: str = "qwen2.5:7b"
-    # LLM 提供商：留空则按 base_url 自动探测（含 "/anthropic" → anthropic，否则 openai）
-    llm_provider: str = ""
-    llm_max_tokens: int = 2048
-    llm_temperature: float = 0.3
+    # LLM 配置已改为「按用户」：每个用户在自己的个人中心配置 base_url/api_key/model，
+    # 存 Java 侧 PostgreSQL（AES 加密）。AI 服务不再从环境读取任何默认 LLM 配置。
     llm_max_concurrency: int = 8
     llm_retry_attempts: int = 2
     llm_retry_backoff_seconds: float = 0.5
@@ -44,34 +39,3 @@ class Settings(BaseSettings):
     machine_api_key: str = "dev-machine-key"
 
 settings = Settings()
-
-# 运行时配置只存在当前 AI 进程内：默认值仍来自启动时的 `.env`，避免把 API key
-# 写入数据库或浏览器。重启服务即可恢复环境变量配置。
-_DEFAULT_LLM_CONFIG = {
-    "llm_base_url": settings.llm_base_url,
-    "llm_api_key": settings.llm_api_key,
-    "llm_model": settings.llm_model,
-    "llm_provider": settings.llm_provider,
-    "llm_max_tokens": settings.llm_max_tokens,
-    "llm_temperature": settings.llm_temperature,
-}
-
-
-def llm_config() -> dict:
-    """返回当前 LLM 配置；调用方负责在响应层掩码 api key。"""
-    return {key: getattr(settings, key) for key in _DEFAULT_LLM_CONFIG}
-
-
-def default_llm_config() -> dict:
-    return dict(_DEFAULT_LLM_CONFIG)
-
-
-def update_llm_config(values: dict) -> dict:
-    for key in _DEFAULT_LLM_CONFIG:
-        if key in values and values[key] is not None:
-            setattr(settings, key, values[key])
-    return llm_config()
-
-
-def reset_llm_config() -> dict:
-    return update_llm_config(_DEFAULT_LLM_CONFIG)
