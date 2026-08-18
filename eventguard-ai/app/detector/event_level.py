@@ -7,6 +7,7 @@ from typing import Optional
 import joblib
 import numpy as np
 
+from app.config import settings
 from app.detector.feature_extractor import FeatureExtractor
 from app.model.anomaly import AnomalyResult
 
@@ -29,9 +30,13 @@ class EventLevelDetector:
             self.scaler = scaler
         else:
             base = Path(__file__).parent.parent.parent
+            # ponytail: 模型路径可配（EG_IF_MODEL_PATH），默认回退镜像内置 /app/models。
+            # 演示环境指向挂载目录 /data/models，重训后随卷持久化，无需重建镜像。
+            model_path = model_path or settings.if_model_path or str(base / "models" / "isolation_forest.pkl")
+            scaler_path = scaler_path or settings.if_scaler_path or str(base / "models" / "scaler.pkl")
             try:
-                self.model = joblib.load(model_path or str(base / "models" / "isolation_forest.pkl"))
-                self.scaler = joblib.load(scaler_path or str(base / "models" / "scaler.pkl"))
+                self.model = joblib.load(model_path)
+                self.scaler = joblib.load(scaler_path)
             except FileNotFoundError as e:
                 raise FileNotFoundError(
                     f"未找到模型文件: {e.filename}。请先运行: python -m training.train_isolation"

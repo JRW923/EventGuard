@@ -64,7 +64,11 @@ public class RateLimitFilter implements Filter {
         HttpServletRequest req = (HttpServletRequest) request;
         String path = req.getServletPath();
         if (path.startsWith("/actuator") || path.equals("/health")
-                || path.startsWith("/gateway") || path.startsWith("/ws")) {
+                || path.startsWith("/gateway") || path.startsWith("/ws")
+                // ponytail: 规则引擎端点仅机器主体（EG_MACHINE_API_KEY）可访问，且被 AI 检测器以
+                // 单线程高吞吐逐事件调用；per-IP 限流会 429 它，导致 R001/R004/R005 规则异常被静默跳过
+                // （即检测器“假死”降级）。机器认证端点不应走普通用户限流桶。
+                || path.startsWith("/anomaly/rules")) {
             chain.doFilter(request, response);
             return;
         }

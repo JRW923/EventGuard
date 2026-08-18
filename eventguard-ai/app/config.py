@@ -37,5 +37,9 @@ class Settings(BaseSettings):
     jwt_secret: str = "eventguard-dev-secret-change-me-0123456789abcdef"
     # 机器密钥：AI→后端内部调用（X-API-Key）用，与 Java 侧 EG_MACHINE_API_KEY 一致
     machine_api_key: str = "dev-machine-key"
+    # ponytail: Isolation Forest 模型/标准化器路径可配；默认读镜像内置 /app/models，
+    # 演示环境指向挂载目录 /data/models（随 ai-data 卷持久化，重训后无需重建镜像即可生效）。
+    if_model_path: str = ""
+    if_scaler_path: str = ""
 
 settings = Settings()

@@ -42,7 +42,9 @@ public class RuleContextLoader {
 
     public RuleContext load(DomainEvent event) {
         String userId = event.getMetadata() != null ? event.getMetadata().get("userId") : null;
-        CachedStats stats = loadUserAmountStats(userId);
+        // ponytail: 排除当前事件自身，避免离群值被计入自身基线导致 R001 永不命中
+        // （同 R002/R003 排除自身的处理；作者此前只对 R002/R003 排除，漏了 R001）
+        CachedStats stats = loadUserAmountStats(userId, event.getEventId());
         return RuleContext.builder()
                 .userMeanAmount(stats.mean())
                 .userStdAmount(stats.std())
@@ -65,7 +67,7 @@ public class RuleContextLoader {
      * 用户金额基线（R001）：窗口内 OrderCreatedEvent 的均值与总体标准差，单条 SQL 由数据库统计。
      * std 为 null（无样本）或 0（单样本）时 R001 自行跳过，不会误报。
      */
-    private CachedStats loadUserAmountStats(String userId) {
+    private CachedStats loadUserAmountStats(String userId, UUID excludeEventId) {
         if (userId == null) return new CachedStats(BigDecimal.ZERO, null, 0);
         long now = System.currentTimeMillis();
         CachedStats cached = statsCache.get(userId);
@@ -76,9 +78,9 @@ public class RuleContextLoader {
             List<java.math.BigDecimal[]> rows = jdbc.query(
                     "SELECT avg((payload->>'totalAmount')::numeric), stddev_pop((payload->>'totalAmount')::numeric) " +
                             "FROM domain_events WHERE event_type='OrderCreatedEvent' AND metadata->>'userId'=? " +
-                            "AND created_at >= now() - interval '" + AMOUNT_WINDOW + "'",
+                            "AND event_id <> ? AND created_at >= now() - interval '" + AMOUNT_WINDOW + "'",
                     (rs, i) -> new BigDecimal[]{rs.getBigDecimal(1), rs.getBigDecimal(2)},
-                    userId);
+                    userId, excludeEventId);
             BigDecimal mean = rows.isEmpty() || rows.get(0)[0] == null ? BigDecimal.ZERO : rows.get(0)[0];
             BigDecimal std = rows.isEmpty() ? null : rows.get(0)[1];
             fresh = new CachedStats(mean, std, now + 30_000);
