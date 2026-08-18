@@ -40,6 +40,28 @@
         </li>
       </ol>
 
+      <!-- 体验前必读（关键提示，减少走弯路） -->
+      <section class="guide-tips reveal">
+        <h2 class="guide-h2">体验前必读</h2>
+        <p class="guide-h2-sub">三点关键提示，能更快看到核心效果、少踩坑</p>
+        <ul class="guide-tips-list">
+          <li class="guide-tip" :style="{ '--accent': '#22d3ee' }">
+            <span class="guide-tip-icon">📦</span>
+            <div>
+              <strong>演示数据已就绪，不必从零造数据。</strong>
+              登录即可在「异常看板」看到预置的 6 条真实告警（R001 金额偏离 / R004 高频 / R005 库存溢出 / P001 非法状态转移），在「审批队列」看到 1 条待处理补偿单，直接观察完整异常闭环。
+            </div>
+          </li>
+          <li class="guide-tip" :style="{ '--accent': '#a855f7' }">
+            <span class="guide-tip-icon">🔑</span>
+            <div>
+              <strong>部分 AI 功能需先配 LLM Key。</strong>
+              根因分析、深度分析、运营周报、订单故事共 4 项需先在「个人中心 → 我的 LLM 配置」填写 API Key；<span>订单终局预测</span>与<span>中文 NL 查询</span>开箱即用，无需配置。
+            </div>
+          </li>
+        </ul>
+      </section>
+
       <!-- 可重点考察的系统能力 -->
       <section class="guide-section reveal">
         <h2 class="guide-h2">可重点考察的系统能力</h2>
@@ -153,7 +175,7 @@ const steps: Step[] = [
   },
   {
     title: '看异常如何被发现',
-    desc: '提交金额偏离或状态异常的订单，规则引擎与 AI 模型识别后，告警经 WebSocket 推送至「异常看板」，并提供根因分析与建议动作。',
+    desc: '演示环境已预置 R001 / R004 / R005 / P001 等告警，登录即可在「异常看板」直接查看；新异常也会经 WebSocket 实时推送，并提供根因分析与建议动作。',
     tags: ['CDC 实时管道', 'AI 异常检测', '根因分析'],
     accent: '#ec4899',
   },
@@ -200,13 +222,13 @@ const highlights = [
   {
     icon: '🚨',
     title: '实时异常看板',
-    desc: '提交一笔金额偏离的订单，几秒内告警经 WebSocket 实时推送到看板，并被自动分类标注。',
+    desc: '登录即可看到预置的 6 条真实告警，新异常也会经 WebSocket 实时推送，无需刷新。',
     accent: '#ec4899',
   },
   {
     icon: '🛰️',
     title: 'AI 根因分析',
-    desc: '点开任意告警，查看 LLM 给出的根因判断与建议动作 —— 而不是一条冷冰冰的日志。',
+    desc: '点开任意告警，查看 LLM 给出的根因判断与建议动作；首次使用前请先在「个人中心 → 我的 LLM 配置」填写 Key（否则返回 409）。',
     accent: '#22d3ee',
   },
   {
@@ -243,6 +265,7 @@ const faqs = [
   { q: '我的操作会影响其他人或真实数据吗？', a: '不会。演示环境为独立部署，数据与真实业务完全隔离；你创建、推进、补偿的订单仅影响当前演示环境，可放心操作。' },
   { q: '三个演示账号能否同时登录？', a: '可以。admin / operator / viewer 相互独立，可在多个浏览器同时登录，各自看到与角色对应的权限范围，互不影响。' },
   { q: 'NL 查询可以问哪些问题？', a: '支持按状态、金额、时间范围等条件用中文提问，例如“最近 7 天金额大于 1000 的订单有哪些”，系统会翻译为查询并返回结果与统计。' },
+  { q: '为什么点「根因分析」提示 409？', a: '根因分析、深度分析、运营周报、订单故事这 4 项 AI 能力依赖 LLM。请先以 admin / operator 登录，进入「个人中心 → 我的 LLM 配置」填写 API Key 后重试；订单终局预测与中文 NL 查询无需配置即可用。' },
 ]
 
 function goEnter() {
@@ -506,6 +529,47 @@ body.eg-landing {
   margin: 8px 0 0;
   font-size: 13px;
   line-height: 1.7;
+  color: #94a3b8;
+}
+
+/* ---------- 体验前必读 ---------- */
+.guide-tips {
+  margin-top: 48px;
+  text-align: center;
+}
+.guide-tips-list {
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+.guide-tip {
+  --accent: #22d3ee;
+  display: flex;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid var(--accent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.guide-tip-icon {
+  font-size: 24px;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+.guide-tip strong {
+  color: #f1f5f9;
+  font-size: 14px;
+}
+.guide-tip div {
+  font-size: 13.5px;
+  line-height: 1.75;
   color: #94a3b8;
 }
 
