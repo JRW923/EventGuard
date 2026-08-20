@@ -1,9 +1,37 @@
+# Alertmanager 运行时配置模板：由容器 entrypoint 用 sed 把 SMTP_* / ALERT_WEBHOOK_URL
+# 占位符替换为真实值后生成 /etc/alertmanager/alertmanager.yml（Alertmanager 自身不支持
+# 环境变量展开，故走 sed 注入，避免把 SMTP 授权码明文写进仓库跟踪的配置文件）。
+# 同一条告警经 fan-out 同时进两个 receiver：
+#   - webhook：本机飞书中继(172.18.0.1:9102)，再由 relay 扇出到飞书群机器人 + PushPlus 个人微信
+#   - email：163 邮箱（SMTP 由下方 global 配置驱动）
+
+global:
+  smtp_smarthost: '${SMTP_SMARTHOST}'
+  smtp_from: '${SMTP_FROM}'
+  smtp_auth_username: '${SMTP_USER}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+  smtp_require_tls: false
+
 route:
+  # 父路由 receiver 仅在没有任何子路由命中时才作兜底；
+  # 要实现“一条告警同时进多个通道”，必须把它们都列为子路由并 continue:true。
   receiver: "webhook"
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - receiver: "webhook"
+      continue: true
+    - receiver: "email"
+      continue: true
 
 receivers:
   - name: "webhook"
     webhook_configs:
-      # 占位符 ALERT_WEBHOOK_URL 在容器启动时由 entrypoint 注入（Alertmanager 自身不支持环境变量展开）
       - url: "${ALERT_WEBHOOK_URL}"
+        send_resolved: true
+  - name: "email"
+    email_configs:
+      - to: "${SMTP_FROM}"
         send_resolved: true

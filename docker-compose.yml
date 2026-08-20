@@ -15,8 +15,8 @@ services:
     image: postgres:16
     ports: ["5432:5432"]
     logging: *default-logging
-    # ponytail: 防止 PG 在长时间运行后缓存膨胀吃掉整机内存（上次宕机根因之一）；1.5g 远高于当前占用，仅作兜底封顶
-    mem_limit: 1.5g
+    # ponytail: 防止 PG 在长时间运行后缓存膨胀吃掉整机内存（上次宕机根因之一）；1g 远高于当前占用(49M)，仅作兜底封顶
+    mem_limit: 1g
     environment:
       TZ: Asia/Shanghai
       POSTGRES_DB: ${POSTGRES_DB}
@@ -37,8 +37,8 @@ services:
     image: confluentinc/cp-kafka:7.6.0
     ports: ["9092:9092"]
     logging: *default-logging
-    # ponytail: 容器内存封顶 + JVM 堆上限双保险，避免在 3.6G 小机上 JVM 按宿主机内存默认吃满触发 OOM
-    mem_limit: 1.2g
+    # ponytail: 容器内存封顶 + JVM 堆上限双保险，避免 JVM 按宿主机内存默认吃满触发 OOM（实测占用 410M，堆512m，1g 留足余量）
+    mem_limit: 1g
     environment:
       KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
       KAFKA_PROCESS_ROLES: broker,controller
@@ -65,8 +65,8 @@ services:
     <<: *default-restart
     image: debezium/server:2.6
     logging: *default-logging
-    # ponytail: JVM 堆封顶，防止 CDC 连接器失控吃光内存
-    mem_limit: 800m
+    # ponytail: JVM 堆封顶，防止 CDC 连接器失控吃光内存（实测占用 186M，堆256m，600m 留足余量）
+    mem_limit: 600m
     healthcheck:
       # 探测 Debezium JVM 存活：/proc 扫描含 "debezium" 的进程 cmdline（纯 sh，不依赖镜像内 pgrep）。
       # JVM 崩溃（如 OOM）→ unhealthy → 配合 restart: unless-stopped 自动拉起，避免 CDC 静默停转无人知。
@@ -97,8 +97,8 @@ services:
     logging: *default-logging
     # P1-12 优雅停机：给 server 最多 35s 处理完在途请求（Spring graceful shutdown 30s）
     stop_grace_period: 35s
-    # ponytail: JVM 堆封顶，避免 java -jar 按宿主机内存默认分配
-    mem_limit: 800m
+    # ponytail: JVM 堆封顶，避免 java -jar 按宿主机内存默认分配（实测占用 220M，堆384m，700m 留足余量）
+    mem_limit: 700m
     env_file: .env
     environment:
       TZ: Asia/Shanghai
@@ -118,8 +118,8 @@ services:
       args:
         PIP_INDEX_URL: ${PIPE_INDEX_URL:-https://pypi.org/simple}
     logging: *default-logging
-    # ponytail: AI 服务兜底内存封顶（Python 进程可能随模型/缓存膨胀）；1.5g 留足余量，不会误杀
-    mem_limit: 1.5g
+    # ponytail: AI 服务兜底内存封顶（Python 进程可能随模型/缓存膨胀）；实测占用 98M，1g 留足余量不会误杀
+    mem_limit: 1g
     # ponytail: 开发期在宿主跑 Vite dev server 时，需经 localhost:8000 代理到 AI 服务（与 server 的 8080 同理）
     ports: ["8000:8000"]
     stop_grace_period: 15s
@@ -151,7 +151,8 @@ services:
       # 当前 Cloudflare 代理走 Flexible，源站只用 80，证书由 Cloudflare 边缘提供。
       - "/var/www/letsencrypt:/var/www/letsencrypt"
     logging: *default-logging
-    mem_limit: 512m
+    # ponytail: nginx 仅发静态资源，实测占用 4M，256m 绰绰有余
+    mem_limit: 256m
     depends_on: [eventguard-server]
 
   # ponytail: Cloudflare Tunnel 出网代理，绕过未备案域名的 Host 拦截。
@@ -172,7 +173,8 @@ services:
       - "./cloudflared/config.yml:/etc/cloudflared/config.yml:ro"
       - "./cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro"
       - "./cloudflared/credentials.json:/root/.cloudflared/343ed7a5-adbf-4ad9-8978-a3d997d5e558.json:ro"
-    mem_limit: 512m
+    # ponytail: 隧道长连接，实测占用 19M，256m 绰绰有余
+    mem_limit: 256m
     depends_on: [eventguard-ui, grafana, prometheus, alertmanager, adminer]
 
   pumba:
@@ -277,14 +279,24 @@ services:
     # ponytail: 仅映射供本地 SSH 隧道访问；生产不直接暴露
     ports: ["9093:9093"]
     # 注:Alertmanager(v0.27.0~v0.33.1)不支持 --config.expand-env(仅 Prometheus 支持)，
-    # 故用 entrypoint sed 把 ALERT_WEBHOOK_URL 注入 tmpl 生成运行时配置（未设置回落默认中继地址）
+    # 故用 entrypoint sed 把 ALERT_WEBHOOK_URL / SMTP_* 注入 tmpl 生成运行时配置
+    # （未设置回落默认中继地址；SMTP 默认 163，密码必须来自 .env 的 EG_SMTP_PASSWORD）
     environment:
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-http://172.18.0.1:9102/webhook}
+      SMTP_SMARTHOST: ${EG_SMTP_SMARTHOST:-smtp.163.com:465}
+      SMTP_FROM: ${EG_SMTP_FROM:-19913823585@163.com}
+      SMTP_USER: ${EG_SMTP_USER:-19913823585@163.com}
+      SMTP_PASSWORD: ${EG_SMTP_PASSWORD:-}
     entrypoint:
       - /bin/sh
       - -c
       - |
-        sed "s|\$${ALERT_WEBHOOK_URL}|$${ALERT_WEBHOOK_URL}|g" /etc/alertmanager/tmpl/alertmanager.yml.tmpl > /etc/alertmanager/alertmanager.yml
+        sed -e "s|\$${ALERT_WEBHOOK_URL}|$${ALERT_WEBHOOK_URL}|g" \
+            -e "s|\$${SMTP_SMARTHOST}|$${SMTP_SMARTHOST}|g" \
+            -e "s|\$${SMTP_FROM}|$${SMTP_FROM}|g" \
+            -e "s|\$${SMTP_USER}|$${SMTP_USER}|g" \
+            -e "s|\$${SMTP_PASSWORD}|$${SMTP_PASSWORD}|g" \
+            /etc/alertmanager/tmpl/alertmanager.yml.tmpl > /etc/alertmanager/alertmanager.yml
         exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --web.route-prefix=/alerts
     volumes:
       - "./prometheus/alertmanager.yml.tmpl:/etc/alertmanager/tmpl/alertmanager.yml.tmpl:ro"

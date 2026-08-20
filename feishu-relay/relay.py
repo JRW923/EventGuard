@@ -15,6 +15,7 @@ import urllib.request
 
 FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
 FEISHU_SECRET = os.environ.get("FEISHU_SECRET", "")
+PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN", "")
 HOST = os.environ.get("RELAY_HOST", "172.18.0.1")
 PORT = int(os.environ.get("RELAY_PORT", "9102"))
 
@@ -43,9 +44,32 @@ def send_to_feishu(text):
         url, data=payload, headers={"Content-Type": "application/json"}
     )
     try:
-        urllib.request.urlopen(req, timeout=10).read()
+        resp = urllib.request.urlopen(req, timeout=10).read().decode()  # ponytail: 顺带记录飞书返回，机器人被移出群时返回非 0
+        sys.stderr.write("飞书返回: %s\n" % resp)
     except Exception as e:
         sys.stderr.write("发送到飞书失败: %s\n" % e)
+
+
+def send_to_pushplus(text):
+    """PushPlus 个人微信：把同一条告警转发到 PushPlus 接口（需 PUSHPLUS_TOKEN）。"""
+    if not PUSHPLUS_TOKEN:
+        sys.stderr.write("PUSHPLUS_TOKEN 未配置，跳过发送\n")
+        return
+    payload = json.dumps({
+        "token": PUSHPLUS_TOKEN,
+        "title": "EventGuard 告警",
+        "content": text,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://www.pushplus.plus/send",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=10).read()
+        sys.stderr.write("PushPlus 返回: %s\n" % resp.decode("utf-8", "replace"))
+    except Exception as e:
+        sys.stderr.write("发送到 PushPlus 失败: %s\n" % e)
 
 
 def build_text(alerts):
@@ -71,7 +95,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             n = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(n) if n else b"{}"
             data = json.loads(body or b"{}")
-            send_to_feishu(build_text(data.get("alerts", [])))
+            text = build_text(data.get("alerts", []))
+            send_to_feishu(text)
+            send_to_pushplus(text)
         except Exception as e:
             sys.stderr.write("处理告警失败: %s\n" % e)
         self.send_response(200)
