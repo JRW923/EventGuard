@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EventGuard 当前架构</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --ink: #17324d;
+      --muted: #5f7184;
+      --line: #d5dfeb;
+      --blue: #2767a8;
+      --green: #3a8055;
+      --orange: #b66b24;
+      --red: #b84e4b;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .page { width: min(1500px, calc(100% - 48px)); margin: 0 auto; padding: 24px 0 8px; }
+    h1 { margin: 0; font-size: 52px; line-height: 1.15; letter-spacing: .01em; font-weight: 800; }
+    .subtitle { margin: 7px 0 18px; color: var(--muted); font-size: 22px; line-height: 1.35; font-weight: 500; }
+    .band {
+      margin: 12px 0;
+      padding: 18px 24px 20px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 4px 16px rgba(35, 61, 87, .05);
+    }
+    .band-title { margin: 0 0 15px; color: #425466; font-size: 23px; font-weight: 800; }
+    .cards-3 { display: grid; grid-template-columns: 1fr 100px 1.3fr 100px 1.35fr; align-items: center; gap: 10px; }
+    .cards-2 { display: grid; grid-template-columns: 1fr 100px 1.35fr; align-items: center; gap: 10px; max-width: 1120px; margin: 0 auto; }
+    .card {
+      min-height: 166px;
+      padding: 23px 28px 21px;
+      border: 2px solid var(--blue);
+      border-radius: 12px;
+      background: #eef5ff;
+    }
+    .card.db { border-color: var(--green); background: #edf8f1; }
+    .card.stream { border-color: #4e8e62; background: #f0f8f2; }
+    .card.ai { border-color: var(--orange); background: #fff5e9; }
+    .card.risk { border-color: var(--red); background: #fff0ef; }
+    .card h2 { margin: 0 0 14px; font-size: 29px; line-height: 1.25; font-weight: 800; }
+    .card p { margin: 7px 0 0; color: var(--muted); font-size: 26px; line-height: 1.38; font-weight: 650; }
+    .arrow { display: flex; min-height: 66px; flex-direction: column; align-items: center; justify-content: center; gap: 5px; color: var(--blue); font-size: 38px; font-weight: 800; text-align: center; }
+    .arrow-symbol { display: block; line-height: 1; }
+    .arrow.green { color: var(--green); }
+    .arrow.orange { color: var(--orange); }
+    .arrow-label { display: block; color: currentColor; font-size: 19px; font-weight: 800; line-height: 1.2; white-space: nowrap; }
+
+    .fanout-source { max-width: 720px; margin: 0 auto 14px; }
+    .fanout-arrow { display: flex; min-height: 52px; margin: 0 auto 14px; flex-direction: column; align-items: center; justify-content: center; color: var(--green); font-size: 38px; font-weight: 800; text-align: center; }
+    .routes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+    .route { display: flex; min-width: 0; flex-direction: column; align-items: stretch; }
+    .route-label { min-height: 45px; padding: 9px 10px; border-radius: 8px; background: #f3f6fa; color: var(--muted); font-size: 21px; font-weight: 800; line-height: 1.25; text-align: center; }
+    .route-arrow { padding: 7px 0 9px; color: var(--green); font-size: 30px; font-weight: 800; line-height: 1; text-align: center; }
+    .route .card { min-height: 190px; }
+    .route .card h2 { font-size: 27px; }
+    .route .card p { font-size: 24px; }
+
+    .ops { display: grid; grid-template-columns: 1fr 30px 1fr 30px 1fr 30px .8fr; gap: 12px; align-items: center; }
+    .ops .card { min-height: 190px; }
+    .ops .card h2 { font-size: 26px; }
+    .ops .card p { font-size: 24px; }
+    .ops-arrow { color: var(--blue); font-size: 32px; font-weight: 800; text-align: center; }
+    .ops-arrow.orange { color: var(--orange); }
+    .output-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 22px; }
+    .output { padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: #f8fafc; color: var(--muted); font-size: 17px; text-align: center; }
+    .output strong { color: var(--ink); }
+
+    .observability { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; color: var(--muted); font-size: 22px; line-height: 1.4; font-weight: 500; }
+    .observability strong { color: #425466; font-size: 24px; font-weight: 800; }
+    .legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 13px; color: var(--muted); font-size: 21px; font-weight: 500; }
+    .legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; background: var(--blue); }
+    .legend .green::before { background: var(--green); }
+    .legend .orange::before { background: var(--orange); }
+    .footnote { margin: 11px 0 0; color: #718093; font-size: 21px; line-height: 1.5; }
+
+    @media (max-width: 1000px) {
+      .page { width: min(720px, calc(100% - 28px)); padding-top: 24px; }
+      h1 { font-size: 32px; }
+      .cards-3, .cards-2 { grid-template-columns: 1fr; gap: 10px; }
+      .cards-3 .arrow, .cards-2 .arrow { transform: none; }
+      .cards-3 .arrow-symbol, .cards-2 .arrow-symbol { transform: rotate(90deg); }
+      .routes, .ops, .output-row { grid-template-columns: 1fr; }
+      .ops-arrow { transform: rotate(90deg); }
+      .band { padding: 20px 16px 24px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>EventGuard 当前架构</h1>
+    <p class="subtitle">事件溯源事实链路 · CQRS 查询投影 · 异常检测与人工补偿闭环</p>
+
+    <section class="band">
+      <h3 class="band-title">① 请求与事实写入</h3>
+      <div class="cards-3">
+        <article class="card">
+          <h2>Vue 3 管理台</h2>
+          <p>订单 · 异常 · 查询 · 审批</p>
+          <p>REST + JWT · WebSocket</p>
+        </article>
+        <div class="arrow"><span class="arrow-label">HTTP 命令</span><span class="arrow-symbol" aria-hidden="true">→</span></div>
+        <article class="card">
+          <h2>Spring Boot 业务服务</h2>
+          <p>命令端 · 聚合状态机 · RBAC</p>
+          <p>commandId 幂等 · 版本校验 · 补偿 API</p>
+        </article>
+        <div class="arrow"><span class="arrow-label">本地事务</span><span class="arrow-symbol" aria-hidden="true">→</span></div>
+        <article class="card db">
+          <h2>PostgreSQL 事实库</h2>
+          <p>domain_events · command_log · snapshots</p>
+          <p>同一事务提交 · 版本唯一约束</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="band">
+      <h3 class="band-title">② CDC 事件传播</h3>
+      <div class="fanout-source">
+        <article class="card stream">
+          <h2>Debezium CDC</h2>
+          <p>PostgreSQL WAL / logical slot</p>
+          <p>只捕获已提交事实，至少一次传播</p>
+        </article>
+      </div>
+      <div class="fanout-arrow">↓<span class="arrow-label">WAL → CDC</span></div>
+      <div class="fanout-source">
+        <article class="card stream">
+          <h2>Kafka 事件总线</h2>
+          <p>domain-events · anomaly-alerts</p>
+          <p>消费组隔离 · 重试 · DLT / quarantine</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="band">
+      <h3 class="band-title">③ 独立消费与运营闭环</h3>
+      <div class="routes">
+        <div class="route">
+          <div class="route-label">domain-events / projection</div>
+          <div class="route-arrow">↓</div>
+          <article class="card">
+            <h2>OrderView 投影</h2>
+            <p>去重 + 版本守卫 + JDBC 事务</p>
+            <p>写入 order_view / 读己写通知</p>
+          </article>
+        </div>
+        <div class="route">
+          <div class="route-label">domain-events / detection</div>
+          <div class="route-arrow">↓</div>
+          <article class="card ai">
+            <h2>eventguard-ai</h2>
+            <p>规则 + Isolation Forest + HMM</p>
+            <p>NL 查询 · 预测 · 根因分析 · 去重</p>
+          </article>
+        </div>
+        <div class="route">
+          <div class="route-label">domain-events / Saga</div>
+          <div class="route-arrow">↓</div>
+          <article class="card risk">
+            <h2>Saga 与补偿</h2>
+            <p>支付 / 库存 / 通知 Gateway</p>
+            <p>白名单动作 · 高风险人工审批</p>
+          </article>
+        </div>
+      </div>
+      <div class="ops" style="margin-top:22px">
+        <article class="card"><h2>查询接口</h2><p>order_view / REST</p><p>写后读等待目标版本</p></article>
+        <div class="ops-arrow">→</div>
+        <article class="card ai"><h2>实时告警</h2><p>anomaly-alerts / WebSocket</p><p>历史补拉 + 去重</p></article>
+        <div class="ops-arrow orange">→</div>
+        <article class="card risk"><h2>审批结果</h2><p>approve / reject</p><p>条件更新防重复处理</p></article>
+        <div class="ops-arrow orange">→</div>
+        <article class="card"><h2>运营台</h2><p>查询 · 告警</p><p>审批 · 审计</p></article>
+      </div>
+    </section>
+
+    <div class="observability">
+      <strong>可观测与恢复</strong>
+      <span>Prometheus → Alertmanager 多渠道告警</span>
+      <span>Loki 日志</span>
+      <span>备份 / 归档 / 混沌演练</span>
+      <span>DLT 有限重放</span>
+    </div>
+    <div class="legend">
+      <span>业务请求 / 查询</span><span class="green">事实事件 / 投影</span><span class="orange">AI / 补偿 / 告警</span>
+    </div>
+    <p class="footnote">事实源：<code>domain_events</code>。整体语义：至少一次投递 + 业务幂等 + 最终一致；AI 不直接写业务事实，高风险补偿经过白名单和人工审批。</p>
+  </main>
+</body>
+</html>
