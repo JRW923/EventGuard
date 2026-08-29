@@ -20,7 +20,7 @@ import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.Map;
 
-/** Kafka listener 统一错误策略：有限重试后进入 <topic>.DLT，避免异常被吞掉。 */
+/** Kafka listener 错误策略：处理异常有限重试后进入 <topic>.DLT。注意：契约不兼容/无法解析的消息已在 EventDeserializer 降级为 UnknownEvent 并跳过，不会到达此处。 */
 @Configuration
 public class KafkaConsumerConfig {
 

@@ -5,6 +5,7 @@ import com.eventguard.common.idempotent.IdempotentConsumer;
 import com.eventguard.event.model.DomainEvent;
 import com.eventguard.event.model.InventoryReservationFailedEvent;
 import com.eventguard.event.model.OrderCancelledEvent;
+import com.eventguard.event.model.UnknownEvent;
 import com.eventguard.event.store.EventDeserializer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
@@ -64,6 +65,10 @@ public class SagaTrigger {
         } catch (Exception e) {
             log.error("[Saga] 反序列化失败 offset={}", record.offset(), e);
             throw new IllegalStateException("Saga 事件反序列化失败", e);
+        }
+        if (event instanceof UnknownEvent) {
+            log.debug("[Saga] 忽略不兼容占位事件 eventType={}", event.getEventType());
+            return; // 契约不兼容降级产物，跳过不进 DLT，也不占用幂等位
         }
         if (!idempotentConsumer.tryMarkProcessed("saga-trigger", event.getEventId())) {
             log.debug("[Saga] 触发事件已处理，跳过 eventId={}", event.getEventId());

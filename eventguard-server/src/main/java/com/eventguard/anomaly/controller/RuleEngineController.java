@@ -29,7 +29,15 @@ public class RuleEngineController {
 
     @PostMapping("/evaluate")
     public ResponseEntity<Anomaly> evaluate(@RequestBody EventDto dto) {
-        Optional<Anomaly> anomaly = ruleEngine.evaluate(dto.toSimpleEvent());
-        return ResponseEntity.ok(anomaly.orElse(null));
+        if (dto == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        try {
+            Optional<Anomaly> anomaly = ruleEngine.evaluate(dto.toSimpleEvent());
+            return ResponseEntity.ok(anomaly.orElse(null));
+        } catch (IllegalArgumentException e) {
+            // 契约不兼容的非法输入：返回 400 而非 500，避免污染错误监控
+            return ResponseEntity.badRequest().build();
+        }
     }
 }

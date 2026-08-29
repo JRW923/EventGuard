@@ -56,6 +56,11 @@ public class OrderViewProjection implements Projection {
             log.error("[投影] 反序列化失败，offset={}", record.offset(), e);
             throw new IllegalStateException("投影事件反序列化失败", e);
         }
+        // 契约不兼容降级产物：在触碰聚合根/进度通知前直接忽略，避免 null aggregateId 引发 NPE 进 DLT
+        if (event instanceof UnknownEvent) {
+            log.debug("[投影] 忽略不兼容占位事件 eventType={}", event.getEventType());
+            return;
+        }
         // 与下方读模型更新同处投影数据库事务：占位成功才投影，异常时两者一起回滚。
         if (!tryMarkProcessed(event.getEventId())) {
             log.debug("[投影] 事件已处理，跳过 eventId={}", event.getEventId());
@@ -130,6 +135,9 @@ public class OrderViewProjection implements Projection {
             applyNext(e, "status = 'CANCELLED'");
         } else if (event instanceof OrderRefundedEvent e) {
             applyNext(e, "status = 'REFUNDED'");
+        } else if (event instanceof UnknownEvent) {
+            log.debug("[投影] 忽略不兼容占位事件 eventType={}", event.getEventType());
+            return; // 契约不兼容降级产物，跳过不进 DLT
         } else {
             throw new IllegalArgumentException("[投影] 未知事件类型: " + event.getEventType());
         }

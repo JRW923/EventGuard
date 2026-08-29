@@ -97,12 +97,12 @@ services:
     logging: *default-logging
     # P1-12 优雅停机：给 server 最多 35s 处理完在途请求（Spring graceful shutdown 30s）
     stop_grace_period: 35s
-    # ponytail: JVM 堆封顶，避免 java -jar 按宿主机内存默认分配（实测占用 220M，堆384m，700m 留足余量）
+    # ponytail: JVM 堆封顶，避免 java -jar 按宿主机内存默认分配（实测占用 220M，堆512m，700m 留足余量）
     mem_limit: 700m
     env_file: .env
     environment:
       TZ: Asia/Shanghai
-      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx384m"
+      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx512m"
       EG_RATE_LIMIT_ENABLED: ${EG_RATE_LIMIT_ENABLED:-true}
       EG_PROJECTION_CONCURRENCY: ${EG_PROJECTION_CONCURRENCY:-3}
       EG_DLT_REPLAY_CRON: ${EG_DLT_REPLAY_CRON:-0 0/10 * * * *}

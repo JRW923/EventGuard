@@ -92,15 +92,31 @@ public class AuthDataSeeder implements ApplicationRunner {
     }
 
     private void seedUser(String username, String password, String displayName, String roleCode) {
-        // 演示账号幂等重置：不存在则创建；已存在则把密码重置回默认值并清 must_change_password，
-        // 确保展示页上的默认密码始终可用（改过/被别人改过也不影响）。同时递增 token_version 令旧 JWT 失效。
-        jdbc.update("INSERT INTO auth_user(username, password_hash, display_name, enabled, must_change_password) "
-                        + "VALUES (?,?,?,TRUE,FALSE) "
-                        + "ON CONFLICT (username) DO UPDATE SET "
-                        + "  password_hash = EXCLUDED.password_hash, display_name = EXCLUDED.display_name, "
-                        + "  enabled = TRUE, must_change_password = FALSE, "
-                        + "  token_version = auth_user.token_version + 1, updated_at = now()",
-                username, encoder.encode(password), displayName);
+        // 演示账号幂等重置：确保默认密码/启用状态在，展示页默认密码始终可用。
+        // ponytail: 仅当密码【确实变化】时才递增 token_version 令旧 JWT 失效；否则每次启动都会
+        // 踢掉所有在线会话——WS 握手不校验 tv 但 REST 校验，进异常看板补拉 /alerts/recent 会 401 被弹回登录页。
+        Long existingId = jdbc.queryForObject("SELECT id FROM auth_user WHERE username = ?", Long.class, username);
+        if (existingId == null) {
+            jdbc.update("INSERT INTO auth_user(username, password_hash, display_name, enabled, must_change_password) "
+                            + "VALUES (?,?,?,TRUE,FALSE)",
+                    username, encoder.encode(password), displayName);
+        } else {
+            String storedHash = jdbc.queryForObject(
+                    "SELECT password_hash FROM auth_user WHERE username = ?", String.class, username);
+            // BCrypt 每次 encode 都换盐，哈希必不同，故用 matches 判等而非比对哈希串
+            boolean passwordChanged = storedHash == null || !encoder.matches(password, storedHash);
+            if (passwordChanged) {
+                jdbc.update("UPDATE auth_user SET password_hash = ?, display_name = ?, enabled = TRUE, "
+                                + "must_change_password = FALSE, token_version = token_version + 1, updated_at = now() "
+                                + "WHERE username = ?",
+                        encoder.encode(password), displayName, username);
+            } else {
+                // 密码未变：仅校正启用状态/展示名，不动 token_version，保留既有会话
+                jdbc.update("UPDATE auth_user SET display_name = ?, enabled = TRUE, "
+                                + "must_change_password = FALSE, updated_at = now() WHERE username = ?",
+                        displayName, username);
+            }
+        }
         Long userId = jdbc.queryForObject("SELECT id FROM auth_user WHERE username = ?", Long.class, username);
         Long roleId = jdbc.queryForObject("SELECT id FROM auth_role WHERE code = ?", Long.class, roleCode);
         jdbc.update("INSERT INTO auth_user_role(user_id, role_id) VALUES (?,?) ON CONFLICT DO NOTHING", userId, roleId);

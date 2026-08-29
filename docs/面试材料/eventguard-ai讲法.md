@@ -38,7 +38,7 @@ AI 层有两条数据流主线：
 #### 2.1 事件级：`EventLevelService`（规则高优 → IF 低优）
 
 - **协同服务 `EventLevelService.detect`**：先调 `RuleBridge`（HTTP 调 server 规则引擎，命中即高优先级告警），未命中再调 `EventLevelDetector`（低优先级）。设计意图是毫秒级硬规则先拦、模型做深度补充。
-- **规则桥接 `RuleBridge.evaluate`**：调 server 的 `POST /anomaly/rules/evaluate`，把 Kafka 事件翻译成 Java `EventDto`。注意 AI 侧不自己写 R001-R005，规则引擎在 server 的 `anomaly/` 包，这是"规则实时拦截、AI 深度研判"的分工。桥接硬超时 2 秒，超时即降级跳过、改走纯模型检测，不阻塞消费线程。
+- **规则桥接 `RuleBridge.evaluate`**：调 server 的 `POST /anomaly/rules/evaluate`，把 Kafka 事件翻译成 Java `EventDto`。注意 AI 侧不自己写 R001-R005，规则引擎在 server 的 `anomaly/` 包，这是"规则实时拦截、AI 深度研判"的分工。桥接硬超时 2 秒，超时即降级跳过、改走纯模型检测，不阻塞消费线程。server 端该端点现已对契约非法的事件返回 **400**（而非 500），桥接侧按失败跳过即可，不影响降级链路。
 - **Isolation Forest `EventLevelDetector.detect`**：`predict=-1` 判异常，`score=-score_samples` 越大越异常；加载 `models/isolation_forest.pkl` 与 `scaler.pkl`，模型缺失会明确报错要求先训练，不静默跑空。
 - **4 维特征 `FeatureExtractor`**：`amount_zscore`（金额相对用户历史均值的 Z 分数）、`time_since_last_event`、`user_order_count_1h`（1 小时下单数）、`state_transition_prob`（状态转移在合法表中的概率）。它是有状态的，`update` 推进用户基线/订单状态，依赖单消费线程才不加锁。
 - **业务价值**：IF 抓 server 规则覆盖不到的"软异常"（金额离群、下单频次异常），是规则引擎的互补而非替代。
