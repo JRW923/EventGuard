@@ -44,6 +44,9 @@ public class KafkaConsumerConfig {
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(
                 (KafkaOperations) dltKafkaTemplate,
                 (record, exception) -> new TopicPartition(record.topic() + ".DLT", record.partition()));
+        // ponytail: DeadLetterPublishingRecoverer 默认即复制原始消息头（含 DltReplayController 写入的
+        // eg.dlt.replay.attempt），故隔离计数可跨 DLT 往返累积，无需额外 addHeadersFunction。
+        // 已由 DeadLetterHeaderRetentionTest 固化该行为，避免未来误加/误改 headersFunction 破坏计数。
         // 1 秒、2 次重试；恢复器发布成功后 Spring 才提交原 offset。
         return new DefaultErrorHandler(recoverer, new FixedBackOff(1000L, 2L));
     }
