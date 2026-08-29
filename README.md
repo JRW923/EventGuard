@@ -97,7 +97,7 @@ docker compose --profile bench run --rm bench  # 一键评测，产出量化报�
 
 ## 系统架构
 
-代码目录职责和推荐阅读顺序见 [docs/架构设计/代码结构.md](docs/架构设计/代码结构.md)。
+代码目录职责和推荐阅读顺序见 [docs/架构设计/当前架构基线.md](docs/架构设计/当前架构基线.md)。
 
 ```text
 Vue3 管理台
