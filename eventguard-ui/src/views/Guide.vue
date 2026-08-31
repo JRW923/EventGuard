@@ -146,6 +146,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import Starfield from '@/components/landing/Starfield.vue'
 import { useStandalonePage } from '@/composables/useStandalonePage'
 import { auth } from '@/stores/auth'
@@ -307,6 +308,10 @@ async function copyPassword(acc: Account) {
     setTimeout(() => {
       acc.copied = false
     }, 1500)
+  } else {
+    // 剪贴板 API 与 execCommand 兜底都失败时（非安全上下文/无权限）必须告知，
+    // 否则点「复制」毫无反应，用户会以为已经复制上了
+    ElMessage.warning('复制失败，请手动选中复制')
   }
 }
 </script>

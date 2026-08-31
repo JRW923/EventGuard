@@ -47,7 +47,11 @@ export interface AnomalyAlert {
 
 export const AnomalyApi = {
   getAnalysis(anomalyId: string): Promise<AnalysisReport> {
-    return http.get<AnalysisReport>(`/anomalies/${anomalyId}/analysis`).then((r) => r.data)
+    // 与后端 analysis_timeout_seconds（45s）对齐：LLM 单次根因分析实测 9.5~15.6s，
+    // 默认 axios 10s 会在后端还在等 LLM 时就放弃，用户只看到超时、白等一场
+    return http
+      .get<AnalysisReport>(`/anomalies/${anomalyId}/analysis`, { timeout: 45000 })
+      .then((r) => r.data)
   },
   // ReAct 深度分析（Item 6a）：agent 多轮工具调用收集证据 → 报告 + 分析过程 trace
   // agent 有多轮 LLM 调用，放宽单请求超时（默认 axios 10s 不够）

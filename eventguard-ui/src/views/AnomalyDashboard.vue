@@ -97,9 +97,6 @@
         >
           发起补偿审批
         </el-button>
-        <el-button type="warning" plain :loading="similarLoading" @click="loadSimilarCases">
-          相似案例
-        </el-button>
         <span v-if="healNote" style="font-size: 12px; color: #909399; align-self: center">{{ healNote }}</span>
       </div>
 
@@ -134,20 +131,6 @@
           <el-table-column :resizable="false" prop="risk" label="风险" width="100" />
         </el-table>
 
-        <!-- 相似案例（Item 8 · 轻量 RAG）：参考上次处置方式 -->
-        <template v-if="similarCases.length">
-          <h3>相似案例</h3>
-          <el-table :data="similarCases" border size="small">
-            <el-table-column :resizable="false" prop="similarity" label="相似度" width="90">
-              <template #default="{ row }">{{ Math.round(row.similarity * 100) }}%</template>
-            </el-table-column>
-            <el-table-column :resizable="false" prop="rule_id" label="规则" width="150" />
-            <el-table-column :resizable="false" prop="aggregate_id" label="订单 ID" width="200" show-overflow-tooltip />
-            <el-table-column :resizable="false" prop="description" label="描述" min-width="240" show-overflow-tooltip />
-            <el-table-column :resizable="false" prop="resolution" label="处置" width="90" />
-          </el-table>
-        </template>
-
         <div style="margin-top: 16px; text-align: right">
           <el-button
             v-for="s in currentReport.suggestions"
@@ -162,7 +145,50 @@
           </el-button>
         </div>
       </div>
-      <div v-else v-loading="analysisLoading || healing" />
+      <!-- 分析失败：给出原因与重试入口，避免只剩一个空白对话框 -->
+      <el-result v-else-if="analysisError" icon="error" title="分析失败" :sub-title="analysisError">
+        <template #extra>
+          <el-button type="primary" size="small" :loading="analysisLoading" @click="retryAnalysis">
+            重试
+          </el-button>
+        </template>
+      </el-result>
+      <!-- 首次分析时正文为空，用 loading 文案说明会等待较久（LLM 实测 10~16s） -->
+      <div
+        v-else
+        v-loading="analysisLoading || healing"
+        element-loading-text="正在分析根因…（大模型响应较慢，最长等待约 45 秒）"
+        style="min-height: 120px"
+      />
+
+      <!-- 相似案例（Item 8 · 轻量 RAG）：后端独立于根因分析，故放在报告容器外——
+           否则分析失败（如 LLM 未配置）时案例区会被连带隐藏，尽管它本可正常工作 -->
+      <div class="similar-block">
+        <div class="similar-head">
+          <h3>相似案例</h3>
+          <el-button
+            type="warning"
+            plain
+            size="small"
+            :loading="similarLoading"
+            @click="loadSimilarCases"
+          >
+            {{ similarLoaded ? '重新加载' : '加载相似案例' }}
+          </el-button>
+        </div>
+        <el-alert v-if="similarError" type="error" :closable="false" :title="similarError" />
+        <el-table v-else-if="similarCases.length" :data="similarCases" border size="small">
+          <el-table-column :resizable="false" prop="similarity" label="相似度" width="90">
+            <template #default="{ row }">{{ Math.round(row.similarity * 100) }}%</template>
+          </el-table-column>
+          <el-table-column :resizable="false" prop="rule_id" label="规则" width="150" />
+          <el-table-column :resizable="false" prop="aggregate_id" label="订单 ID" width="200" show-overflow-tooltip />
+          <el-table-column :resizable="false" prop="description" label="描述" min-width="240" show-overflow-tooltip />
+          <el-table-column :resizable="false" prop="resolution" label="处置" width="90" />
+        </el-table>
+        <el-empty v-else-if="similarLoaded" description="暂无相似案例" :image-size="60" />
+        <span v-else class="similar-hint">参考历史异常的上次处置方式，与根因分析相互独立</span>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -182,6 +208,9 @@ const { alerts, connected } = useAnomalyWebSocket()
 const dialogVisible = ref(false)
 const analysisLoading = ref(false)
 const currentReport = ref<AnalysisReport | null>(null)
+// 分析失败的原因。对话框正文依赖 currentReport，失败时若不记录并展示，
+// 用户只会看到一个空白弹窗（此前 409 读己写冲突就是这种表现）
+const analysisError = ref('')
 const currentAggregateId = ref('')
 const currentAnomalyId = ref('')
 const aggregateMode = ref(false)
@@ -189,9 +218,12 @@ const aggregateMode = ref(false)
 const healing = ref(false)
 const agentTrace = ref<AgentTraceStep[]>([])
 const healNote = ref('')
-// Item 8：相似案例
+// Item 8：相似案例。后端独立于根因分析，故单独维护加载/错误/空状态，
+// 不跟随 currentReport 一起隐藏
 const similarCases = ref<SimilarCase[]>([])
 const similarLoading = ref(false)
+const similarError = ref('')
+const similarLoaded = ref(false)
 
 interface Cluster {
   rule_id: string
@@ -244,9 +276,13 @@ async function showAnalysis(anomalyId: string) {
   dialogVisible.value = true
   analysisLoading.value = true
   currentReport.value = null
+  analysisError.value = ''
   agentTrace.value = []
   healNote.value = ''
+  // 换一条异常时清空案例区，避免看到上一条的案例
   similarCases.value = []
+  similarError.value = ''
+  similarLoaded.value = false
   // ponytail: 补偿按订单聚合根执行，须用 anomaly 的 aggregate_id 而非 anomaly_id
   const alert = alerts.value.find((a) => a.anomaly_id === anomalyId)
   currentAggregateId.value = alert?.aggregate_id ?? ''
@@ -254,11 +290,16 @@ async function showAnalysis(anomalyId: string) {
   try {
     currentReport.value = await AnomalyApi.getAnalysis(anomalyId)
   } catch (e: any) {
-    // ponytail: 根因分析失败时仅记录，对话框空白降级；如需可在此展示错误提示
     console.error('加载根因报告失败', e)
+    analysisError.value = friendlyError(e, '加载根因报告失败')
+    ElMessage.error(analysisError.value)
   } finally {
     analysisLoading.value = false
   }
+}
+
+function retryAnalysis() {
+  if (currentAnomalyId.value) showAnalysis(currentAnomalyId.value)
 }
 
 // Item 6a：ReAct 深度分析 —— agent 多轮工具调用收集证据，展示分析过程 + 报告
@@ -272,9 +313,12 @@ async function runDeepAnalysis() {
     currentReport.value = r.report
     agentTrace.value = r.agent_trace
     healNote.value = r.note ?? ''
+    analysisError.value = ''
   } catch (e: any) {
     console.error('深度分析失败', e)
-    ElMessage.error(friendlyError(e, '深度分析失败'))
+    // 也可能发生在还没有报告时（首次进入即点深度分析），记录错误以免只剩空白对话框
+    analysisError.value = friendlyError(e, '深度分析失败')
+    ElMessage.error(analysisError.value)
   } finally {
     healing.value = false
   }
@@ -305,11 +349,15 @@ async function loadSimilarCases() {
   if (!currentAnomalyId.value) return
   similarLoading.value = true
   similarCases.value = []
+  similarError.value = ''
   try {
     const r = await AnomalyApi.similarCases(currentAnomalyId.value)
     similarCases.value = r.cases
+    similarLoaded.value = true
   } catch (e: any) {
     console.error('相似案例加载失败', e)
+    similarError.value = friendlyError(e, '相似案例加载失败')
+    ElMessage.error(similarError.value)
   } finally {
     similarLoading.value = false
   }
@@ -341,5 +389,24 @@ function goCompensate(action: string) {
 }
 :deep(.hit-count-column .caret-wrapper) {
   flex: 0 0 24px;
+}
+/* 相似案例独立于报告区，用分隔线与上方内容区分 */
+.similar-block {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #ebeef5;
+}
+.similar-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.similar-head h3 {
+  margin: 0;
+}
+.similar-hint {
+  font-size: 12px;
+  color: #909399;
 }
 </style>

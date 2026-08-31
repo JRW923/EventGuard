@@ -114,7 +114,13 @@ async function loadStory(aggregateId: string) {
   try {
     story.value = await AiApi.orderStory(aggregateId)
   } catch (e: any) {
-    story.value = { aggregate_id: aggregateId, story: '加载失败', event_types: [] }
+    // 透出真实原因：LLM 未配置时后端返回「请先在个人中心配置你的 LLM API Key」，
+    // 硬编码成"加载失败"用户就无从知道该去配 key（HTTP 错误已由 http.ts 拦截器留痕）
+    story.value = {
+      aggregate_id: aggregateId,
+      story: friendlyError(e, '加载订单故事失败'),
+      event_types: [],
+    }
   } finally {
     storyLoading.value = false
   }

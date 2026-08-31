@@ -138,14 +138,20 @@ async function onSave() {
 }
 
 async function onDelete(row: RoleItem) {
-  await ElMessageBox.confirm(`确定删除角色「${row.name}」？删除后该角色下用户将失去对应权限。`, '提示', {
+  // confirm 被取消时会 reject，吞掉并直接返回（否则变成 unhandled rejection）
+  const ok = await ElMessageBox.confirm(`确定删除角色「${row.name}」？删除后该角色下用户将失去对应权限。`, '提示', {
     type: 'warning',
     confirmButtonText: '确定',
     cancelButtonText: '取消',
-  })
-  await AuthApi.deleteRole(row.id)
-  ElMessage.success('已删除')
-  await loadData()
+  }).catch(() => false)
+  if (!ok) return
+  try {
+    await AuthApi.deleteRole(row.id)
+    ElMessage.success('已删除')
+    await loadData()
+  } catch (e: any) {
+    ElMessage.error(friendlyError(e, '删除失败'))
+  }
 }
 
 onMounted(loadData)

@@ -8,6 +8,7 @@ import AnomalyDashboard from '../AnomalyDashboard.vue'
 vi.mock('../../api/anomaly', () => ({
   AnomalyApi: {
     getAnalysis: vi.fn(),
+    similarCases: vi.fn(),
   },
 }))
 
@@ -91,5 +92,100 @@ describe('AnomalyDashboard', () => {
     expect(AnomalyApi.getAnalysis).toHaveBeenCalledWith('a-1')
     expect(wrapper.text()).toContain('订单金额偏离用户历史均值')
     expect(wrapper.text()).toContain('FREEZE_ORDER')
+  })
+
+  // 回归：此前失败只 console.error，对话框正文依赖 currentReport 而其为 null，
+  // 用户看到的是一个空对话框，没有任何错误提示
+  it('getAnalysis 失败时对话框给出失败原因与重试入口，而非空白', async () => {
+    ;(useAnomalyWebSocket as any).mockReturnValue({
+      alerts: ref([
+        { anomaly_id: 'a-1', rule_id: 'R001', aggregate_id: 'agg-1', level: 'ERROR', description: '金额偏离', detected_at: '2026-07-21T10:00:00Z' },
+      ]),
+      connected: ref(true),
+    })
+    ;(AnomalyApi.getAnalysis as any).mockRejectedValue({ response: { status: 409 } })
+
+    const wrapper = mount(AnomalyDashboard, {
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+
+    await flushPromises()
+    await nextTick()
+    await wrapper.find('[data-testid="anomaly-item-a-1"]').trigger('click')
+    await flushPromises()
+
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('分析失败')
+    expect(text).toContain('操作冲突，请刷新后重试')
+
+    // 重试按钮重新发起请求，成功后回到报告视图
+    const retry = wrapper.findAll('button').find((b) => b.text() === '重试')
+    expect(retry).toBeTruthy()
+    ;(AnomalyApi.getAnalysis as any).mockResolvedValue({
+      anomaly_id: 'a-1',
+      root_cause: '订单金额偏离用户历史均值 3σ',
+      evidence: ['均值 100，本次 500'],
+      suggestions: [{ action: 'FREEZE_ORDER', reason: '冻结订单', risk: 'LOW' }],
+    })
+    await retry!.trigger('click')
+    await flushPromises()
+
+    expect(AnomalyApi.getAnalysis).toHaveBeenCalledTimes(2)
+    expect(document.body.textContent ?? '').toContain('订单金额偏离用户历史均值')
+    wrapper.unmount()
+  })
+
+  // 相似案例后端独立于根因分析，不应被报告容器的 v-if 连带隐藏
+  it('根因分析失败时，相似案例仍可独立加载并展示', async () => {
+    ;(useAnomalyWebSocket as any).mockReturnValue({
+      alerts: ref([
+        { anomaly_id: 'a-1', rule_id: 'R001', aggregate_id: 'agg-1', level: 'ERROR', description: '金额偏离', detected_at: '2026-07-21T10:00:00Z' },
+      ]),
+      connected: ref(true),
+    })
+    ;(AnomalyApi.getAnalysis as any).mockRejectedValue({ response: { status: 409 } })
+    ;(AnomalyApi.similarCases as any).mockResolvedValue({
+      anomaly_id: 'a-1',
+      cases: [
+        {
+          similarity: 0.82,
+          case_anomaly_id: 'old-1',
+          rule_id: 'R001',
+          aggregate_id: 'agg-9',
+          level: 'ERROR',
+          detected_at: '2026-07-01T10:00:00Z',
+          description: '历史金额偏离',
+          resolution: 'FREEZE_ORDER',
+        },
+      ],
+    })
+
+    const wrapper = mount(AnomalyDashboard, {
+      global: { plugins: [ElementPlus] },
+      attachTo: document.body,
+    })
+
+    await flushPromises()
+    await nextTick()
+    await wrapper.find('[data-testid="anomaly-item-a-1"]').trigger('click')
+    await flushPromises()
+
+    // 报告区是失败态
+    expect(document.body.textContent ?? '').toContain('分析失败')
+
+    // 案例区在报告容器外，依然可用
+    const loadBtn = wrapper.findAll('button').find((b) => b.text() === '加载相似案例')
+    expect(loadBtn).toBeTruthy()
+    await loadBtn!.trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    expect(AnomalyApi.similarCases).toHaveBeenCalledWith('a-1')
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('历史金额偏离')
+    expect(text).toContain('82%')
+    expect(text).toContain('FREEZE_ORDER')
+    wrapper.unmount()
   })
 })

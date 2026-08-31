@@ -194,12 +194,18 @@ async function onReset() {
 }
 
 async function onDelete(row: UserInfo) {
-  await ElMessageBox.confirm(`确定删除用户「${row.username}」？`, '提示', {
+  // confirm 被取消时会 reject，吞掉并直接返回（否则变成 unhandled rejection）
+  const ok = await ElMessageBox.confirm(`确定删除用户「${row.username}」？`, '提示', {
     type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消',
-  })
-  await AuthApi.deleteUser(row.id)
-  ElMessage.success('已删除')
-  await loadData()
+  }).catch(() => false)
+  if (!ok) return
+  try {
+    await AuthApi.deleteUser(row.id)
+    ElMessage.success('已删除')
+    await loadData()
+  } catch (e: any) {
+    ElMessage.error(friendlyError(e, '删除失败'))
+  }
 }
 
 onMounted(loadData)
