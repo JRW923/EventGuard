@@ -131,19 +131,6 @@
           <el-table-column :resizable="false" prop="risk" label="风险" width="100" />
         </el-table>
 
-        <div style="margin-top: 16px; text-align: right">
-          <el-button
-            v-for="s in currentReport.suggestions"
-            :key="s.action"
-            type="primary"
-            plain
-            v-permission="'compensation:execute'"
-            style="margin-left: 8px"
-            @click="goCompensate(s.action)"
-          >
-            执行 {{ s.action }}
-          </el-button>
-        </div>
       </div>
       <!-- 分析失败：给出原因与重试入口，避免只剩一个空白对话框 -->
       <el-result v-else-if="analysisError" icon="error" title="分析失败" :sub-title="analysisError">
@@ -195,14 +182,12 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { useAnomalyWebSocket } from '../composables/useAnomalyWebSocket'
 import { AnomalyApi, type AnalysisReport, type AnomalyAlert, type AgentTraceStep, type SimilarCase } from '../api/anomaly'
 import { CompensationApi } from '../api/compensation'
 import { friendlyError } from '../api/http'
 
-const router = useRouter()
 const { alerts, connected } = useAnomalyWebSocket()
 
 const dialogVisible = ref(false)
@@ -363,9 +348,6 @@ async function loadSimilarCases() {
   }
 }
 
-function goCompensate(action: string) {
-  router.push({ path: '/compensations', query: { actionType: action, aggregateId: currentAggregateId.value } })
-}
 </script>
 
 <style scoped>

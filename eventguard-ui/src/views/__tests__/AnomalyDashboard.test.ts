@@ -92,6 +92,9 @@ describe('AnomalyDashboard', () => {
     expect(AnomalyApi.getAnalysis).toHaveBeenCalledWith('a-1')
     expect(wrapper.text()).toContain('订单金额偏离用户历史均值')
     expect(wrapper.text()).toContain('FREEZE_ORDER')
+    // 根因对话框只保留统一 Saga 提交入口，单条执行降级到补偿页能力
+    expect(wrapper.text()).not.toContain('执行 FREEZE_ORDER')
+    expect(wrapper.text()).toContain('发起补偿审批')
   })
 
   // 回归：此前失败只 console.error，对话框正文依赖 currentReport 而其为 null，
