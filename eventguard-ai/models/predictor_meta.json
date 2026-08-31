@@ -1,17 +1,20 @@
 {
   "event_vocab": {
     "OrderCreatedEvent": 0,
-    "PaymentCompletedEvent": 1,
-    "InventoryReservedEvent": 2,
-    "OrderConfirmedEvent": 3,
-    "ShippedEvent": 4,
-    "DeliveredEvent": 5,
-    "OrderClosedEvent": 6,
-    "PaymentFailedEvent": 7,
-    "PaymentRetriedEvent": 8,
-    "OrderCancelledEvent": 9,
-    "OrderRefundRequestedEvent": 10,
-    "OrderRefundedEvent": 11
+    "PaymentRequestedEvent": 1,
+    "PaymentCompletedEvent": 2,
+    "InventoryReservedEvent": 3,
+    "OrderConfirmedEvent": 4,
+    "ShippedEvent": 5,
+    "DeliveredEvent": 6,
+    "OrderClosedEvent": 7,
+    "PaymentFailedEvent": 8,
+    "PaymentRetriedEvent": 9,
+    "OrderCancelledEvent": 10,
+    "OrderRefundRequestedEvent": 11,
+    "OrderRefundedEvent": 12,
+    "InventoryReservationFailedEvent": 13,
+    "CompensationExecutedEvent": 14
   },
   "labels": [
     "CLOSED",
@@ -36,8 +39,8 @@
     "last_event_code"
   ],
   "k": 3,
-  "accuracy": 0.6973,
-  "n_train": 6224,
-  "n_test": 1556,
+  "accuracy": 0.8482,
+  "n_train": 10669,
+  "n_test": 2668,
   "created": "train_predict.py"
 }

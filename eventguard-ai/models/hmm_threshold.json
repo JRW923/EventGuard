@@ -1,6 +1,6 @@
 {
-  "threshold": -12.577345705912013,
+  "threshold": -10.203920815061627,
   "quantile": 0.05,
-  "n_train_sequences": 2000,
-  "n_symbols": 7
+  "n_train_sequences": 17678,
+  "n_symbols": 14
 }

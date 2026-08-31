@@ -21,11 +21,13 @@ MODEL_DIR = BASE / "models"
 REPORT_PATH = Path(os.environ.get("EG_EVAL_REPORT_PATH")) if os.environ.get("EG_EVAL_REPORT_PATH") else BASE.parent / "eventguard-benchmark" / "predict-eval.md"
 
 
-def main(n_per_kind: int = 400, seed: int = 7) -> None:
+def main(n_total: int = 2000, seed: int = 7) -> None:
     clf = joblib.load(MODEL_DIR / "predictor.pkl")
     meta = json.loads((MODEL_DIR / "predictor_meta.json").read_text(encoding="utf-8"))
 
-    rows = generate_rows(n_per_kind, seed)
+    # ponytail: 分布内指标只能说明模型拟合得好，不能证明它适应真实事件流——
+    # 后者靠 training/check_real_orders.py 对生产订单做回归检查。
+    rows = generate_rows(n_total, seed)
     X = np.array([r[0] for r in rows], dtype=float)
     y = np.array([r[1] for r in rows], dtype=int)
     pred = clf.predict(X)

@@ -6,9 +6,11 @@
   "ShippedEvent": 4,
   "DeliveredEvent": 5,
   "OrderClosedEvent": 6,
-  "PaymentFailedEvent": 7,
-  "PaymentRetriedEvent": 8,
-  "OrderCancelledEvent": 9,
-  "OrderRefundRequestedEvent": 10,
-  "OrderRefundedEvent": 11
+  "PaymentRequestedEvent": 7,
+  "PaymentFailedEvent": 8,
+  "PaymentRetriedEvent": 9,
+  "InventoryReservationFailedEvent": 10,
+  "OrderCancelledEvent": 11,
+  "OrderRefundRequestedEvent": 12,
+  "OrderRefundedEvent": 13
 }

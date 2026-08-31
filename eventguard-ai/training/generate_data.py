@@ -21,9 +21,12 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-# 正常订单事件流
+# 正常订单事件流。Pay 命令先落 PaymentRequestedEvent（支付意图），网关回调再落
+# PaymentCompletedEvent——与 OrderAggregate.handle(PayOrderCommand) 一致。
+# 漏掉它会使 HMM 词表里没有这个符号，真实订单（100% 含）全部因未知符号被跳过。
 NORMAL_FLOW = [
     "OrderCreatedEvent",
+    "PaymentRequestedEvent",
     "PaymentCompletedEvent",
     "InventoryReservedEvent",
     "OrderConfirmedEvent",
@@ -82,22 +85,28 @@ def generate_normal_order(
     start_time: datetime,
     base_amount: float = 100.00,
 ) -> list[dict]:
-    """生成一笔正常订单的完整事件流（7 个事件）"""
+    """生成一笔正常订单的完整事件流（NORMAL_FLOW 全部事件）"""
     events = []
     ts = start_time
     amount = base_amount + random.gauss(0, 20)
     amount = max(10.0, amount)
+    version = 1
 
-    for i, event_type in enumerate(NORMAL_FLOW):
+    for event_type in NORMAL_FLOW:
+        # 库存预留是独立 saga 步骤，状态机允许 PAID 直接确认，真实流中会被跳过。
+        # 固定包含它会让 HMM 把真实订单（跳过了这一步）判为低似然的流程异常。
+        if event_type == "InventoryReservedEvent" and random.random() < 0.5:
+            continue
         event = generate_normal_event(
             aggregate_id=aggregate_id,
-            version=i + 1,
+            version=version,
             event_type=event_type,
             user_id=user_id,
             amount=amount,
             timestamp=_iso(ts),
         )
         events.append(event)
+        version += 1
         ts += timedelta(minutes=random.randint(5, 60))
 
     return events

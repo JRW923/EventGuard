@@ -1,6 +1,19 @@
 """AnomalyStore 单元测试：倒序检索 / since 过滤 / 文件持久化 / 上限淘汰。"""
+import pytest
+
 from app.model.anomaly import Anomaly
 from app.store.anomaly_store import AnomalyStore
+
+
+@pytest.fixture
+def store(tmp_path):
+    """测试一律走临时路径。
+
+    无参 AnomalyStore() 的 persist_path 取自 EG_ANOMALY_STORE_PATH，生产容器里指向
+    挂载卷 /data/anomalies.jsonl，直接无参构造会把测试数据写进生产异常记录并触发淘汰，
+    曾因此清空生产文件。涉及持久化的测试都用本 fixture。
+    """
+    return AnomalyStore(persist_path=str(tmp_path / "anomalies.jsonl"))
 
 
 def _anomaly(aid: str, detected_at: str) -> Anomaly:
@@ -10,16 +23,16 @@ def _anomaly(aid: str, detected_at: str) -> Anomaly:
     )
 
 
-def test_list_recent_sorted_desc():
-    s = AnomalyStore()
+def test_list_recent_sorted_desc(store):
+    s = store
     s.save(_anomaly("a1", "2026-08-08T10:00:00Z"))
     s.save(_anomaly("a2", "2026-08-08T11:00:00Z"))
     s.save(_anomaly("a3", "2026-08-07T09:00:00Z"))
     assert [a.anomaly_id for a in s.list_recent(limit=10)] == ["a2", "a1", "a3"]
 
 
-def test_list_recent_since_filter():
-    s = AnomalyStore()
+def test_list_recent_since_filter(store):
+    s = store
     s.save(_anomaly("a1", "2026-08-08T10:00:00Z"))
     s.save(_anomaly("a2", "2026-08-07T09:00:00Z"))
     assert [a.anomaly_id for a in s.list_recent(since="2026-08-08T00:00:00Z")] == ["a1"]
@@ -35,8 +48,8 @@ def test_persistence_roundtrip(tmp_path):
     assert s2.size() == 1
 
 
-def test_eviction_over_max():
-    s = AnomalyStore(max_entries=3)
+def test_eviction_over_max(tmp_path):
+    s = AnomalyStore(persist_path=str(tmp_path / "anomalies.jsonl"), max_entries=3)
     for i in range(5):
         s.save(_anomaly(f"a{i}", f"2026-08-08T0{i}:00:00Z"))
     assert s.size() == 3

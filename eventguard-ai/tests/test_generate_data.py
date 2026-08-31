@@ -31,9 +31,10 @@ def test_generate_normal_event_has_required_fields():
 
 
 def test_normal_flow_is_valid_sequence():
-    """正常事件流遵循 CREATED→PAID→CONFIRMED→SHIPPED→DELIVERED→CLOSED"""
+    """正常事件流与 OrderAggregate 状态机一致：Pay 命令先落支付意图，回调再落支付完成"""
     assert NORMAL_FLOW == [
         "OrderCreatedEvent",
+        "PaymentRequestedEvent",
         "PaymentCompletedEvent",
         "InventoryReservedEvent",
         "OrderConfirmedEvent",
@@ -98,8 +99,10 @@ def test_generate_dataset_outputs_jsonl(tmp_path):
     )
 
     normal_lines = normal_path.read_text().strip().split("\n")
-    # generate_dataset 将 normal_count 视为订单数，每单 7 个事件：实际产出 (1000//7)*7=994
-    assert len(normal_lines) == (1000 // len(NORMAL_FLOW)) * len(NORMAL_FLOW)
+    # generate_dataset 将 normal_count 视为事件数，每单走 NORMAL_FLOW，
+    # 但库存预留步骤会被随机跳过，故每单事件数是 len(NORMAL_FLOW) 或 len(NORMAL_FLOW)-1
+    orders = 1000 // len(NORMAL_FLOW)
+    assert orders * (len(NORMAL_FLOW) - 1) <= len(normal_lines) <= orders * len(NORMAL_FLOW)
     for line in normal_lines:
         event = json.loads(line)
         assert event["is_anomaly"] is False

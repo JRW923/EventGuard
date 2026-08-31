@@ -15,6 +15,7 @@ n_features = 符号总数），老的 MultinomialHMM 已改为「多项计数向
 import json
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 # 允许以 `python training/train_hmm.py` 直接运行（脚本目录不在 sys.path）
@@ -25,6 +26,7 @@ import numpy as np
 from hmmlearn.hmm import CategoricalHMM
 
 from app.detector.process_level import EVENT_TO_STATE
+from training.train_predict import _make_sequence
 
 # 正常流程顺序（放在词汇表前 7 位，使符号索引与流程步骤对齐，便于阅读与调试）
 NORMAL_FLOW_ORDER = [
@@ -59,6 +61,29 @@ def _build_vocab(event_types: set[str]) -> dict[str, int]:
     return vocab
 
 
+def _legal_branch_sequences(n: int = 600) -> list[list[str]]:
+    """合法但走不到 CLOSED 的流程：用户取消 / 退款。
+
+    这些是正常业务操作而非流程异常，必须进训练集——否则词表里 OrderCancelledEvent /
+    OrderRefundedEvent 从未作为观测出现，真实订单里凡是取消或退款的都会被判低似然异常。
+    复用 train_predict 的序列生成，保证两侧对"合法流程"的口径一致。
+    """
+    seqs = []
+    for i in range(n):
+        kind = "CANCELLED" if i % 2 == 0 else "REFUNDED"
+        events, _ = _make_sequence(
+            kind, f"hmm-legal-{i}", "user-1", 100.0,
+            datetime(2026, 7, 1, tzinfo=timezone.utc),
+        )
+        seqs.append([e["event_type"] for e in events])
+    return seqs
+
+
+def _expand_prefixes(seqs: list[list[int]]) -> list[list[int]]:
+    """把每条序列展开成它所有长度的前缀（含全长）。"""
+    return [obs[:L] for obs in seqs for L in range(1, len(obs) + 1)]
+
+
 def _group_sequences(path: str) -> tuple[list[list[dict]], set[str]]:
     """按 aggregate_id 聚合并按 created_at 排序；返回 (序列列表, 全部 event_type 集合)。"""
     by_agg: dict[str, list[dict]] = defaultdict(list)
@@ -90,15 +115,22 @@ def train_hmm(
     total_orders = len(sequences)
     print(f"正常订单序列总数: {total_orders}；训练用序列上限: {max_sequences}；词汇表大小: {len(vocab)}")
 
-    # 取前 max_sequences 条，且跳过含未知 event_type 的序列
-    obs_sequences = []
-    for seq in sequences:
+    # 取前 max_sequences 条正常订单序列，跳过含未知 event_type 的
+    normal_obs = []
+    for seq in sequences[:max_sequences]:
         obs = [vocab.get(e.get("event_type", ""), -1) for e in seq]
-        if any(o < 0 for o in obs):
-            continue
-        obs_sequences.append(obs)
-        if len(obs_sequences) >= max_sequences:
-            break
+        if not any(o < 0 for o in obs):
+            normal_obs.append(obs)
+
+    legal_obs = [[vocab.get(t, -1) for t in etypes] for etypes in _legal_branch_sequences()]
+    legal_obs = [o for o in legal_obs if not any(x < 0 for x in o)]
+
+    # 每条序列展开成它的所有前缀：在途订单的序列天然是不完整的，只拿完整序列训练
+    # 会让所有在途订单因"没走完"被判低似然。前缀展开后，正常进行中的任意时点都落在
+    # 训练分布内，HMM 才只对乱序/支付死循环这类真异常敏感。
+    obs_sequences = _expand_prefixes(normal_obs + legal_obs)
+    print(f"训练序列: 正常 {len(normal_obs)} 条 + 合法分支 {len(legal_obs)} 条 "
+          f"→ 前缀展开 {len(obs_sequences)} 条")
 
     if not obs_sequences:
         raise ValueError("无可用训练序列（词汇表可能与数据不匹配）")
@@ -107,8 +139,12 @@ def train_hmm(
     lengths = [len(s) for s in obs_sequences]
     print(f"训练矩阵形状: {X.shape}；序列数={len(lengths)}")
 
-    # 不传 n_features → hmmlearn 按数据自动推断符号数；EM 训练 CategoricalHMM
-    model = CategoricalHMM(n_components=N_COMPONENTS, random_state=RANDOM_STATE)
+    # n_features 显式取词表大小：不传时 hmmlearn 只按训练集出现过的符号推断，
+    # 推理侧 process_level_hmm 遇到更大索引就整体跳过（obs >= n_symbols），
+    # 结果凡是含支付失败/取消/退款的序列都检测不到，HMM 变成永不报警的摆设。
+    model = CategoricalHMM(
+        n_components=N_COMPONENTS, random_state=RANDOM_STATE, n_features=len(vocab)
+    )
     model.fit(X, lengths)
 
     # 训练集各序列 log-likelihood，取分位数作阈值

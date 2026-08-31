@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 
 RULE_ID = "P004_HMM_LOW_LIKELIHOOD"
 
-BASE = Path(__file__).resolve().parent.parent  # eventguard-ai 根目录
+# ponytail: 三层 parent 才到项目根（app/detector/x.py → app/detector → app → 根）；
+# 与同目录 event_level.py 保持一致。少一层会在容器内拼成 /app/app/models 而静默降级。
+BASE = Path(__file__).resolve().parent.parent.parent  # eventguard-ai 根目录（容器内 /app）
 
 
 class ProcessLevelHMMDetector:
