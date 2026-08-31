@@ -49,7 +49,7 @@
               </template>
             </template>
             <el-button
-              v-else
+              v-else-if="!TERMINAL.has(row.status)"
               size="small"
               :loading="!!predicting[row.orderId]"
               @click="predictRow(row.orderId)"
@@ -148,6 +148,9 @@ const statuses = [
   'PENDING_PAYMENT', 'PAYMENT_FAILED', 'PAID', 'CONFIRMED',
   'SHIPPED', 'DELIVERED', 'CLOSED', 'CANCELLED', 'REFUNDED',
 ]
+
+// 终态订单终局已知，不显示预测入口（与后端 /ai/predict 短路、watchlist 过滤同一口径）
+const TERMINAL = new Set(['CLOSED', 'CANCELLED', 'REFUNDED'])
 
 // ponytail: 状态用彩色标签单行展示（白底浅色，避免长状态名换行）
 function statusType(status: string): 'success' | 'info' | 'warning' | 'danger' | 'primary' {

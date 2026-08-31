@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from app.config import settings
+from app.config import TERMINAL_ORDER_STATUSES, settings
 from app.model.anomaly import Anomaly
 
 logger = logging.getLogger(__name__)
@@ -118,8 +118,8 @@ class ProcessLevelRuleDetector:
         last_event_type = last_event.get("event_type", "")
         last_state = EVENT_TO_STATE.get(last_event_type, "")
 
-        # 只检测非终态
-        if last_state in ("CLOSED", "CANCELLED", "", None):
+        # 只检测非终态（REFUNDED 也是终态：退款完成停在原地不是停滞，此前漏算会误报）
+        if last_state in ("", None) or last_state in TERMINAL_ORDER_STATUSES:
             return anomalies
 
         last_ts = self._parse_time(last_event.get("created_at"))

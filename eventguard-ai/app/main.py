@@ -14,7 +14,7 @@ from app.analyzer.healer_agent import HealerAgent
 from app.analyzer.llm_client import LLMClient
 from app.analyzer.root_cause import RootCauseAnalyzer, LLMResponseError
 from app.cases.case_index import CaseIndex
-from app.config import settings
+from app.config import TERMINAL_ORDER_STATUSES, settings
 from app.detector.event_level import EventLevelService
 from app.detector.event_window import EventWindow
 from app.detector.process_level import ProcessLevelRuleDetector
@@ -159,7 +159,6 @@ async def predict_order(aggregate_id: str, _: dict = Depends(require_permission(
     if not predictor.available:
         return {"aggregate_id": aggregate_id, "prediction": None,
                 "message": "预测模型不可用（models/predictor.pkl 缺失）"}
-    pred = predictor.predict_order(aggregate_id)
     current_status = None
     try:
         order = await BackendClient().get_order(aggregate_id)
@@ -167,6 +166,11 @@ async def predict_order(aggregate_id: str, _: dict = Depends(require_permission(
     except Exception as exc:
         # 当前状态只是展示用的补充信息，取不到不影响预测结果，但必须留下痕迹
         logger.warning("取订单当前状态失败 aggregate_id=%s: %s", aggregate_id, exc)
+    # 终态订单终局已知：短路返回，不做零信息推理（与前端隐藏按钮、watchlist 过滤同一口径）
+    if current_status in TERMINAL_ORDER_STATUSES:
+        return {"aggregate_id": aggregate_id, "current_status": current_status,
+                "prediction": None, "message": f"订单已在终态 {current_status}，终局已知，无需预测"}
+    pred = predictor.predict_order(aggregate_id)
     return {"aggregate_id": aggregate_id, "current_status": current_status, "prediction": pred}
 
 
@@ -178,10 +182,9 @@ async def predictions_watchlist(limit: int = 10, _: dict = Depends(require_permi
         return {"items": [], "message": "预测模型不可用（models/predictor.pkl 缺失）"}
     data = await BackendClient().list_orders(size=50)
     orders = data.get("orders", [])
-    terminal = {"CLOSED", "CANCELLED"}
     items = []
     for o in orders:
-        if o.get("status") in terminal:
+        if o.get("status") in TERMINAL_ORDER_STATUSES:
             continue
         try:
             pred = predictor.predict_order(o.get("orderId", ""))

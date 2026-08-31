@@ -43,3 +43,7 @@ class Settings(BaseSettings):
     if_scaler_path: str = ""
 
 settings = Settings()
+
+# 订单终态集合（OrderAggregate 状态机终态）：终局已知，无预测/停滞检测价值。
+# 单一来源：main.py 预测短路、watchlist 过滤、process_level.py P002 跳过共用。
+TERMINAL_ORDER_STATUSES = frozenset({"CLOSED", "CANCELLED", "REFUNDED"})

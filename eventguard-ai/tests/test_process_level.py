@@ -101,3 +101,17 @@ def test_detect_returns_empty_for_normal_sequence():
     ]
     anomalies = detector.detect(sequence, now=base_ts + timedelta(minutes=15))
     assert len(anomalies) == 0
+
+
+def test_detect_refunded_is_terminal_not_stagnation():
+    """P002：REFUNDED 是终态（此前漏算），停 25h 不应误报停滞"""
+    detector = ProcessLevelRuleDetector()
+    base_ts = datetime(2026, 7, 21, 10, 0, 0, tzinfo=timezone.utc)
+    old_ts = base_ts - timedelta(hours=25)
+    sequence = [
+        _make_event("OrderCreatedEvent", "agg-1", 1, (old_ts - timedelta(minutes=10)).isoformat()),
+        _make_event("PaymentCompletedEvent", "agg-1", 2, (old_ts - timedelta(minutes=5)).isoformat()),
+        _make_event("OrderRefundedEvent", "agg-1", 3, old_ts.isoformat()),
+    ]
+    anomalies = detector.detect(sequence, now=base_ts)
+    assert not [a for a in anomalies if a.rule_id == "P002_STUCK"]
