@@ -128,6 +128,8 @@ services:
       TZ: Asia/Shanghai
       # ponytail: 异常存储持久化到挂载卷，避免 AI 容器重启后历史异常根因分析 404（原默认内存）
       EG_ANOMALY_STORE_PATH: /data/anomalies.jsonl
+      # ponytail: 运营周报持久化到挂载卷：同周期周报在缓存窗口内免重复调 LLM，且前端可查历史
+      EG_WEEKLY_REPORT_STORE_PATH: /data/weekly_reports.jsonl
       # ponytail: Isolation Forest 模型指向挂载卷（随 ai-data 持久化）；重训后无需重建镜像即可生效
       EG_IF_MODEL_PATH: /data/models/isolation_forest.pkl
       EG_IF_SCALER_PATH: /data/models/scaler.pkl

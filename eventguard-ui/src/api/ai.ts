@@ -24,6 +24,7 @@ export interface WeeklyReport {
   symptoms: string[]
   recommendations: string[]
   top_orders: { aggregate_id: string; count: number }[]
+  generated_at?: string // 后端落库时附加，历史列表用它区分同一周期的多份报告
 }
 
 export interface OrderStory {
@@ -46,9 +47,14 @@ export const AiApi = {
   watchlist(limit = 10): Promise<{ items: Array<{ orderId: string; status?: string; outcome: string; confidence: number; risk: string }>; message?: string }> {
     return http.get('/ai/predictions/watchlist', { params: { limit } }).then((r) => r.data)
   },
-  // 运营周报（Item 7）：近期异常聚合 + LLM 症状/建议
+  // 运营周报（Item 7）：近期异常聚合 + LLM 症状/建议。
+  // 后端有同周期短时缓存：缓存窗口内重复请求直接返回落库结果，不再调 LLM
   weeklyReport(days = 7): Promise<WeeklyReport> {
     return http.post<WeeklyReport>('/ai/report/weekly', { days }).then((r) => r.data)
+  },
+  // 运营周报历史：最近生成的多份报告（新在前），前端可切换查看
+  weeklyReportHistory(limit = 20): Promise<{ items: WeeklyReport[] }> {
+    return http.get<{ items: WeeklyReport[] }>('/ai/report/weekly/history', { params: { limit } }).then((r) => r.data)
   },
   // 订单事件故事线（Item 7）
   orderStory(aggregateId: string): Promise<OrderStory> {

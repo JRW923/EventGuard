@@ -12,7 +12,23 @@
           <el-button type="primary" size="small" :loading="loading" @click="generate">
             生成周报
           </el-button>
-          <el-button size="small" @click="generate">刷新</el-button>
+          <el-select
+            v-model="selectedReportId"
+            size="small"
+            placeholder="历史报告"
+            style="width: 210px"
+            filterable
+            clearable
+            :loading="historyLoading"
+            @change="loadFromHistory"
+          >
+            <el-option
+              v-for="h in history"
+              :key="h.generated_at ?? h.period.to"
+              :value="h.generated_at ?? h.period.to"
+              :label="historyLabel(h)"
+            />
+          </el-select>
         </div>
       </template>
 
@@ -77,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { AiApi, type WeeklyReport, type OrderStory } from '../api/ai'
 import { friendlyError } from '../api/http'
 
@@ -85,6 +101,10 @@ const days = ref(7)
 const loading = ref(false)
 const error = ref('')
 const report = ref<WeeklyReport | null>(null)
+// 周报历史（后端落库持久化）：下拉切换查看历史报告
+const history = ref<WeeklyReport[]>([])
+const historyLoading = ref(false)
+const selectedReportId = ref('')
 const storyVisible = ref(false)
 const storyLoading = ref(false)
 const story = ref<OrderStory | null>(null)
@@ -94,11 +114,38 @@ function formatTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('zh-CN', { hour12: false })
 }
 
+function historyLabel(h: WeeklyReport): string {
+  const t = h.generated_at ? formatTime(h.generated_at) : formatTime(h.period.to)
+  return `近 ${h.period.days} 天 · ${t}`
+}
+
+async function loadHistory() {
+  historyLoading.value = true
+  try {
+    const r = await AiApi.weeklyReportHistory()
+    history.value = r.items
+  } catch {
+    // 历史是辅助能力，加载失败不阻断周报生成（HTTP 错误已由拦截器留痕）
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+function loadFromHistory(id: string) {
+  const h = history.value.find((x) => (x.generated_at ?? x.period.to) === id)
+  if (h) {
+    report.value = h
+    error.value = ''
+  }
+}
+
 async function generate() {
   loading.value = true
   error.value = ''
   try {
     report.value = await AiApi.weeklyReport(days.value)
+    selectedReportId.value = report.value.generated_at ?? ''
+    loadHistory()
   } catch (e: any) {
     error.value = friendlyError(e, '生成周报失败')
     report.value = null
@@ -106,6 +153,8 @@ async function generate() {
     loading.value = false
   }
 }
+
+onMounted(loadHistory)
 
 async function loadStory(aggregateId: string) {
   storyVisible.value = true

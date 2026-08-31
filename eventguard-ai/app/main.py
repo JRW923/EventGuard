@@ -28,6 +28,7 @@ from app.query.nl_query_engine import NLQueryEngine
 from app.query.query_result import QueryResult
 from app.report.story_generator import StoryGenerator
 from app.report.weekly_report import WeeklyReportGenerator
+from app.report.weekly_report_store import weekly_report_store
 from app.security import require_permission
 from app.store.anomaly_store import anomaly_store
 from app.trace.trace_log import trace_log
@@ -206,12 +207,28 @@ class WeeklyReportRequest(BaseModel):
 async def weekly_report(
     req: WeeklyReportRequest, principal: dict = Depends(require_permission("ai:query"))
 ):
-    """运营周报：近期异常聚合 + 订单统计 + LLM 症状/建议（Item 7）。"""
+    """运营周报：近期异常聚合 + 订单统计 + LLM 症状/建议（Item 7）。
+
+    短时缓存：同周期（days）在缓存窗口内已生成过则直接返回落库结果，不重复调 LLM。
+    """
+    cached = weekly_report_store.find_cached(req.days)
+    if cached is not None:
+        logger.info("周报命中缓存 days=%s generated_at=%s", req.days, cached.get("generated_at"))
+        return cached
     try:
         llm_client = await _llm_client_for(principal)
     except MissingLlmConfig:
         raise HTTPException(status_code=409, detail="请先在个人中心配置你的 LLM API")
-    return await WeeklyReportGenerator(llm_client=llm_client).generate(req.days)
+    report = await WeeklyReportGenerator(llm_client=llm_client).generate(req.days)
+    return weekly_report_store.save(report)
+
+
+@app.get("/ai/report/weekly/history")
+async def weekly_report_history(
+    limit: int = 20, _: dict = Depends(require_permission("ai:query"))
+):
+    """运营周报历史：最近生成的多份报告（新在前），前端可切换查看。"""
+    return {"items": weekly_report_store.history(limit)}
 
 
 @app.get("/ai/orders/{aggregate_id}/story")
