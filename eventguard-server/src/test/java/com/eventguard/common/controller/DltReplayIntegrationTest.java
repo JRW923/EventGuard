@@ -2,6 +2,7 @@ package com.eventguard.common.controller;
 
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -35,6 +36,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -61,6 +63,9 @@ class DltReplayIntegrationTest {
     static ConsumerFactory<Object, Object> replayConsumerFactory;
     static DltReplayController controller;
 
+    static final AtomicInteger consumersAdded = new AtomicInteger();
+    static final AtomicInteger consumersRemoved = new AtomicInteger();
+
     static ConcurrentMessageListenerContainer<String, String> poison;
     static ConcurrentMessageListenerContainer<String, String> healthy;
 
@@ -85,6 +90,20 @@ class DltReplayIntegrationTest {
         consumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "dlt-replay-assert");
         consumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         replayConsumerFactory = new DefaultKafkaConsumerFactory<>(consumerProps);
+        // 回归护栏：重放创建的消费者必须被回收（consumerRemoved 触发）。若 DltReplayController 退回
+        // try-with-resources 无参 close()，kafka-clients 3.7 会绕过 ExtendedKafkaConsumer.close(Duration)，
+        // consumerRemoved 永不触发，Micrometer 指标线程随每次重放泄漏（见 DltReplayController 注释）。
+        replayConsumerFactory.addListener(new ConsumerFactory.Listener<Object, Object>() {
+            @Override
+            public void consumerAdded(String id, Consumer<Object, Object> consumer) {
+                consumersAdded.incrementAndGet();
+            }
+
+            @Override
+            public void consumerRemoved(String id, Consumer<Object, Object> consumer) {
+                consumersRemoved.incrementAndGet();
+            }
+        });
         controller = new DltReplayController(replayConsumerFactory, dltTemplate, 3);
 
         try (AdminClient admin = AdminClient.create(props)) {
@@ -144,6 +163,9 @@ class DltReplayIntegrationTest {
         });
 
         controller.replay(TOPIC);                // 真实重放：DLT 原样发回主 topic
+
+        // 断言 0：重放创建的消费者已被 close(Duration) 回收，consumerRemoved 与 consumerAdded 平衡
+        assertThat(consumersRemoved).hasValue(consumersAdded.get());
 
         if (!latch.await(20, TimeUnit.SECONDS)) {
             fail("重放后健康消费者未在超时内收到消息，recovered=" + recovered);

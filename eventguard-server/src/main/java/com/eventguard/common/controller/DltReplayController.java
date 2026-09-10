@@ -68,7 +68,12 @@ public class DltReplayController {
         result.put("dltTopic", dltTopic);
         result.put("quarantineTopic", quarantineTopic);
         result.put("maxReplayAttempts", maxReplayAttempts);
-        try (Consumer<Object, Object> consumer = consumerFactory.createConsumer("dlt-replay", "replay")) {
+        // ponytail: 必须显式 close(Duration)，不能用 try-with-resources。kafka-clients 3.7 的
+        // KafkaConsumer.close() 直接调 delegate.close()，不会分派到 spring-kafka ExtendedKafkaConsumer
+        // 重写的 close(Duration)，导致 ConsumerFactory.Listener.consumerRemoved 永不触发，
+        // Micrometer 的 micrometer-kafka-metrics 线程随每次重放永久泄漏（实测 12 天泄漏 3556 个）。
+        Consumer<Object, Object> consumer = consumerFactory.createConsumer("dlt-replay", "replay");
+        try {
             List<PartitionInfo> partitions = consumer.partitionsFor(dltTopic);
             if (partitions == null || partitions.isEmpty()) {
                 result.put("replayed", 0);
@@ -112,6 +117,8 @@ public class DltReplayController {
             result.put("replayed", replayed);
             result.put("quarantined", quarantined);
             log.info("[DLT] 重放 {} 条 / 隔离 {} 条（上限 {}）from {}", replayed, quarantined, maxReplayAttempts, dltTopic);
+        } finally {
+            consumer.close(Duration.ofSeconds(10));
         }
         return result;
     }
