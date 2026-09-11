@@ -15,6 +15,9 @@ public interface InventoryGateway {
     /** 释放预留（退款/取消时回补库存）。 */
     ReleaseResult release(ReleaseRequest req);
 
+    /** 确认预留：把预占量转为实际扣减（total 与 reserved 同时减，available 不变）。 */
+    ConfirmResult confirm(ConfirmRequest req);
+
     /** 当前库存（替换 RuleContextLoader 硬编码的 1000）。 */
     int currentStock(String skuId);
 
@@ -30,6 +33,10 @@ public interface InventoryGateway {
     record ReleaseRequest(UUID orderId, UUID commandId, String skuId, int quantity) {}
 
     record ReleaseResult(boolean success, String error) {}
+
+    record ConfirmRequest(UUID orderId, UUID commandId, String skuId, int quantity) {}
+
+    record ConfirmResult(boolean success, String error) {}
 
     record MarkOutOfStockResult(boolean success, String error) {}
 }

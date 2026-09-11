@@ -86,17 +86,22 @@ public class SagaTrigger {
         if (event instanceof OrderCancelledEvent e
                 && e.getReason() != null && e.getReason().contains("重试超限")) {
             BigDecimal amount = loadAmount(e.getAggregateId());
+            // 两步无依赖（dependsOn 均为空），编排器按依赖图调度，与数组顺序无关：
+            // REFUND(>100) 挂起等人工审批时，NOTIFY_DELAY 照常发出，用户不必干等审批。
+            // 约束：通知内容不得含退款承诺（如「已退款」「退款受理中」）。Saga 无反向补偿，
+            // 通知发出无法撤回，若 REFUND 最终被拒，含承诺的措辞会造成对外承诺与事实不符。
             compensationSaga.start(e.getAggregateId(), List.of(
-                    new SagaStep("REFUND", Map.of("amount", amount != null ? amount : BigDecimal.ZERO)),
-                    new SagaStep("NOTIFY_DELAY", Map.of())));
+                    new SagaStep("refund", "REFUND", Map.of("amount", amount != null ? amount : BigDecimal.ZERO)),
+                    new SagaStep("notify-delay", "NOTIFY_DELAY", Map.of())));
             if (metrics != null) {
                 metrics.counter("eventguard.saga.started", "trigger", "OrderCancelledEvent");
             }
             log.info("[Saga] 支付重试超限 → REFUND+NOTIFY 自动补偿 order={}", e.getAggregateId());
         } else if (event instanceof InventoryReservationFailedEvent e) {
+            // 两步均无依赖，标记缺货失败也不会阻塞延迟通知
             compensationSaga.start(e.getAggregateId(), List.of(
-                    new SagaStep("MARK_OUT_OF_STOCK", Map.of("sku", e.getSkuId())),
-                    new SagaStep("NOTIFY_DELAY", Map.of())));
+                    new SagaStep("mark-out-of-stock", "MARK_OUT_OF_STOCK", Map.of("sku", e.getSkuId())),
+                    new SagaStep("notify-delay", "NOTIFY_DELAY", Map.of())));
             if (metrics != null) {
                 metrics.counter("eventguard.saga.started", "trigger", "InventoryReservationFailedEvent");
             }

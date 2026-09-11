@@ -24,6 +24,7 @@ import java.util.Map;
  *   <li>GET  {base}/stock/{sku} → {"sku":"SKU-A","stock":100}</li>
  *   <li>POST {base}/reserve     body {"commandId","sku","quantity"} → 200/409（库存不足）</li>
  *   <li>POST {base}/release     body {"commandId","sku","quantity"}</li>
+ *   <li>POST {base}/confirm     body {"commandId","sku","quantity"} → 200/409（预留不足）</li>
  * </ul>
  * 未配置 {@code EG_INVENTORY_SERVICE_URL} 时返回失败（不抛异常）。
  */
@@ -95,6 +96,35 @@ public class HttpInventoryGateway implements InventoryGateway {
             return new ReleaseResult(true, null);
         } catch (Exception e) {
             return new ReleaseResult(false, e.getMessage());
+        }
+    }
+
+    /** 确认预留：外部库存服务把预占量转为实际扣减。 */
+    @Override
+    public ConfirmResult confirm(ConfirmRequest req) {
+        if (properties.getInventoryServiceUrl().isBlank()) {
+            return new ConfirmResult(false, "未配置 EG_INVENTORY_SERVICE_URL");
+        }
+        try {
+            String body = objectMapper.writeValueAsString(Map.of(
+                    "commandId", req.commandId().toString(),
+                    "sku", req.skuId(),
+                    "quantity", req.quantity()));
+            HttpResponse<String> resp = httpClient.send(
+                    HttpRequest.newBuilder()
+                            .timeout(REQUEST_TIMEOUT)
+                            .uri(URI.create(properties.getInventoryServiceUrl() + "/confirm"))
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(body))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 200) {
+                return new ConfirmResult(true, null);
+            }
+            return new ConfirmResult(false, "库存服务返回 " + resp.statusCode() + ": " + abbreviate(resp.body()));
+        } catch (Exception e) {
+            log.warn("[库存-http] 确认失败: {}", e.getMessage());
+            return new ConfirmResult(false, e.getMessage());
         }
     }
 

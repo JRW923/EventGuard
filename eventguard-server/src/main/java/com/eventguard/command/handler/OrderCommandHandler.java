@@ -6,6 +6,8 @@ import com.eventguard.command.command.*;
 import com.eventguard.common.dto.CommandResult;
 import com.eventguard.common.metrics.EventGuardMetrics;
 import com.eventguard.gateway.InventoryGateway;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -24,6 +26,8 @@ import java.util.function.Consumer;
  */
 @Service
 public class OrderCommandHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderCommandHandler.class);
 
     private final AggregateRepository aggregateRepository;
     private final CommandLogRepository commandLogRepository;
@@ -85,6 +89,19 @@ public class OrderCommandHandler {
     }
 
     public CommandResult handle(ConfirmOrderCommand cmd) {
+        // 事务外先确认库存扣减（与 reserve 对称）：把预占量转为实际扣减。
+        // 失败则拒绝确认——否则订单已进 CONFIRMED 而库存没真正扣掉，后续订单会超卖。
+        OrderAggregate current = aggregateRepository.load(cmd.getAggregateId());
+        if (current.getReservedSkuId() != null && current.getReservedQuantity() > 0) {
+            InventoryGateway.ConfirmResult r = inventoryGateway.confirm(new InventoryGateway.ConfirmRequest(
+                    cmd.getAggregateId(), cmd.getCommandId(),
+                    current.getReservedSkuId(), current.getReservedQuantity()));
+            if (r == null || !r.success()) {
+                log.warn("[库存] 确认订单扣减库存失败 order={} sku={} error={}",
+                        cmd.getAggregateId(), current.getReservedSkuId(), r == null ? "无响应" : r.error());
+                return CommandResult.failure(r == null ? "库存确认无响应" : r.error());
+            }
+        }
         return execute(cmd, order -> order.handle(cmd));
     }
 
@@ -101,7 +118,31 @@ public class OrderCommandHandler {
     }
 
     public CommandResult handle(CancelOrderCommand cmd) {
-        return execute(cmd, order -> order.handle(cmd));
+        CommandResult result = execute(cmd, order -> order.handle(cmd));
+        releaseReservedInventory(cmd);
+        return result;
+    }
+
+    /**
+     * 取消成功后回补预留库存。CancelOrderCommand 不带 sku 信息，从聚合状态反查预留了什么。
+     * <p>
+     * ponytail: 库存网关调用不在数据库事务内，失败不回滚已取消的订单——取消是终态操作，
+     * 不能因库存服务抖动就取消不了。release 按 commandId 幂等，泄漏的预留可对账后重放补偿。
+     */
+    private void releaseReservedInventory(CancelOrderCommand cmd) {
+        try {
+            OrderAggregate order = aggregateRepository.load(cmd.getAggregateId());
+            if (order.getReservedSkuId() == null || order.getReservedQuantity() <= 0) return;
+            InventoryGateway.ReleaseResult r = inventoryGateway.release(new InventoryGateway.ReleaseRequest(
+                    cmd.getAggregateId(), cmd.getCommandId(),
+                    order.getReservedSkuId(), order.getReservedQuantity()));
+            if (r == null || !r.success()) {
+                log.warn("[库存] 取消订单释放库存失败 order={} sku={} error={}",
+                        cmd.getAggregateId(), order.getReservedSkuId(), r == null ? "无响应" : r.error());
+            }
+        } catch (Exception e) {
+            log.warn("[库存] 取消订单释放库存异常 order={}", cmd.getAggregateId(), e);
+        }
     }
 
     public CommandResult handle(RefundOrderCommand cmd) {

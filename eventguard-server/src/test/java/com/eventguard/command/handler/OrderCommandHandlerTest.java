@@ -3,8 +3,11 @@ package com.eventguard.command.handler;
 import com.eventguard.command.aggregate.AggregateRepository;
 import com.eventguard.command.aggregate.OrderAggregate;
 import com.eventguard.command.aggregate.OrderStatus;
+import com.eventguard.command.command.CompletePaymentCommand;
+import com.eventguard.command.command.ConfirmOrderCommand;
 import com.eventguard.command.command.CreateOrderCommand;
 import com.eventguard.command.command.PayOrderCommand;
+import com.eventguard.command.command.ReserveInventoryCommand;
 import com.eventguard.common.dto.CommandResult;
 import com.eventguard.gateway.InventoryGateway;
 import com.eventguard.gateway.mock.MockInventoryGateway;
@@ -34,16 +37,17 @@ class OrderCommandHandlerTest {
     @Mock PlatformTransactionManager transactionManager;
 
     OrderCommandHandler handler;
+    MockInventoryGateway inventory;
 
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
         // handler 内部 new TransactionTemplate(transactionManager)；
         // mock 的 transactionManager 默认 getTransaction→null、commit/rollback→no-op，
         // 因此 TransactionTemplate.execute 会直接执行 callback，无需额外 stub。
-        MockInventoryGateway inventoryGateway = new MockInventoryGateway(
+        inventory = new MockInventoryGateway(
                 new GatewayProperties("mock", "mock", "mock", 0.0, 0, "SKU-A:100"));
         handler = new OrderCommandHandler(aggregateRepository, commandLogRepository, retryTemplate, transactionManager,
-                inventoryGateway);
+                inventory);
         lenient().when(commandLogRepository.find(any())).thenReturn(Optional.empty());
     }
 
@@ -104,5 +108,49 @@ class OrderCommandHandlerTest {
         // B 步：pay 只记录支付意图，状态仍 PENDING_PAYMENT，等待网关回调 CompletePaymentCommand
         assertThat(result.success()).isTrue();
         assertThat(agg.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+    }
+
+    /** 走通 创建→支付→预留→确认，供确认相关用例复用。 */
+    private OrderAggregate orderReadyToConfirm(UUID orderId, String sku, int qty) {
+        OrderAggregate agg = new OrderAggregate();
+        when(aggregateRepository.load(orderId)).thenReturn(agg);
+        when(retryTemplate.executeWithRetry(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Supplier<CommandResult> s = inv.getArgument(0);
+            return s.get();
+        });
+        handler.handle(new CreateOrderCommand(UUID.randomUUID(), orderId, "u1", new BigDecimal("99")));
+        handler.handle(new CompletePaymentCommand(UUID.randomUUID(), orderId, "pay-1"));
+        handler.handle(new ReserveInventoryCommand(UUID.randomUUID(), orderId, sku, qty));
+        return agg;
+    }
+
+    @Test
+    void confirmOrder_should_turn_reserved_into_actual_deduction() {
+        UUID orderId = UUID.randomUUID();
+        orderReadyToConfirm(orderId, "SKU-A", 30);
+
+        CommandResult result = handler.handle(new ConfirmOrderCommand(UUID.randomUUID(), orderId));
+
+        assertThat(result.success()).isTrue();
+        // 确认后预占转实扣：物理库存真正减少，预占清零，可售不变
+        assertThat(inventory.snapshot().get("SKU-A").total()).isEqualTo(70);
+        assertThat(inventory.snapshot().get("SKU-A").reserved()).isZero();
+        assertThat(inventory.currentStock("SKU-A")).isEqualTo(70);
+    }
+
+    @Test
+    void confirmOrder_should_be_rejected_when_reservation_already_released() {
+        UUID orderId = UUID.randomUUID();
+        orderReadyToConfirm(orderId, "SKU-A", 30);
+        // 模拟预占已被释放（如重复释放），此时确认会导致超卖，必须拒绝
+        inventory.release(new InventoryGateway.ReleaseRequest(
+                orderId, UUID.randomUUID(), "SKU-A", 30));
+
+        CommandResult result = handler.handle(new ConfirmOrderCommand(UUID.randomUUID(), orderId));
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.error()).contains("预留不足");
+        assertThat(inventory.snapshot().get("SKU-A").total()).isEqualTo(100); // 库存未被扣
     }
 }

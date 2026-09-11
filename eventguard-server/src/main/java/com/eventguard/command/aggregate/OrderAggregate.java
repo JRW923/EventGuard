@@ -21,10 +21,15 @@ public class OrderAggregate extends AggregateRoot {
     private OrderStatus status;
     private BigDecimal totalAmount;
     private int retryCount;
+    // 已预留的库存：取消时需要按它回补（CancelOrderCommand 不带 sku 信息，只能从聚合状态取）
+    private String reservedSkuId;
+    private int reservedQuantity;
 
     public OrderStatus getStatus() { return status; }
     public BigDecimal getTotalAmount() { return totalAmount; }
     public int getRetryCount() { return retryCount; }
+    public String getReservedSkuId() { return reservedSkuId; }
+    public int getReservedQuantity() { return reservedQuantity; }
 
     // —— 命令处理 ——
 
@@ -149,8 +154,10 @@ public class OrderAggregate extends AggregateRoot {
             status = OrderStatus.PENDING_PAYMENT;
         } else if (event instanceof PaymentRequestedEvent) {
             // 支付意图事件不改状态（仍 PENDING_PAYMENT，待网关回调）
-        } else if (event instanceof InventoryReservedEvent) {
-            // 不改状态，仅记录
+        } else if (event instanceof InventoryReservedEvent e) {
+            // 不改状态，仅记录预占了什么：取消订单时按它调 release 回补库存
+            reservedSkuId = e.getSkuId();
+            reservedQuantity = e.getQuantity();
         } else if (event instanceof InventoryReservationFailedEvent) {
             // 库存预留失败不改状态（仍 PAID，触发 R005/Saga）
         } else if (event instanceof OrderConfirmedEvent) {
@@ -183,6 +190,8 @@ public class OrderAggregate extends AggregateRoot {
         m.put("totalAmount", totalAmount != null ? totalAmount.toString() : null);
         m.put("version", getVersion());
         m.put("retryCount", retryCount);
+        m.put("reservedSkuId", reservedSkuId);
+        m.put("reservedQuantity", reservedQuantity);
         return m;
     }
 
@@ -199,6 +208,11 @@ public class OrderAggregate extends AggregateRoot {
         if (ver != null) agg.setVersion(ver.intValue());
         Number rc = (Number) state.get("retryCount");
         if (rc != null) agg.retryCount = rc.intValue();
+        // 老快照没有这两个字段，读不到就是「未预留」，null 安全
+        Object sku = state.get("reservedSkuId");
+        if (sku != null) agg.reservedSkuId = sku.toString();
+        Number qty = (Number) state.get("reservedQuantity");
+        if (qty != null) agg.reservedQuantity = qty.intValue();
         return agg;
     }
 }
