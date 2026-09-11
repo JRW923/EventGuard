@@ -16,6 +16,25 @@ export interface OrderListResponse {
   size: number
 }
 
+/**
+ * 幂等键按「用户意图」粒度复用，而不是按 HTTP 请求：同一份 payload 重复提交
+ * （用户连点、超时后手动重试）复用同一个 X-Command-Id，后端 command_log 命中
+ * 首次结果，不会创建出多笔订单。
+ *
+ * ponytail: 只缓存最近一份意图，且与 payload 指纹绑定——换 payload 就换 key。
+ * 否则「改了金额再提交」会复用旧 commandId，后端指纹校验会抛
+ * 「commandId 已用于不同的订单、命令类型或参数」。
+ */
+let pendingIntent: { commandId: string; fingerprint: string } | null = null
+
+function commandIdFor(payload: { userId: string; totalAmount: number }): string {
+  const fingerprint = `${payload.userId}|${payload.totalAmount}`
+  if (pendingIntent?.fingerprint === fingerprint) return pendingIntent.commandId
+  const commandId = crypto.randomUUID()
+  pendingIntent = { commandId, fingerprint }
+  return commandId
+}
+
 export const OrderApi = {
   list(status: string | null, page: number, size: number): Promise<OrderListResponse> {
     const params: Record<string, number | string> = { page, size }
@@ -29,8 +48,12 @@ export const OrderApi = {
 
   create(payload: { userId: string; totalAmount: number }): Promise<{ orderId: string }> {
     return http.post<{ orderId: string }>('/orders', payload, {
-      headers: { 'X-Command-Id': crypto.randomUUID() },
-    }).then((r) => r.data)
+      headers: { 'X-Command-Id': commandIdFor(payload) },
+    }).then((r) => {
+      // 仅在成功后清空：失败时保留 key，重试同一份 payload 仍走幂等路径
+      pendingIntent = null
+      return r.data
+    })
   },
 
   getEvents(orderId: string, upToVersion?: number): Promise<EventItem[]> {
