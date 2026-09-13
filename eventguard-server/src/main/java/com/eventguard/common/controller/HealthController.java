@@ -34,12 +34,13 @@ public class HealthController {
     @GetMapping("/health")
     public Map<String, Object> health() {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("status", "UP");
         body.put("version", version);
 
         Map<String, String> deps = new LinkedHashMap<>();
-        deps.put("db", pingDb() ? "UP" : "DOWN");
+        boolean dbUp = pingDb();
+        deps.put("db", dbUp ? "UP" : "DOWN");
         deps.put("kafka", kafkaBootstrap);
+        body.put("status", dbUp ? "UP" : "DOWN");
         body.put("dependencies", deps);
         return body;
     }

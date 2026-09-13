@@ -299,10 +299,10 @@ class DetectionHandler:
         egm.publish_errors.inc()
         egm.publish_duration.observe(time.time() - _t0)
         logger.error(
-            "发布异常失败（重试 %d 次后放弃，已存内存 store）: %s",
-            PUBLISH_RETRIES - 1, last_exc,
+            "发布异常失败（重试 %d 次后交由消费重试/DLT）: %s",
+            PUBLISH_RETRIES, last_exc,
         )
-        return time.time() - _t0
+        raise RuntimeError("异常告警发布失败，保留原 Kafka offset 交由重试/DLT") from last_exc
 
     def _build_anomaly(self, event: dict, result: AnomalyResult) -> Anomaly:
         """从检测结果构建 Anomaly 模型"""

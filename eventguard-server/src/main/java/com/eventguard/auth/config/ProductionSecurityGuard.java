@@ -60,10 +60,12 @@ public class ProductionSecurityGuard {
             warnIfDefaultSecrets();
             return;
         }
-        if (jwtSecret == null || jwtSecret.isBlank() || DEFAULT_JWT_SECRET.equals(jwtSecret)) {
+        if (jwtSecret == null || jwtSecret.isBlank() || DEFAULT_JWT_SECRET.equals(jwtSecret)
+                || jwtSecret.length() < 32) {
             throw new IllegalStateException("生产环境必须设置 EG_JWT_SECRET");
         }
-        if (machineKey == null || machineKey.isBlank() || DEFAULT_MACHINE_KEY.equals(machineKey)) {
+        if (machineKey == null || machineKey.isBlank() || DEFAULT_MACHINE_KEY.equals(machineKey)
+                || machineKey.length() < 32) {
             throw new IllegalStateException("生产环境必须设置 EG_MACHINE_API_KEY");
         }
         if (callbackSignatureRequired && (callbackSecret == null || callbackSecret.isBlank())) {

@@ -45,8 +45,10 @@ public class OrderViewProjection implements Projection {
 
     // ponytail: 仅 JDBC 事务（spring-jdbc PlatformTransactionManager），未引入 KafkaTransactionManager，
     // 故 Kafka 偏移提交独立于 DB 事务；at-least-once 由 idempotent_consumers 表保证，重投幂等。
+    // ponytail: 并发度与投影连接池上限一致（eventguard.projection-datasource.hikari.maximum-pool-size=2）。
+    // 调高到 3 不会提升吞吐，只会让第三个线程等连接，极端情况下 30s 拿不到连接超时进 DLT。
     @KafkaListener(topics = "domain-events", groupId = "order-view-projection",
-            concurrency = "${EG_PROJECTION_CONCURRENCY:3}")
+            concurrency = "${EG_PROJECTION_CONCURRENCY:2}")
     @Transactional("projectionTransactionManager")
     public void on(ConsumerRecord<String, Object> record) {
         DomainEvent event;
