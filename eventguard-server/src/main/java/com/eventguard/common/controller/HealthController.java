@@ -4,6 +4,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
+import java.time.Duration;
+import java.util.Properties;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -39,10 +43,27 @@ public class HealthController {
         Map<String, String> deps = new LinkedHashMap<>();
         boolean dbUp = pingDb();
         deps.put("db", dbUp ? "UP" : "DOWN");
-        deps.put("kafka", kafkaBootstrap);
-        body.put("status", dbUp ? "UP" : "DOWN");
+        boolean kafkaUp = pingKafka();
+        deps.put("kafka", kafkaUp ? "UP" : "DOWN");
+        body.put("status", dbUp && kafkaUp ? "UP" : "DOWN");
         body.put("dependencies", deps);
         return body;
+    }
+
+    // 包可见（非 private）：单测用 spy 覆盖探活结果，避免依赖真实 Kafka
+    boolean pingKafka() {
+        try {
+            Properties props = new Properties();
+            props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaBootstrap);
+            props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "1000");
+            try (AdminClient client = AdminClient.create(props)) {
+                client.describeCluster().nodes().get(1, java.util.concurrent.TimeUnit.SECONDS);
+                return true;
+            }
+        } catch (Exception e) {
+            log.warn("健康检查：Kafka 探活失败: {}", e.getMessage());
+            return false;
+        }
     }
 
     private boolean pingDb() {

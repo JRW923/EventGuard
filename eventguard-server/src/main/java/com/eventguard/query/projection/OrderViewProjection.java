@@ -150,9 +150,11 @@ public class OrderViewProjection implements Projection {
             throw new IllegalStateException("创建事件版本必须为 1，实际为 " + event.getVersion());
         }
         int inserted = jdbc.update(
-                "INSERT INTO order_view (order_id, status, total_amount, version, updated_at) VALUES (?, ?, ?, ?, now()) " +
+                "INSERT INTO order_view (order_id, status, total_amount, version, created_at, updated_at) " +
+                        "VALUES (?, ?, ?, ?, COALESCE(?, now()), now()) " +
                         "ON CONFLICT (order_id) DO NOTHING",
-                event.getAggregateId(), "PENDING_PAYMENT", event.getTotalAmount(), event.getVersion());
+                event.getAggregateId(), "PENDING_PAYMENT", event.getTotalAmount(), event.getVersion(),
+                event.getOccurredAt() != null ? Timestamp.from(event.getOccurredAt()) : null);
         if (inserted == 0) assertAlreadyAppliedOrGap(event);
     }
 

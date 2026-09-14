@@ -107,6 +107,12 @@ class TemplateExecutor:
                 start = anchor + timedelta(days=delta_days)
                 end = anchor if delta_days != 0 else now
                 return start.isoformat(), end.isoformat()
-        # 默认：最近 7 天
-        start = anchor + timedelta(days=-7)
-        return start.isoformat(), now.isoformat()
+        # “最近/近 N 天”是统计查询的常见说法，明确解析数字，避免落到固定 7 天。
+        match = re.search(r"(?:最近|近|过去)\s*(\d+)\s*天", question)
+        if match:
+            start = now - timedelta(days=int(match.group(1)))
+            return start.isoformat(), now.isoformat()
+        # 无明确时间提及：不加时间窗，查全量。
+        # ponytail: 原来这里兜底"最近 7 天"，会把"总共有多少订单"这类无时间限定的问法
+        # 硬套 7 天窗口，历史数据一律查不到；返回 None 交由后端不做时间过滤。
+        return None, None

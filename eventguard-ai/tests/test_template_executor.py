@@ -62,6 +62,19 @@ class TestTemplateExecutor:
         assert mock_backend.get_stats.call_args.args[0] is None
 
     @pytest.mark.asyncio
+    async def test_stats_aggregation_without_time_word_passes_no_window(self):
+        """无时间词（如"总共有多少订单"）不应强加默认窗口，from/to 均为 None。"""
+        mock_backend = AsyncMock()
+        mock_backend.get_stats.return_value = []
+        executor = TemplateExecutor(backend_client=mock_backend)
+
+        await executor.execute_stats_aggregation("总共有多少订单？")
+
+        args = mock_backend.get_stats.call_args.args
+        assert args[0] is None
+        assert args[1] is None and args[2] is None
+
+    @pytest.mark.asyncio
     async def test_trace_replay_extracts_order_id_and_calls_get_events(self):
         """trace_replay 从问题中提取 order_id 并调 BackendClient.get_events。"""
         mock_backend = AsyncMock()

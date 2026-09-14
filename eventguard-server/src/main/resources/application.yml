@@ -47,6 +47,7 @@ spring:
         - classpath:db/migration/V7__command_log_request_hash.sql
         - classpath:db/migration/V8__anomaly_alerts.sql
         - classpath:db/migration/V9__user_llm_config.sql
+        - classpath:db/migration/V10__order_view_created_at.sql
 
 management:
   endpoints:

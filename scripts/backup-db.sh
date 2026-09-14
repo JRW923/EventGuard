@@ -58,14 +58,22 @@ else
 fi
 
 # 可选远程上传钩子：设置 BACKUP_UPLOAD_CMD 即启用，备份文件路径以 $1 传入。
-# 失败不抹掉本地备份（exit 0 继续），只告警到日志由 cron 邮件/日志采集兜底。
+# 失败不抹掉本地备份，并以非零退出码通知 cron/监控进行补偿。
 # 例：BACKUP_UPLOAD_CMD='rclone copyto remote:eg-backups/$(basename "$1")'
 if [ -n "${BACKUP_UPLOAD_CMD:-}" ]; then
-  if bash -c "$BACKUP_UPLOAD_CMD '$FILE'"; then
-    echo "[$(date '+%F %T')] 远程上传完成：$FILE"
-  else
-    echo "[$(date '+%F %T')] 警告：远程上传失败（本地备份仍保留）：$FILE" >&2
-  fi
+  # 同步上传本次生成的全部备份文件（数据库及 AI 异常历史），避免只恢复数据库后丢失告警历史。
+  upload_failed=0
+  for upload_file in "$BACKUP_DIR/${PG_DB}-${TS}.dump" "$BACKUP_DIR/anomalies-${TS}.jsonl"; do
+    [ -f "$upload_file" ] || continue
+    if bash -c "$BACKUP_UPLOAD_CMD '$upload_file'"; then
+      echo "[$(date '+%F %T')] 远程上传完成：$upload_file"
+    else
+      upload_failed=1
+      echo "[$(date '+%F %T')] 警告：远程上传失败（本地备份仍保留）：$upload_file" >&2
+    fi
+  done
+  # 远端失败不删除本地副本；返回非零让 cron/监控明确感知异地备份缺口。
+  [ "$upload_failed" -eq 0 ] || exit 2
 fi
 
 # 清理过期备份（保留最近 RETENTION_DAYS 天）
